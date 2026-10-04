@@ -6,9 +6,6 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="brand">StableWorker</div>
-
-      <div className="section-title">项目</div>
       <button className="btn btn-block" onClick={() => void actions.addProject()}>
         ＋ 添加项目
       </button>
