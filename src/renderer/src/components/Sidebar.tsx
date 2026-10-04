@@ -17,6 +17,9 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
+      <button className="btn btn-block" onClick={() => void actions.addProject()}>
+        ＋ 新建项目
+      </button>
       <ul className="project-list">
         {projects.map((p) => {
           const expanded = expandedProjects[p.id] ?? false
@@ -85,7 +88,7 @@ export function Sidebar() {
             </li>
           )
         })}
-        {projects.length === 0 ? <li className="session-empty">先点上方按钮添加项目</li> : null}
+        {projects.length === 0 ? <li className="session-empty">（还没有项目）</li> : null}
       </ul>
 
       <div className="sidebar-footer">

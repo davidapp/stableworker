@@ -680,6 +680,8 @@ body {
 .model-select-wrap .mode-caret {
   position: absolute;
   right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none;
 }
 
@@ -708,7 +710,10 @@ body {
 
 .mode-caret {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .popover-backdrop {
