@@ -3,8 +3,11 @@ name: Build
 # 三平台矩阵各跑一次 npm run dist：
 # - push 到 main 或打 v* 标签时自动触发
 # - 也可在 Actions 页面手动触发（workflow_dispatch）
-# 构建产物以 Artifact 形式上传（Windows NSIS / macOS DMG / Linux AppImage）；
-# 打 v* 标签时额外创建 GitHub Release 并附上安装包。
+#
+# 产物去向：
+# - 每次构建的安装包（Windows NSIS / macOS DMG / Linux AppImage）上传为 Artifact
+# - push 到 main：自动更新滚动 Release「latest」（prerelease，始终是最新可用的构建）
+# - 打 v* 标签：创建正式 GitHub Release 并附上安装包
 
 on:
   workflow_dispatch:
@@ -20,11 +23,11 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -36,7 +39,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stableworker-${{ matrix.os }}
           path: |
@@ -45,20 +48,46 @@ jobs:
             release/*.AppImage
           if-no-files-found: error
 
-  release:
+  # 滚动 Release：main 的每次推送都覆盖更新「latest」，始终提供最新构建
+  release-latest:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Update rolling release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          name: 最新构建（latest）
+          prerelease: true
+          files: artifacts/*
+          generate_release_notes: false
+          body: |
+            main 分支的自动构建，每次推送都会覆盖更新。
+            可能不如正式版稳定，追求稳定请使用 v* 正式标签的 Release。
+
+  # 正式发布：打 v* 标签触发
+  release-tag:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true
