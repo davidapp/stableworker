@@ -61,9 +61,11 @@ export function ApiInspector() {
     setList(await window.api.listDebugExchanges())
   }, [])
 
-  // 列表底部按币种精确累计（BigInt，无浮点误差）
+  // 列表底部按币种精确累计（BigInt，无浮点误差）+ tokens 总量
   const totals = new Map<Currency, { pico: bigint; count: number }>()
+  let totalTokens = 0
   for (const item of list) {
+    totalTokens += (item.inputTokens ?? 0) + (item.outputTokens ?? 0)
     if (!item.cost) continue
     const cur = totals.get(item.cost.currency) ?? { pico: 0n, count: 0 }
     cur.pico += decimalToPico(item.cost.amount)
@@ -154,7 +156,7 @@ export function ApiInspector() {
             )}
             {list.length > 0 ? (
               <footer className="inspector-total">
-                共 {list.length} 次调用
+                共 {list.length} 次调用 · {totalTokens.toLocaleString()} tokens
                 {totals.size > 0
                   ? ' · ' +
                     [...totals.entries()]

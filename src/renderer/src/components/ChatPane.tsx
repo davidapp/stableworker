@@ -6,6 +6,7 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
+import { ContextMeter } from './ContextMeter'
 
 export function ChatPane() {
   const { projects, activeProjectId, sessions, activeSessionId, messages, streaming, llmProfiles, activeLlmId } =
@@ -60,6 +61,7 @@ export function ChatPane() {
         <button className="btn" onClick={() => actions.newSession()}>
           ＋ 新会话
         </button>
+        <ContextMeter />
         <div className="spacer" />
         {activeSessionId && messages.length > 0 ? (
           <button

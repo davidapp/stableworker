@@ -331,6 +331,7 @@ function toListItem(ex: Exchange): DebugListItem {
     eventCount: ex.eventCount ?? ex.sseEvents?.length ?? 0, // 兼容旧版本文件
     inputTokens: ex.inputTokens ?? null,
     outputTokens: ex.outputTokens ?? null,
+    contextTokens: ex.inputTokens ?? null,
     cost: ex.cost ?? null,
   }
 }

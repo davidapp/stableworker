@@ -244,6 +244,54 @@ body {
   flex: 1;
 }
 
+/* ---------- 上下文水位条 ---------- */
+.context-meter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 6px;
+}
+
+.context-meter-bar {
+  width: 72px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--elevated);
+  overflow: hidden;
+}
+
+.context-meter-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+
+.context-meter-fill.ok {
+  background: var(--ok);
+}
+
+.context-meter-fill.warn {
+  background: var(--warn);
+}
+
+.context-meter-fill.danger {
+  background: var(--danger);
+}
+
+.context-meter-text {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.context-meter-text.warn {
+  color: var(--warn);
+}
+
+.context-meter-text.danger {
+  color: var(--danger);
+}
+
 .message-list {
   flex: 1;
   overflow-y: auto;

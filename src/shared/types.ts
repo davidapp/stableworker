@@ -148,6 +148,8 @@ export interface ConfigView {
   features: FeatureEntry[]
   /** 侧栏宽度（可拖拽调整，持久化） */
   sidebarWidth: number
+  /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
+  contextLimit: number
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */
@@ -198,6 +200,8 @@ export interface DebugListItem {
   eventCount: number
   inputTokens: number | null
   outputTokens: number | null
+  /** 请求发出时的上下文总输入 tokens（= prompt_tokens，即"这轮历史有多大"） */
+  contextTokens: number | null
   /** 本次费用（精确十进制字符串）；null = 未能计费 */
   cost: Money | null
 }

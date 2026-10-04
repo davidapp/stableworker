@@ -33,6 +33,7 @@ function applyConfig(cfg: ConfigView): void {
     holidays: cfg.holidays,
     features: cfg.features,
     sidebarWidth: cfg.sidebarWidth,
+    contextLimit: cfg.contextLimit,
   })
 }
 

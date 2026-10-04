@@ -36,6 +36,8 @@ export interface AppState {
   features: FeatureEntry[]
   /** 侧栏宽度（拖拽分隔条调整，持久化） */
   sidebarWidth: number
+  /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
+  contextLimit: number
   /** 设置对话框当前页 */
   settingsPage: string
   settingsOpen: boolean
@@ -76,6 +78,7 @@ export const store = createStore<AppState>({
   holidays: [],
   features: [],
   sidebarWidth: 240,
+  contextLimit: 0,
   settingsPage: 'llm',
   settingsOpen: false,
   streaming: false,

@@ -35,6 +35,8 @@ const api = {
     ipcRenderer.invoke('config:setThinkingEffort', effort),
   setSidebarWidth: (width: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setSidebarWidth', width),
+  setContextLimit: (limit: number): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setContextLimit', limit),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
   saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>

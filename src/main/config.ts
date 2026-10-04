@@ -34,6 +34,20 @@ const DEFAULT_MODEL_PRICING: ModelPricing[] = [
 
 const APPROVAL_MODES: ApprovalMode[] = ['confirm', 'autoEdit', 'fullAccess']
 
+/** 各模型家族的上下文窗口默认值（tokens）；未匹配的模型用 fallback */
+const CONTEXT_LIMITS: { match: RegExp; limit: number }[] = [
+  { match: /deepseek/i, limit: 128_000 },
+  { match: /glm/i, limit: 128_000 },
+  { match: /kimi|moonshot/i, limit: 256_000 },
+  { match: /claude/i, limit: 200_000 },
+  { match: /gpt-5|gpt-4\.1|gpt-4o/i, limit: 128_000 },
+]
+const CONTEXT_LIMIT_FALLBACK = 32_000
+
+export function defaultContextLimit(model: string): number {
+  return CONTEXT_LIMITS.find((e) => e.match.test(model))?.limit ?? CONTEXT_LIMIT_FALLBACK
+}
+
 /** 一条 LLM 配置档的落盘形态（apiKey 为加密后字符串） */
 type StoredProfile = LLMConfig & { id: string; apiKey: string }
 
@@ -50,6 +64,7 @@ interface StoredConfig {
   holidays?: string[]
   features?: FeatureEntry[]
   sidebarWidth?: number
+  contextLimit?: number
 }
 
 let cache: StoredConfig | null = null
@@ -89,6 +104,11 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.features === undefined) cache.features = []
   if (cache.sidebarWidth === undefined) cache.sidebarWidth = 240
   cache.sidebarWidth = Math.min(480, Math.max(180, cache.sidebarWidth))
+  // 上下文上限按当前激活模型给默认值；首次生成后固化（可在 config.json 手改）
+  if (cache.contextLimit === undefined) {
+    const model = cache.llmProfiles?.find((p) => p.id === cache?.activeLlmId)?.model ?? ''
+    cache.contextLimit = defaultContextLimit(model)
+  }
   return cache
 }
 
@@ -145,6 +165,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     holidays: cfg.holidays ?? [],
     features: cfg.features ?? [],
     sidebarWidth: cfg.sidebarWidth ?? 240,
+    contextLimit: cfg.contextLimit ?? 0,
   }
 }
 
@@ -217,6 +238,15 @@ export function registerConfigHandlers(): void {
     const cfg = await loadConfig()
     if (typeof width === 'number' && Number.isFinite(width)) {
       cfg.sidebarWidth = Math.min(480, Math.max(180, Math.round(width)))
+    }
+    return saveConfig(cfg)
+  })
+
+  // 保存上下文窗口上限（tokens；0 = 未知）
+  ipcMain.handle('config:setContextLimit', async (_e, limit: number): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    if (typeof limit === 'number' && Number.isFinite(limit) && limit >= 0) {
+      cfg.contextLimit = Math.round(limit)
     }
     return saveConfig(cfg)
   })
