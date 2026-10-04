@@ -27,7 +27,8 @@ export function ApiInspector() {
 
   useEffect(() => {
     void refreshList()
-    // 依赖 selectedId：切换选中或收到 debug:updated 时重取详情（可实时看到事件流入）
+    // 选中变化时立即加载详情；流式期间收到 debug:updated 也持续刷新（可实时看到事件流入）
+    if (selectedId) void window.api.getDebugExchange(selectedId).then(setDetail)
     return window.api.onDebugUpdated(() => {
       void refreshList()
       if (selectedId) void window.api.getDebugExchange(selectedId).then(setDetail)
