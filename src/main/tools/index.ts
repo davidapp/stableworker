@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
 import { ipcMain } from 'electron'
@@ -36,6 +38,8 @@ export interface ToolDefinition {
    * 只读工具可省略
    */
   kind?: 'read' | 'edit' | 'system'
+  /** 工具执行超时（毫秒）；不设用全局默认 15 秒 */
+  timeoutMs?: number
 }
 
 const MAX_LIST_ENTRIES = 300
@@ -193,11 +197,93 @@ const editFileTool: ToolDefinition = {
   },
 }
 
+/** Windows 下终止整个进程树（shell:true 时命令包在 cmd.exe 里，直接 kill 会漏掉子进程） */
+function killTree(child: ChildProcess): void {
+  if (!child.pid) return
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+  } else {
+    child.kill('SIGKILL')
+  }
+}
+
+const RUN_COMMAND_TIMEOUT_MS = 60_000
+
+const runCommandTool: ToolDefinition = {
+  name: 'run_command',
+  description:
+    '在项目目录下执行一条 shell 命令（Windows 用 cmd，60 秒超时自动终止整个进程树），返回退出码与合并后的 stdout/stderr。用于运行脚本、测试、安装依赖、查看系统信息等。该操作在用户机器上真实执行，需要用户批准；非零退出码视为失败，输出里通常有报错信息。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      command: { type: 'string', description: '要执行的命令（shell 语法）' },
+      cwd: { type: 'string', description: '工作目录（项目内相对路径，默认项目根目录）' },
+    },
+    required: ['command'],
+  },
+  requiresApproval: true,
+  kind: 'system',
+  timeoutMs: RUN_COMMAND_TIMEOUT_MS,
+  async execute(input, ctx) {
+    const command = typeof input.command === 'string' ? input.command : ''
+    if (!command.trim()) return { content: '缺少 command 参数', isError: true }
+    const cwd = safeResolve(ctx.projectPath, typeof input.cwd === 'string' ? input.cwd : '.')
+
+    return new Promise((resolvePromise) => {
+      const child = spawn(command, {
+        cwd,
+        shell: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+      let out = ''
+      let truncated = false
+      const append = (data: Buffer): void => {
+        if (out.length >= MAX_OUTPUT_CHARS) {
+          truncated = true
+          return // 继续排空流让进程正常结束，只是不再记录
+        }
+        out += data.toString('utf-8')
+        if (out.length > MAX_OUTPUT_CHARS) {
+          out = out.slice(0, MAX_OUTPUT_CHARS)
+          truncated = true
+        }
+      }
+      child.stdout?.on('data', append)
+      child.stderr?.on('data', append)
+
+      // 自身超时：杀掉整个进程树并以错误结果收场（先于通用 15s 超时，因为本工具更长）
+      let timedOut = false
+      const timer = setTimeout(() => {
+        timedOut = true
+        killTree(child)
+      }, RUN_COMMAND_TIMEOUT_MS)
+
+      child.on('error', (err) => {
+        clearTimeout(timer)
+        resolvePromise({ content: `命令启动失败：${err.message}`, isError: true })
+      })
+      child.on('close', (code) => {
+        clearTimeout(timer)
+        const notes = [
+          timedOut ? '命令超时 60 秒，已强制终止进程树' : '',
+          truncated ? `输出过长，已截断到 ${MAX_OUTPUT_CHARS} 字符` : '',
+        ].filter(Boolean)
+        resolvePromise({
+          content: truncate(`退出码: ${code ?? 'N/A'}\n${out}${notes.length ? `\n${notes.join('；')}` : ''}`),
+          isError: timedOut || (code !== 0 && code !== null),
+        })
+      })
+    })
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
   [writeFileTool.name, writeFileTool],
   [editFileTool.name, editFileTool],
+  [runCommandTool.name, runCommandTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */
@@ -218,9 +304,10 @@ export async function executeToolCall(
   projectPath: string | null,
 ): Promise<ToolRunResult> {
   const started = Date.now()
+  const tool = registry.get(name)
+  const timeoutMs = tool?.timeoutMs ?? TOOL_TIMEOUT_MS
   const run = async (): Promise<ToolOutput> => {
     if (!projectPath) return { content: '当前没有激活的项目目录，无法使用文件工具', isError: true }
-    const tool = registry.get(name)
     if (!tool) return { content: `未知工具：${name}`, isError: true }
     return tool.execute(input, { projectPath })
   }
@@ -233,7 +320,7 @@ export async function executeToolCall(
         isError: true,
       })),
       new Promise<never>((_, reject) => {
-        const t = setTimeout(() => reject(new Error(`工具执行超时（${TOOL_TIMEOUT_MS / 1000}s）`)), TOOL_TIMEOUT_MS)
+        const t = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
         t.unref()
       }),
     ])
