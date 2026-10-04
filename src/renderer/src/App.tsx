@@ -4,9 +4,10 @@ import * as actions from './actions'
 import { Sidebar } from './components/Sidebar'
 import { ChatPane } from './components/ChatPane'
 import { SettingsDialog } from './components/SettingsDialog'
+import { ApiInspector } from './components/ApiInspector'
 
 export default function App() {
-  const { booted, settingsOpen } = useApp()
+  const { booted, settingsOpen, inspectorOpen } = useApp()
 
   useEffect(() => {
     void actions.boot()
@@ -21,8 +22,9 @@ export default function App() {
     <div className="app">
       <Sidebar />
       <ChatPane />
-      {/* 用条件挂载保证每次打开设置时表单都基于最新配置初始化 */}
+      {/* 用条件挂载保证每次打开时都基于最新数据初始化 */}
       {settingsOpen && <SettingsDialog />}
+      {inspectorOpen && <ApiInspector />}
     </div>
   )
 }

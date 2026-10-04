@@ -92,6 +92,14 @@ export function closeSettings(): void {
   store.setState({ settingsOpen: false })
 }
 
+export function openInspector(): void {
+  store.setState({ inspectorOpen: true })
+}
+
+export function closeInspector(): void {
+  store.setState({ inspectorOpen: false })
+}
+
 export async function saveLlm(input: LLMConfig & { apiKey?: string }): Promise<void> {
   const cfg = await window.api.saveLlm(input)
   applyConfig(cfg)

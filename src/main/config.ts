@@ -35,6 +35,8 @@ export async function loadConfig(): Promise<StoredConfig> {
     cache = { projects: [], activeProjectId: null, llm: null }
   }
   cache.projects ??= []
+  // 旧版本配置没有 proxyURL 字段，归一化成空串（= 直连）
+  if (cache.llm) cache.llm.proxyURL ??= ''
   return cache
 }
 
@@ -81,6 +83,9 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
           name: cfg.llm.name,
           baseURL: cfg.llm.baseURL,
           model: cfg.llm.model,
+          proxyURL: cfg.llm.proxyURL,
+          priceInputUSD: cfg.llm.priceInputUSD,
+          priceOutputUSD: cfg.llm.priceOutputUSD,
           hasApiKey: Boolean(cfg.llm.apiKey),
           apiKeyHint: maskKey(decryptApiKey(cfg.llm.apiKey)),
         }
@@ -100,6 +105,9 @@ export function registerConfigHandlers(): void {
       name: input.name.trim() || '默认配置',
       baseURL: input.baseURL.trim(),
       model: input.model.trim(),
+      proxyURL: input.proxyURL?.trim() ?? '',
+      priceInputUSD: typeof input.priceInputUSD === 'number' ? input.priceInputUSD : undefined,
+      priceOutputUSD: typeof input.priceOutputUSD === 'number' ? input.priceOutputUSD : undefined,
       apiKey: keepOldKey ? (cfg.llm as { apiKey: string }).apiKey : encryptApiKey(input.apiKey?.trim() ?? ''),
     }
     return saveConfig(cfg)

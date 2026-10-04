@@ -18,6 +18,7 @@ export interface AppState {
   messages: ChatMessage[]
   llm: ConfigView['llm']
   settingsOpen: boolean
+  inspectorOpen: boolean
   /** 是否正在流式生成回复 */
   streaming: boolean
 }
@@ -50,6 +51,7 @@ export const store = createStore<AppState>({
   messages: [],
   llm: null,
   settingsOpen: false,
+  inspectorOpen: false,
   streaming: false,
 })
 

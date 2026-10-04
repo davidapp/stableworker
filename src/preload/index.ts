@@ -1,6 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { ChatEvent, ChatRequest, ConfigView, LLMConfig, LLMTestPayload, ProjectInfo, Session, SessionMeta } from '../shared/types'
+import type {
+  ChatEvent,
+  ChatRequest,
+  ConfigView,
+  DebugDetail,
+  DebugListItem,
+  LLMConfig,
+  LLMTestPayload,
+  ProjectInfo,
+  Session,
+  SessionMeta,
+} from '../shared/types'
 
 /**
  * preload：唯一允许同时接触 Electron API 和页面 JS 的地方。
@@ -39,6 +50,17 @@ const api = {
     const listener = (_e: IpcRendererEvent, event: ChatEvent): void => callback(event)
     ipcRenderer.on('chat:event', listener)
     return () => ipcRenderer.removeListener('chat:event', listener)
+  },
+
+  // ---- API 调试（学习用） ----
+  listDebugExchanges: (): Promise<DebugListItem[]> => ipcRenderer.invoke('debug:list'),
+  getDebugExchange: (id: string): Promise<DebugDetail | null> => ipcRenderer.invoke('debug:get', id),
+  clearDebugLog: (): Promise<boolean> => ipcRenderer.invoke('debug:clear'),
+  /** 有新的 API 交换数据时触发（面板据此实时刷新） */
+  onDebugUpdated: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('debug:updated', listener)
+    return () => ipcRenderer.removeListener('debug:updated', listener)
   },
 }
 

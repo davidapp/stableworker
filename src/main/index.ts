@@ -4,6 +4,7 @@ import { registerConfigHandlers } from './config'
 import { registerProjectHandlers } from './projects'
 import { registerSessionHandlers } from './sessions'
 import { registerChatHandlers } from './llm'
+import { registerDebugHandlers, initDebugLog } from './debug'
 
 /**
  * 主进程入口：创建窗口、注册所有 IPC 处理器。
@@ -37,6 +38,17 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Markdown 里的链接被点击时不在应用内跳转，交给系统浏览器
+  win.webContents.on('will-navigate', (event, url) => {
+    const isInternal = app.isPackaged
+      ? url.startsWith('file://')
+      : url.startsWith(process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173')
+    if (!isInternal) {
+      event.preventDefault()
+      void shell.openExternal(url)
+    }
+  })
+
   // 开发模式下 electron-vite 会注入 renderer 的 dev server 地址
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -45,11 +57,13 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerConfigHandlers()
   registerProjectHandlers()
   registerSessionHandlers()
   registerChatHandlers()
+  registerDebugHandlers()
+  await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createWindow()
 
   // macOS：点 Dock 图标时如果没有窗口则重新创建

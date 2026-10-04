@@ -39,6 +39,9 @@ export function Sidebar() {
         <div className={`llm-status ${llm ? 'ok' : 'warn'}`} title={llm?.baseURL ?? ''}>
           {llm ? `${llm.name} · ${llm.model}` : 'LLM 未配置'}
         </div>
+        <button className="btn btn-block" onClick={() => actions.openInspector()}>
+          🔍 API 调试
+        </button>
         <button className="btn btn-block" onClick={() => actions.openSettings()}>
           ⚙ LLM 设置
         </button>

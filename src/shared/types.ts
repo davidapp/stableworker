@@ -14,6 +14,12 @@ export interface LLMConfig {
   baseURL: string
   /** 模型名，例如 deepseek-chat / claude-sonnet-4-5 */
   model: string
+  /** 可选 HTTP 代理，例如 http://127.0.0.1:7890；留空 = 直连 */
+  proxyURL: string
+  /** 模型单价：输入（美元 / 每百万 tokens），用于估算花费；不填只记 token 不算钱 */
+  priceInputUSD?: number
+  /** 模型单价：输出（美元 / 每百万 tokens） */
+  priceOutputUSD?: number
 }
 
 export interface ProjectInfo {
@@ -73,3 +79,43 @@ export type ChatEvent =
   | { type: 'delta'; sessionId: string; delta: string }
   | { type: 'done'; sessionId: string }
   | { type: 'error'; sessionId: string; message: string }
+
+// ---------- API 调试面板（学习用） ----------
+
+/** 调试列表条目（轻量，不含大字段） */
+export interface DebugListItem {
+  id: string
+  kind: 'chat' | 'test'
+  startedAt: number
+  durationMs: number | null
+  provider: string
+  model: string
+  url: string
+  status: number | null
+  error: string | null
+  /** 收到的 SSE 事件条数 */
+  eventCount: number
+  inputTokens: number | null
+  outputTokens: number | null
+  /** 费用（美元）：provider 报告或按价格估算，null = 未能计费 */
+  costUSD: number | null
+  costSource: 'provider' | 'estimated' | null
+}
+
+/** 调试详情：原始请求/响应内容（密钥已脱敏） */
+export interface DebugDetail extends DebugListItem {
+  method: string
+  /** 本次调用经过的代理地址；null = 直连 */
+  proxyURL: string | null
+  requestHeaders: Record<string, string>
+  /** 请求体（pretty JSON 字符串） */
+  requestBody: string
+  /** 逐条原始 SSE data 行（不含 "data: " 前缀，最后的 [DONE] 也记录） */
+  sseEvents: string[]
+  /** 从流中拼装出的最终文本 */
+  assembledText: string
+  /** 响应中出现的 usage（token 用量），无则 null */
+  usage: unknown
+  /** 非流式请求（测试连接）的原始响应体 */
+  responseBody: string | null
+}

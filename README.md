@@ -17,9 +17,35 @@ npm run typecheck  # TypeScript 类型检查
 ## 使用流程
 
 1. 左侧 **＋ 添加项目** —— 选一个本地目录作为工作区（可添加多个，随时切换）
-2. 右下角 **⚙ LLM 设置** —— 填协议类型 / Base URL / 模型 / API Key，点"测试连接"验证
-3. 底部输入框发消息 —— 助手回复会流式打字输出；Enter 发送，Shift+Enter 换行
+2. 右下角 **⚙ LLM 设置** —— 顶部先选**预设**（DeepSeek / 智谱 GLM / Kimi / Anthropic / OpenAI / Ollama 本地），
+   BaseURL、协议、候选模型自动填好，你只需要填 API Key；预设旁边附官方文档链接，点击会用系统浏览器打开。
+   非预设服务选"自定义…"手动填写。底部还有**可选的 HTTP 代理**（填了走代理、留空直连）和
+   **模型单价**（美元/百万 tokens，用于在调试面板估算每次调用的花费）
+3. 底部输入框发消息 —— 助手回复以 **Markdown 渲染**（支持表格、代码高亮）；Enter 发送，Shift+Enter 换行
 4. 顶部可新建 / 切换 / 删除会话；会话自动持久化，重启应用后可恢复
+5. 左下角 **🔍 API 调试** —— 查看每次 LLM 调用的原始请求/响应（学习协议细节用，见下文）
+
+## API 调试面板（学习原理的入口）
+
+左下角"🔍 API 调试"打开。每次 LLM 调用（对话、测试连接）都会记录，**永久保存在本地磁盘**
+（`userData/api_log/` 目录，一个调用一个 JSON 文件，重启应用仍可查看；"清空"按钮会删除全部文件）：
+
+- **请求**：方法 + URL、请求头（API Key 已脱敏）、完整请求体 JSON、直连/经代理信息
+- **响应**：逐条原始 SSE `data:` 事件行（流式进行时可实时观察事件流入）、耗时
+- **用量与费用**：输入/输出 token 数、本次花费（美元）——若 API 直接返回金额（如 OpenRouter 的
+  `usage.cost`）以返回值为准；否则按设置里填的模型单价（美元/百万 tokens）估算，未填单价只记 token。
+  列表底部有累计花费
+- **拼装后的最终文本**：和上面的事件流对照，就能看懂"流式输出 = 逐条提取 delta 再拼接"
+
+对照学习要点：
+
+- OpenAI 兼容协议：事件是 `{"choices":[{"delta":{"content":"x"}}]}`，以 `data: [DONE]` 结束；
+  请求里带 `stream_options: {"include_usage": true}` 时，最后一个 chunk 会携带 token 用量
+- Anthropic 协议：事件带 `type` 字段，文本增量在 `type: "content_block_delta"` 的 `delta.text` 里，
+  用量在 `message_start`（输入）和 `message_delta`（累计输出）事件里
+- 发送时会发现 system 提示词、消息历史的真实形状——这就是"聊天上下文"在线上的样子
+
+调试记录保存在本地，密钥已脱敏；实现见 `src/main/debug.ts`（内存留最近 100 条完整记录，更早的按需读盘）。
 
 ## 技术栈（全部最新稳定版）
 
@@ -41,14 +67,15 @@ src/
 │   ├── config.ts          #   全局配置：单 JSON 文件 + safeStorage 加密 API Key
 │   ├── projects.ts        #   项目管理：目录选择，按规范化路径去重
 │   ├── sessions.ts        #   会话持久化：每会话一个 JSON 文件
-│   └── llm.ts             #   LLM 调用：OpenAI 兼容 & Anthropic 双协议，SSE 流式
+│   ├── llm.ts             #   LLM 调用：OpenAI 兼容 & Anthropic 双协议，SSE 流式，代理/计费
+│   └── debug.ts           #   API 调试日志：原始请求/响应永久落盘 + 用量费用统计
 ├── preload/index.ts       # 桥接层：contextBridge 暴露 window.api（渲染进程唯一入口）
 └── renderer/              # 界面（浏览器环境，不碰 Node）
     └── src/
         ├── store.ts       #   极简全局 store + useSyncExternalStore
         ├── actions.ts     #   全部业务动作（组件只展示、不写逻辑）
         ├── App.tsx        #   布局编排
-        └── components/    #   Sidebar / ChatPane / Composer / SettingsDialog
+        └── components/    #   Sidebar / ChatPane / Composer / SettingsDialog / ApiInspector
 ```
 
 ## 架构要点（学习笔记）
@@ -64,6 +91,9 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 - 请求/响应类操作（读配置、存会话）走 `ipcMain.handle` 一问一答
 - LLM 流式输出是持续推送，走单一 `chat:event` 通道，事件带 `sessionId` 区分会话
 - API Key 只存在主进程：渲染进程保存时传原文、读取时只拿 `••••` 掩码
+- **HTTP 代理**：Node 的全局 fetch 不读系统代理环境变量，所以代理走显式配置——配置了 `proxyURL`
+  时主进程用 undici 的 `ProxyAgent` 按请求挂 dispatcher（`src/main/llm.ts`），留空直连；
+  同一代理地址复用同一个 agent；每次调用的"直连/经代理"信息记录在 API 调试面板里
 
 **从 Claude Code 源码（参考代码）吸收的设计**
 
@@ -75,14 +105,15 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 
 ## 下一步路线（建议顺序）
 
-1. Markdown 渲染 + 代码高亮（聊天气泡现在是纯文本 pre-wrap）
-2. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
-3. 工具调用（Tool Use）：让代理能读文件 / 执行命令 —— 这是"AI 编程软件"的核心
-4. 上下文管理：token 计量、历史裁剪、会话压缩
+1. ~~Markdown 渲染 + 代码高亮~~（已完成）
+2. 工具调用（Tool Use）：让代理能读文件 / 执行命令 —— 这是"AI 编程软件"的核心
+3. 上下文管理：token 计量、历史裁剪、会话压缩
+4. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
 5. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发
 
 ## 已知简化（相对完整产品）
 
 - 聊天上下文是纯文本拼接，未做 token 计量与裁剪
 - 单条 LLM 配置（将来扩展为多 Provider 配置档 + 每项目覆盖）
+- 流式期间每条增量都会重渲染整段 Markdown，长回复下可优化为增量渲染
 - 未打包安装器（`electron-vite build` 只出可运行产物）

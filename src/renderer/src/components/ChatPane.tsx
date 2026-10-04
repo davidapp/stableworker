@@ -1,4 +1,7 @@
 import { useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
@@ -77,8 +80,15 @@ export function ChatPane() {
         <div className="message-list" ref={listRef}>
           {messages.map((m) => (
             <div key={m.id} className={`message ${m.role}`}>
-              <div className="bubble">
-                {m.content || (m.streaming ? '思考中…' : '')}
+              <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
+                {m.role === 'assistant' ? (
+                  // 助手消息是 Markdown（模型输出通常带 **加粗**、代码块等语法）
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                    {m.content || (m.streaming ? '思考中…' : '')}
+                  </ReactMarkdown>
+                ) : (
+                  m.content
+                )}
                 {m.streaming && m.content ? <span className="cursor">▍</span> : null}
                 {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
               </div>
