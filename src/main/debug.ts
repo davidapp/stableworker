@@ -27,6 +27,8 @@ interface Exchange {
   kind: 'chat' | 'test'
   /** 工具调用回合序号（1 起）；0 = 非对话请求 */
   round: number
+  /** 本轮请求发送前裁剪掉的历史消息条数（发送前裁剪只影响请求体） */
+  trimmedCount?: number
   startedAt: number
   endedAt: number | null
   provider: string
@@ -150,6 +152,7 @@ export function beginExchange(input: {
   pricing: ModelPricing | null
   peak: boolean
   round?: number
+  trimmedCount?: number
   headers: Record<string, string>
   body: string
 }): Exchange {
@@ -157,6 +160,7 @@ export function beginExchange(input: {
     id: randomUUID(),
     kind: input.kind,
     round: input.round ?? 0,
+    trimmedCount: input.trimmedCount,
     startedAt: Date.now(),
     endedAt: null,
     provider: input.llm.provider,
@@ -331,6 +335,7 @@ function toListItem(ex: Exchange): DebugListItem {
     id: ex.id,
     kind: ex.kind,
     round: ex.round ?? 0,
+    trimmedCount: ex.trimmedCount,
     startedAt: ex.startedAt,
     durationMs: ex.endedAt ? ex.endedAt - ex.startedAt : null,
     provider: ex.provider,

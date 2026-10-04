@@ -140,6 +140,12 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 - **HTTP 代理**：Node 的全局 fetch 不读系统代理环境变量，所以代理走显式配置——配置了 `proxyURL`
   时主进程用 undici 的 `ProxyAgent` 按请求挂 dispatcher（`src/main/llm.ts`），留空直连；
   同一代理地址复用同一个 agent；每次调用的"直连/经代理"信息记录在 API 调试面板里
+- **上下文管理**：
+  - **可见**（4a）：输入框里的环形水位条（点击看构成明细：消息/系统工具/系统提示词 + 缓存命中率，
+    总量与命中率为服务端精确值、拆分为本地估算 `shared/tokens.ts`）
+  - **治理**（4b）：发送前自动裁剪——估算历史超过上下文上限的 70% 时，从最旧的**整组**对话开始
+    丢弃（绝不拆开 tool_calls 与 tool_result）；只影响请求体，会话文件与界面历史保持完整；
+    裁剪条数显示在 API 调试面板的记录上（"已裁剪 N 条"）。实现：`src/main/contextTrim.ts`
 - **多配置档**：`llmProfiles` + `activeLlmId`，输入框下方工具条随时切换激活档；旧版单配置
   在加载时自动迁移为第一个配置档
 - **批准模式**：`✋ 变更前确认`（所有危险操作询问）/ `🛡️ 自动编辑`（`kind: 'edit'` 的文件编辑
@@ -157,8 +163,8 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 
 1. ~~Markdown 渲染 + 代码高亮~~（已完成）
 2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file / write_file / edit_file + 代理循环 + 批准门 + diff 展示）
-3. 工具开关（接入功能开关页）；执行命令类工具（kind: 'system'）
-4. 上下文管理：token 计量、历史裁剪、会话压缩
+3. ~~上下文管理~~（已完成 4a 可见化 + 4b 发送前自动裁剪；可选进阶：裁剪时用摘要替代被丢弃的历史）
+4. 工具开关（接入功能开关页）；执行命令类工具（kind: 'system'）
 5. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
 6. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发
 

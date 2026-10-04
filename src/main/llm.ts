@@ -16,6 +16,7 @@ import {
 import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals } from './approvals'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
+import { trimHistory } from './contextTrim'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
 import type {
@@ -489,7 +490,12 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const controller = new AbortController()
   aborters.set(req.sessionId, controller)
 
+  // 发送前裁剪：估算超过上下文上限的 70%（预留输出与估算误差）时，
+  // 从最旧的整组开始丢弃。只影响请求体；会话文件与界面历史保持完整。
   const conversation: HistoryMessage[] = req.messages.map((m) => ({ role: m.role, blocks: m.blocks }))
+  const historyBudget = (cfg.contextLimit ?? 0) > 0 ? Math.floor((cfg.contextLimit ?? 0) * 0.7) : Number.POSITIVE_INFINITY
+  const trim = trimHistory(conversation, historyBudget)
+  let working = trim.kept
   let exchange: ReturnType<typeof beginExchange> | null = null
 
   try {
@@ -499,7 +505,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
       const { url, headers, body } = buildRequest(
         llm,
         apiKey,
-        toApiTurns(conversation),
+        toApiTurns(working),
         tools,
         true,
         projectPath,
@@ -513,6 +519,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         proxyURL,
         pricing,
         peak,
+        trimmedCount: trim.trimmed ? trim.trimmedCount : undefined,
         headers: maskHeaders(headers),
         body,
       })
@@ -564,6 +571,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
       exchange = null
 
       conversation.push({ role: 'assistant', blocks: assistantBlocks })
+      working.push({ role: 'assistant', blocks: assistantBlocks })
 
       const toolUses = assistantBlocks.filter((b): b is ToolUseBlock => b.type === 'tool_use')
       if (toolUses.length === 0) {

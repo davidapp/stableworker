@@ -204,6 +204,8 @@ export interface DebugListItem {
   kind: 'chat' | 'test'
   /** 工具调用回合序号（1 起）；0 = 非对话请求（如测试连接） */
   round: number
+  /** 发送前裁剪掉的历史消息条数（0/undefined = 未裁剪） */
+  trimmedCount?: number
   startedAt: number
   durationMs: number | null
   provider: string

@@ -147,6 +147,7 @@ export function ApiInspector() {
                   <div className="inspector-item-sub">
                     {new Date(item.startedAt).toLocaleTimeString()}
                     {item.round > 1 ? ` · R${item.round}` : ''}
+                    {item.trimmedCount ? ` · 已裁剪 ${item.trimmedCount} 条` : ''}
                     {` · ${item.eventCount} 个事件`}
                     {item.durationMs != null ? ` · ${item.durationMs}ms` : ''}
                     {item.cost ? ` · ${moneyLabel(item.cost)}` : ''}
