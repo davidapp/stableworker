@@ -51,7 +51,9 @@ export function ChatPane() {
     const el = listRef.current
     if (!el) return
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (distance <= 80) el.scrollTop = el.scrollHeight
+    // 用户自己发送消息（最后一条是用户消息）时无条件滚到底部，不受"上滚阅读"保护影响
+    const userJustSent = messages[messages.length - 1]?.role === 'user'
+    if (distance <= 80 || userJustSent) el.scrollTop = el.scrollHeight
     setShowJumpButton(distance > el.clientHeight)
   }, [messages])
 
