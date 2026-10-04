@@ -34,6 +34,7 @@ function applyConfig(cfg: ConfigView): void {
     features: cfg.features,
     sidebarWidth: cfg.sidebarWidth,
     contextLimit: cfg.contextLimit,
+    toolSwitches: cfg.toolSwitches,
   })
 }
 
@@ -160,6 +161,11 @@ export async function setThinkingEffort(effort: string): Promise<void> {
 
 export async function setSidebarWidth(width: number): Promise<void> {
   const cfg = await window.api.setSidebarWidth(width)
+  applyConfig(cfg)
+}
+
+export async function setToolSwitch(name: string, enabled: boolean): Promise<void> {
+  const cfg = await window.api.setToolSwitch(name, enabled)
   applyConfig(cfg)
 }
 

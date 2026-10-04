@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
+import { ipcMain } from 'electron'
 import type { ToolUseBlock } from '../../shared/types'
 
 /**
@@ -248,4 +249,24 @@ export async function runToolUseBlock(
   projectPath: string | null,
 ): Promise<ToolRunResult> {
   return executeToolCall(block.name, block.input, projectPath)
+}
+
+// ---------- 工具元数据（供"工具开关"设置页展示） ----------
+
+export interface ToolMeta {
+  name: string
+  description: string
+  requiresApproval: boolean
+  kind: 'read' | 'edit' | 'system' | undefined
+}
+
+export function registerToolHandlers(): void {
+  ipcMain.handle('tools:list', (): ToolMeta[] =>
+    getToolDefinitions().map((d) => ({
+      name: d.name,
+      description: d.description,
+      requiresApproval: Boolean(d.requiresApproval),
+      kind: d.kind,
+    })),
+  )
 }

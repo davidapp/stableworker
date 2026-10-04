@@ -150,6 +150,8 @@ export interface ConfigView {
   sidebarWidth: number
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
+  /** 工具开关：工具名 → 是否启用；未记录的工具默认启用 */
+  toolSwitches: Record<string, boolean>
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */

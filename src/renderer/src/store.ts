@@ -38,6 +38,8 @@ export interface AppState {
   sidebarWidth: number
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
+  /** 工具开关：工具名 → 是否启用；未记录的默认启用 */
+  toolSwitches: Record<string, boolean>
   /** 设置对话框当前页 */
   settingsPage: string
   settingsOpen: boolean
@@ -79,6 +81,7 @@ export const store = createStore<AppState>({
   features: [],
   sidebarWidth: 240,
   contextLimit: 0,
+  toolSwitches: {},
   settingsPage: 'llm',
   settingsOpen: false,
   streaming: false,

@@ -1511,6 +1511,12 @@ body {
   white-space: nowrap;
 }
 
+.tool-switch-name {
+  font-family: Consolas, 'Courier New', monospace;
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+
 /* ---------- 配置档管理器 ---------- */
 .profile-list {
   display: flex;

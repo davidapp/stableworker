@@ -4,6 +4,7 @@ import * as actions from '../actions'
 import { LlmConfigPage } from './settings/LlmConfigPage'
 import { PricingPage } from './settings/PricingPage'
 import { FeaturesPage } from './settings/FeaturesPage'
+import { ToolSwitchesPage } from './settings/ToolSwitchesPage'
 
 /**
  * 统一设置对话框：左侧导航 + 右侧页面。
@@ -13,6 +14,7 @@ import { FeaturesPage } from './settings/FeaturesPage'
 const PAGES = [
   { id: 'llm', label: 'LLM 配置' },
   { id: 'pricing', label: '模型价格' },
+  { id: 'tools', label: '工具开关' },
   { id: 'features', label: '功能开关' },
 ] as const
 
@@ -41,12 +43,15 @@ export function SettingsDialog() {
         </aside>
 
         <section className="settings-content">
-          {/* 三个页面保持挂载，切换导航不丢失未保存的编辑 */}
+          {/* 各页面保持挂载，切换导航不丢失未保存的编辑 */}
           <div style={{ display: active === 'llm' ? 'block' : 'none' }}>
             <LlmConfigPage />
           </div>
           <div style={{ display: active === 'pricing' ? 'block' : 'none' }}>
             <PricingPage />
+          </div>
+          <div style={{ display: active === 'tools' ? 'block' : 'none' }}>
+            <ToolSwitchesPage />
           </div>
           <div style={{ display: active === 'features' ? 'block' : 'none' }}>
             <FeaturesPage />

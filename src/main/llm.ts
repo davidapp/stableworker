@@ -475,7 +475,8 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
 
   const projectPath = cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
-  const tools = getToolDefinitions()
+  // 工具开关：被禁用的工具不随请求发给模型（模型不知道 = 不会调用）
+  const tools = getToolDefinitions().filter((d) => cfg.toolSwitches?.[d.name] !== false)
   const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
   const peak = isPeakTime(new Date(), cfg.holidays ?? [])
   const proxyURL = llm.proxyURL?.trim() || null

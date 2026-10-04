@@ -66,6 +66,7 @@ interface StoredConfig {
   features?: FeatureEntry[]
   sidebarWidth?: number
   contextLimit?: number
+  toolSwitches?: Record<string, boolean>
 }
 
 let cache: StoredConfig | null = null
@@ -110,6 +111,7 @@ export async function loadConfig(): Promise<StoredConfig> {
     const model = cache.llmProfiles?.find((p) => p.id === cache?.activeLlmId)?.model ?? ''
     cache.contextLimit = defaultContextLimit(model)
   }
+  if (cache.toolSwitches === undefined) cache.toolSwitches = {}
   return cache
 }
 
@@ -167,6 +169,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     features: cfg.features ?? [],
     sidebarWidth: cfg.sidebarWidth ?? 240,
     contextLimit: cfg.contextLimit ?? 0,
+    toolSwitches: cfg.toolSwitches ?? {},
   }
 }
 
@@ -249,6 +252,14 @@ export function registerConfigHandlers(): void {
     if (typeof limit === 'number' && Number.isFinite(limit) && limit >= 0) {
       cfg.contextLimit = Math.round(limit)
     }
+    return saveConfig(cfg)
+  })
+
+  // 设置工具开关（禁用的工具不会随请求发给模型）
+  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.toolSwitches ??= {}
+    cfg.toolSwitches[name] = enabled
     return saveConfig(cfg)
   })
 
