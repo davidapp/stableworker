@@ -80,6 +80,18 @@ export function Sidebar() {
                         }}
                       >
                         <span className="session-title">{s.title}</span>
+                        <button
+                          className="icon-btn session-delete"
+                          title="删除会话"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (window.confirm(`删除会话「${s.title}」？消息记录将一并删除，不可恢复。`)) {
+                              void actions.deleteSession(p.id, s.id)
+                            }
+                          }}
+                        >
+                          ×
+                        </button>
                       </li>
                     ),
                   )}

@@ -192,7 +192,10 @@ body {
 }
 
 .session-leaf {
-  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px 5px 8px;
   border-radius: 6px;
   cursor: pointer;
   color: var(--text-dim);
@@ -211,10 +214,21 @@ body {
 }
 
 .session-title {
-  display: block;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-delete {
+  flex-shrink: 0;
+  visibility: hidden;
+  font-size: 12px;
+}
+
+.session-leaf:hover .session-delete {
+  visibility: visible;
 }
 
 .session-empty {

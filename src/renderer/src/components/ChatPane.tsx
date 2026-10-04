@@ -104,14 +104,6 @@ export function ChatPane() {
             🧹 清空上下文
           </button>
         ) : null}
-        {activeSessionId && activeProjectId && (
-          <button
-            className="btn btn-danger-ghost"
-            onClick={() => void actions.deleteSession(activeProjectId, activeSessionId)}
-          >
-            删除会话
-          </button>
-        )}
       </header>
 
       {!activeLlm ? (
