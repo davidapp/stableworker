@@ -138,17 +138,14 @@ function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
       turns.push({ kind: 'user', text: textOfBlocks(msg.blocks) })
       continue
     }
-    let texts: string[] = []
-    let reasoning: ReasoningPart[] = []
-    let calls: ToolCallDraft[] = []
-    const flush = (): void => {
-      if (texts.length || calls.length || reasoning.length) {
-        turns.push({ kind: 'assistant', reasoning, text: texts.join('\n\n'), toolCalls: calls })
-      }
-      texts = []
-      reasoning = []
-      calls = []
-    }
+    // 助手消息整体映射为一个 API 回合：reasoning + 文本 + 全部工具调用在同一条
+    // 助手消息里，所有结果合并为紧随其后的 tool_results 回合。
+    // 注意不能按单个工具调用切分：DeepSeek thinking 模式要求每条带 tool_calls
+    // 的助手消息都携带 reasoning_content，拆开会让后续调用丢失思考内容导致 400。
+    const texts: string[] = []
+    const reasoning: ReasoningPart[] = []
+    const calls: ToolCallDraft[] = []
+    const results: { toolUseId: string; content: string; isError: boolean }[] = []
     for (const b of msg.blocks) {
       if (b.type === 'text') {
         texts.push(b.text)
@@ -158,14 +155,15 @@ function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
         continue // 中断/未批准留下的无结果调用不进历史
       } else {
         calls.push({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })
-        flush()
-        turns.push({
-          kind: 'tool_results',
-          results: [{ toolUseId: b.id, content: b.result ?? '', isError: b.status === 'error' }],
-        })
+        results.push({ toolUseId: b.id, content: b.result ?? '', isError: b.status === 'error' })
       }
     }
-    flush()
+    if (calls.length || texts.length || reasoning.length) {
+      turns.push({ kind: 'assistant', reasoning, text: texts.join('\n\n'), toolCalls: calls })
+    }
+    if (results.length) {
+      turns.push({ kind: 'tool_results', results })
+    }
   }
   return turns
 }
