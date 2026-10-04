@@ -221,12 +221,12 @@ export function ApiInspector() {
                       </>
                     ) : null}
 
-                    {detail.reasoningText ? (
-                      <>
-                        <h3>思考过程（reasoning_content，按协议约定不回传给模型）</h3>
-                        <DebugPre text={detail.reasoningText} />
-                      </>
-                    ) : null}
+                {detail.reasoningText ? (
+                  <>
+                    <h3>思考过程（reasoning_content / thinking，DeepSeek 要求随历史回传）</h3>
+                    <DebugPre text={detail.reasoningText} />
+                  </>
+                ) : null}
                   </>
                 ) : null}
 

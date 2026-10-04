@@ -242,7 +242,9 @@ export async function sendChat(text: string): Promise<void> {
     .map((m) => ({
       role: m.role,
       blocks: m.role === 'assistant'
-        ? m.blocks.filter((b) => b.type === 'text' || b.status === 'done' || b.status === 'error')
+        ? m.blocks.filter(
+            (b) => b.type === 'text' || b.type === 'reasoning' || b.status === 'done' || b.status === 'error',
+          )
         : m.blocks,
     }))
 
@@ -282,6 +284,15 @@ function appendTextDelta(blocks: MessageBlock[], delta: string): MessageBlock[] 
   return [...blocks, { type: 'text', text: delta }]
 }
 
+/** 思考增量追加到最后一个思考块（推理模型的 reasoning_content / thinking） */
+function appendReasoningDelta(blocks: MessageBlock[], delta: string): MessageBlock[] {
+  const last = blocks[blocks.length - 1]
+  if (last && last.type === 'reasoning') {
+    return [...blocks.slice(0, -1), { type: 'reasoning', text: last.text + delta }]
+  }
+  return [...blocks, { type: 'reasoning', text: delta }]
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {
@@ -289,6 +300,8 @@ export function subscribeChatEvents(): () => void {
     if (event.sessionId !== s.activeSessionId) return
     if (event.type === 'delta') {
       updateStreamingAssistant((m) => ({ ...m, blocks: appendTextDelta(m.blocks, event.delta) }))
+    } else if (event.type === 'reasoning_delta') {
+      updateStreamingAssistant((m) => ({ ...m, blocks: appendReasoningDelta(m.blocks, event.delta) }))
     } else if (event.type === 'tool_use') {
       const block: ToolUseBlock = {
         type: 'tool_use',

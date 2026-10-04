@@ -99,9 +99,14 @@ interface ToolCallDraft {
   argsJson: string
 }
 
+interface ReasoningPart {
+  text: string
+  signature?: string
+}
+
 type ApiTurn =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string; toolCalls: ToolCallDraft[] }
+  | { kind: 'assistant'; reasoning: ReasoningPart[]; text: string; toolCalls: ToolCallDraft[] }
   | { kind: 'tool_results'; results: { toolUseId: string; content: string; isError: boolean }[] }
 
 function textOfBlocks(blocks: MessageBlock[]): string {
@@ -134,17 +139,21 @@ function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
       continue
     }
     let texts: string[] = []
+    let reasoning: ReasoningPart[] = []
     let calls: ToolCallDraft[] = []
     const flush = (): void => {
-      if (texts.length || calls.length) {
-        turns.push({ kind: 'assistant', text: texts.join('\n\n'), toolCalls: calls })
+      if (texts.length || calls.length || reasoning.length) {
+        turns.push({ kind: 'assistant', reasoning, text: texts.join('\n\n'), toolCalls: calls })
       }
       texts = []
+      reasoning = []
       calls = []
     }
     for (const b of msg.blocks) {
       if (b.type === 'text') {
         texts.push(b.text)
+      } else if (b.type === 'reasoning') {
+        reasoning.push({ text: b.text, signature: b.signature })
       } else if (b.status !== 'done' && b.status !== 'error') {
         continue // 中断/未批准留下的无结果调用不进历史
       } else {
@@ -179,6 +188,10 @@ function buildRequest(
         if (t.text) messages.push({ role: 'user', content: t.text })
       } else if (t.kind === 'assistant') {
         const content: Record<string, unknown>[] = []
+        // Anthropic：thinking 块必须带签名才能回传；无签名（如来自其他协议的记录）时跳过
+        for (const r of t.reasoning) {
+          if (r.signature) content.push({ type: 'thinking', thinking: r.text, signature: r.signature })
+        }
         if (t.text) content.push({ type: 'text', text: t.text })
         for (const c of t.toolCalls) {
           content.push({ type: 'tool_use', id: c.id, name: c.name, input: parseLooseJson(c.argsJson) })
@@ -225,9 +238,12 @@ function buildRequest(
     if (t.kind === 'user') {
       messages.push({ role: 'user', content: t.text })
     } else if (t.kind === 'assistant') {
+      const reasoningText = t.reasoning.map((r) => r.text).join('\n')
       messages.push({
         role: 'assistant',
         content: t.text || null,
+        // DeepSeek thinking 模式强制要求把上一轮的 reasoning_content 原样传回
+        ...(reasoningText ? { reasoning_content: reasoningText } : {}),
         ...(t.toolCalls.length
           ? {
               tool_calls: t.toolCalls.map((c) => ({
@@ -318,7 +334,9 @@ function createStreamCollector(
   const oaCalls = new Map<number, { id: string; name: string; args: string }>()
   // Anthropic 状态：content block 按 index 顺序排列
   const aItems: Array<
-    { kind: 'text'; text: string } | { kind: 'thinking'; text: string } | { kind: 'tool'; id: string; name: string; args: string }
+    | { kind: 'text'; text: string }
+    | { kind: 'thinking'; text: string; signature: string }
+    | { kind: 'tool'; id: string; name: string; args: string }
   > = []
 
   const onEvent = (json: Record<string, unknown>): void => {
@@ -329,7 +347,7 @@ function createStreamCollector(
         if (cb?.type === 'tool_use' && cb.id && cb.name) {
           aItems[index] = { kind: 'tool', id: cb.id, name: cb.name, args: '' }
         } else if (cb?.type === 'thinking') {
-          aItems[index] = { kind: 'thinking', text: '' }
+          aItems[index] = { kind: 'thinking', text: '', signature: '' }
         } else {
           aItems[index] = { kind: 'text', text: '' }
         }
@@ -339,6 +357,7 @@ function createStreamCollector(
           type?: string
           text?: string
           thinking?: string
+          signature?: string
           partial_json?: string
         } | undefined
         if (!item || !delta) return
@@ -347,6 +366,9 @@ function createStreamCollector(
           emit({ type: 'delta', sessionId, delta: delta.text })
         } else if (item.kind === 'thinking' && delta.type === 'thinking_delta' && delta.thinking) {
           item.text += delta.thinking
+          emit({ type: 'reasoning_delta', sessionId, delta: delta.thinking })
+        } else if (item.kind === 'thinking' && delta.type === 'signature_delta' && delta.signature) {
+          item.signature += delta.signature
         } else if (item.kind === 'tool' && delta.type === 'input_json_delta' && delta.partial_json) {
           item.args += delta.partial_json
         }
@@ -371,9 +393,12 @@ function createStreamCollector(
         }>
       | undefined
     const delta = choices?.[0]?.delta
-    // 推理模型（如 DeepSeek）的思考内容：只记录展示，不回传给后续请求
+    // 推理模型（如 DeepSeek）的思考内容：累积为 reasoning 块，随历史回传（thinking 模式强制要求）
     const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning
-    if (reasoningDelta) oaReasoning += reasoningDelta
+    if (reasoningDelta) {
+      oaReasoning += reasoningDelta
+      emit({ type: 'reasoning_delta', sessionId, delta: reasoningDelta })
+    }
     if (delta?.content) {
       oaText += delta.content
       emit({ type: 'delta', sessionId, delta: delta.content })
@@ -390,17 +415,30 @@ function createStreamCollector(
 
   const finish = (): { blocks: MessageBlock[]; reasoning: string } => {
     if (provider === 'anthropic') {
-      const reasoning = aItems
-        .filter((i): i is { kind: 'thinking'; text: string } => i.kind === 'thinking')
-        .map((i) => i.text)
-        .join('\n')
-      const blocks: MessageBlock[] = aItems
-        .filter((i) => i.kind !== 'thinking')
-        .map((item): MessageBlock =>
-          item.kind === 'text'
-            ? { type: 'text', text: item.text }
-            : { type: 'tool_use', id: item.id, name: item.name, input: parseLooseJson(item.args), status: 'running' },
-        )
+      let reasoning = ''
+      const blocks: MessageBlock[] = []
+      for (const item of aItems) {
+        if (item.kind === 'text') {
+          blocks.push({ type: 'text', text: item.text })
+        } else if (item.kind === 'thinking') {
+          reasoning = reasoning ? `${reasoning}\n${item.text}` : item.text
+          if (item.text) {
+            blocks.push({
+              type: 'reasoning',
+              text: item.text,
+              ...(item.signature ? { signature: item.signature } : {}),
+            })
+          }
+        } else {
+          blocks.push({
+            type: 'tool_use',
+            id: item.id,
+            name: item.name,
+            input: parseLooseJson(item.args),
+            status: 'running',
+          })
+        }
+      }
       return { blocks, reasoning }
     }
     const callBlocks: MessageBlock[] = [...oaCalls.entries()]
@@ -412,6 +450,7 @@ function createStreamCollector(
         return { type: 'tool_use', id, name: c.name, input, status: 'running' }
       })
     const blocks: MessageBlock[] = []
+    if (oaReasoning) blocks.push({ type: 'reasoning', text: oaReasoning })
     if (oaText) blocks.push({ type: 'text', text: oaText })
     blocks.push(...callBlocks)
     return { blocks, reasoning: oaReasoning }

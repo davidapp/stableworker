@@ -72,6 +72,14 @@ export interface TextBlock {
   text: string
 }
 
+/** 推理模型的思考内容块：随会话持久化，并按协议要求回传（DeepSeek 强制、Anthropic 需带签名） */
+export interface ReasoningBlock {
+  type: 'reasoning'
+  text: string
+  /** Anthropic 的思考块签名（signature_delta），回传时必须携带；其他协议无此字段 */
+  signature?: string
+}
+
 export interface ToolUseBlock {
   type: 'tool_use'
   /** 与 API 的 tool_use id 对应（OpenAI tool_call_id / Anthropic tool_use_id） */
@@ -90,7 +98,7 @@ export interface ToolUseBlock {
   durationMs?: number
 }
 
-export type MessageBlock = TextBlock | ToolUseBlock
+export type MessageBlock = TextBlock | ReasoningBlock | ToolUseBlock
 
 export interface ChatMessage {
   id: string
@@ -164,6 +172,7 @@ export interface LLMTestPayload extends LLMConfig {
 /** 主进程 → 渲染进程 的流式聊天事件（含工具调用与批准请求） */
 export type ChatEvent =
   | { type: 'delta'; sessionId: string; delta: string }
+  | { type: 'reasoning_delta'; sessionId: string; delta: string }
   | { type: 'tool_use'; sessionId: string; toolUseId: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string }

@@ -889,6 +889,36 @@ body {
   color: var(--text-dim);
 }
 
+/* ---------- 聊天内折叠的思考过程 ---------- */
+.reasoning-collapse {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.reasoning-collapse summary {
+  cursor: pointer;
+  padding: 5px 10px;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.reasoning-collapse summary:hover {
+  color: var(--text);
+}
+
+.reasoning-text {
+  padding: 6px 10px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-dim);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .tool-result summary {
   cursor: pointer;
   padding: 5px 10px;

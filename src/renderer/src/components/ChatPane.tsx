@@ -106,17 +106,26 @@ export function ChatPane() {
                 ) : m.blocks.length === 0 ? (
                   m.streaming ? <span className="thinking">思考中…</span> : null
                 ) : (
-                  m.blocks.map((b, i) =>
-                    b.type === 'text' ? (
-                      <div key={i} className="block-text">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                          {b.text}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <ToolCallCard key={b.id} block={b} />
-                    ),
-                  )
+                  m.blocks.map((b, i) => {
+                    if (b.type === 'reasoning') {
+                      return (
+                        <details key={i} className="reasoning-collapse">
+                          <summary>🤔 思考过程</summary>
+                          <div className="reasoning-text">{b.text}</div>
+                        </details>
+                      )
+                    }
+                    if (b.type === 'text') {
+                      return (
+                        <div key={i} className="block-text">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                            {b.text}
+                          </ReactMarkdown>
+                        </div>
+                      )
+                    }
+                    return <ToolCallCard key={b.id} block={b} />
+                  })
                 )}
                 {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
                 {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
