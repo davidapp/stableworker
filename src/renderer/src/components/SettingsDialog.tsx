@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../store'
 import * as actions from '../actions'
-import type { ConfigView, ProviderType } from '../../../shared/types'
+import type { Currency, ModelPricing, ProviderType } from '../../../shared/types'
 
 /**
  * 预设配置：选一下就填好名称 / 协议 / BaseURL，模型给出常见候选（仍可手输），
@@ -106,7 +106,7 @@ const PROVIDER_OPTIONS: {
 const stripSlash = (s: string): string => s.replace(/\/+$/, '')
 
 /** 已保存的配置反查预设（按 baseURL + provider 匹配），匹配不上算自定义 */
-function detectPresetId(llm: ConfigView['llm']): string {
+function detectPresetId(llm: ReturnType<typeof useApp>['llm']): string {
   if (!llm) return 'custom'
   const hit = PRESETS.find(
     (p) => p.baseURL && stripSlash(p.baseURL) === stripSlash(llm.baseURL) && p.provider === llm.provider,
@@ -114,13 +114,33 @@ function detectPresetId(llm: ConfigView['llm']): string {
   return hit?.id ?? 'custom'
 }
 
-const parsePrice = (s: string): number | undefined => {
+// ---------- 模型价格编辑 ----------
+
+const PRICE_KEYS = [
+  { key: 'inputCacheHitOffPeak', label: '命中·闲' },
+  { key: 'inputCacheHitPeak', label: '命中·峰' },
+  { key: 'inputCacheMissOffPeak', label: '未命中·闲' },
+  { key: 'inputCacheMissPeak', label: '未命中·峰' },
+  { key: 'outputOffPeak', label: '输出·闲' },
+  { key: 'outputPeak', label: '输出·峰' },
+] as const
+
+type PriceKey = (typeof PRICE_KEYS)[number]['key']
+
+/** 表格里以字符串编辑，保存时统一 parseFloat */
+interface PricingDraft {
+  model: string
+  currency: Currency
+  prices: Record<PriceKey, string>
+}
+
+const parsePrice = (s: string): number => {
   const n = parseFloat(s)
-  return Number.isFinite(n) && n >= 0 ? n : undefined
+  return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
 export function SettingsDialog() {
-  const { llm } = useApp()
+  const { llm, modelPricing } = useApp()
   // 组件由 App 条件挂载，每次打开都会基于最新配置重新初始化
   const [form, setForm] = useState(() => ({
     presetId: detectPresetId(llm),
@@ -129,10 +149,22 @@ export function SettingsDialog() {
     baseURL: llm?.baseURL ?? '',
     model: llm?.model ?? '',
     proxyURL: llm?.proxyURL ?? '',
-    priceInput: llm?.priceInputUSD != null ? String(llm.priceInputUSD) : '',
-    priceOutput: llm?.priceOutputUSD != null ? String(llm.priceOutputUSD) : '',
     apiKey: '',
   }))
+  const [pricing, setPricing] = useState<PricingDraft[]>(() =>
+    modelPricing.map((p) => ({
+      model: p.model,
+      currency: p.currency,
+      prices: {
+        inputCacheHitOffPeak: String(p.inputCacheHitOffPeak),
+        inputCacheHitPeak: String(p.inputCacheHitPeak),
+        inputCacheMissOffPeak: String(p.inputCacheMissOffPeak),
+        inputCacheMissPeak: String(p.inputCacheMissPeak),
+        outputOffPeak: String(p.outputOffPeak),
+        outputPeak: String(p.outputPeak),
+      },
+    })),
+  )
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState('')
 
@@ -158,15 +190,36 @@ export function SettingsDialog() {
     setTestResult('')
   }
 
+  const updatePricingRow = (index: number, patch: Partial<PricingDraft>): void => {
+    setPricing((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+  }
+
+  const updatePriceCell = (index: number, key: PriceKey, value: string): void => {
+    setPricing((rows) =>
+      rows.map((r, i) => (i === index ? { ...r, prices: { ...r.prices, [key]: value } } : r)),
+    )
+  }
+
   const save = async (): Promise<void> => {
+    const cleaned: ModelPricing[] = pricing
+      .filter((r) => r.model.trim())
+      .map((r) => ({
+        model: r.model.trim(),
+        currency: r.currency,
+        inputCacheHitOffPeak: parsePrice(r.prices.inputCacheHitOffPeak),
+        inputCacheHitPeak: parsePrice(r.prices.inputCacheHitPeak),
+        inputCacheMissOffPeak: parsePrice(r.prices.inputCacheMissOffPeak),
+        inputCacheMissPeak: parsePrice(r.prices.inputCacheMissPeak),
+        outputOffPeak: parsePrice(r.prices.outputOffPeak),
+        outputPeak: parsePrice(r.prices.outputPeak),
+      }))
+    await actions.savePricing(cleaned)
     await actions.saveLlm({
       name: form.name,
       provider: form.provider,
       baseURL: form.baseURL,
       model: form.model,
       proxyURL: form.proxyURL,
-      priceInputUSD: parsePrice(form.priceInput),
-      priceOutputUSD: parsePrice(form.priceOutput),
       apiKey: form.apiKey.trim() || undefined,
     })
   }
@@ -180,8 +233,6 @@ export function SettingsDialog() {
       baseURL: form.baseURL,
       model: form.model,
       proxyURL: form.proxyURL,
-      priceInputUSD: parsePrice(form.priceInput),
-      priceOutputUSD: parsePrice(form.priceOutput),
       apiKey: form.apiKey.trim() || undefined,
     })
     setTestResult(res.ok ? `✅ ${res.message}` : `❌ ${res.message}`)
@@ -206,7 +257,7 @@ export function SettingsDialog() {
 
         {preset.docsURL ? (
           <div className="docs-link">
-            官方文档（获取 API Key / 模型列表）：
+            官方文档（获取 API Key / 模型列表 / 定价）：
             <a href={preset.docsURL} target="_blank" rel="noreferrer">
               {preset.docsURL}
             </a>
@@ -281,33 +332,80 @@ export function SettingsDialog() {
           <small>填写后该配置的所有 API 请求经此代理发送（http/https 代理）；留空则直连。</small>
         </label>
 
-        <label className="field">
-          <span>模型价格（可选，美元 / 每百万 tokens）</span>
-          <div className="price-row">
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={form.priceInput}
-              placeholder="输入单价"
-              title="输入 tokens 单价"
-              onChange={(e) => setForm({ ...form, priceInput: e.target.value })}
-            />
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={form.priceOutput}
-              placeholder="输出单价"
-              title="输出 tokens 单价"
-              onChange={(e) => setForm({ ...form, priceOutput: e.target.value })}
-            />
+        <div className="field">
+          <span>模型价格表（本币 / 每百万 tokens，供 API 调试面板精确计费）</span>
+          <div className="pricing-table">
+            <div className="pricing-row pricing-head">
+              <span>模型</span>
+              <span>币种</span>
+              {PRICE_KEYS.map((k) => (
+                <span key={k.key}>{k.label}</span>
+              ))}
+              <span />
+            </div>
+            {pricing.map((row, i) => (
+              <div className="pricing-row" key={i}>
+                <input
+                  value={row.model}
+                  placeholder="模型名"
+                  onChange={(e) => updatePricingRow(i, { model: e.target.value })}
+                />
+                <select
+                  value={row.currency}
+                  onChange={(e) => updatePricingRow(i, { currency: e.target.value as Currency })}
+                >
+                  <option value="CNY">¥</option>
+                  <option value="USD">$</option>
+                </select>
+                {PRICE_KEYS.map((k) => (
+                  <input
+                    key={k.key}
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={row.prices[k.key]}
+                    title={`${k.label}（每百万 tokens）`}
+                    onChange={(e) => updatePriceCell(i, k.key, e.target.value)}
+                  />
+                ))}
+                <button
+                  className="icon-btn pricing-remove"
+                  title="删除该模型价格"
+                  onClick={() => setPricing((rows) => rows.filter((_, idx) => idx !== i))}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
+          <button
+            className="btn"
+            onClick={() =>
+              setPricing((rows) => [
+                ...rows,
+                {
+                  model: form.model,
+                  currency: 'CNY',
+                  prices: {
+                    inputCacheHitOffPeak: '',
+                    inputCacheHitPeak: '',
+                    inputCacheMissOffPeak: '',
+                    inputCacheMissPeak: '',
+                    outputOffPeak: '',
+                    outputPeak: '',
+                  },
+                },
+              ])
+            }
+          >
+            ＋ 添加模型价格
+          </button>
           <small>
-            用于在 API 调试面板估算每次调用的花费，单价见服务商定价页；API 若直接返回金额（如
-            OpenRouter）则以返回值为准。留空则只记录 token 用量。
+            命中/未命中 = 输入 tokens 的缓存缓存命中与未命中单价；闲/峰 = 高峰/空闲时段（北京时间：
+            工作日 09:00–12:00、14:00–18:00 为高峰，周末与法定节假日全天空闲，按请求发起时刻定档）。
+            法定节假日表在 config.json 的 holidays 字段维护。
           </small>
-        </label>
+        </div>
 
         {testResult ? <div className="test-result">{testResult}</div> : null}
 

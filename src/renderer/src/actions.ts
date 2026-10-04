@@ -1,5 +1,5 @@
 import { store } from './store'
-import type { ChatEvent, ChatMessage, ConfigView, LLMConfig, Session, SessionMeta } from '../../shared/types'
+import type { ChatEvent, ChatMessage, ConfigView, LLMConfig, ModelPricing, Session, SessionMeta } from '../../shared/types'
 
 /**
  * 渲染进程的所有动作收敛在这里，组件只负责展示与调用动作。
@@ -10,7 +10,13 @@ const uid = (): string =>
   typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Math.random().toString(36).slice(2)
 
 function applyConfig(cfg: ConfigView): void {
-  store.setState({ projects: cfg.projects, activeProjectId: cfg.activeProjectId, llm: cfg.llm })
+  store.setState({
+    projects: cfg.projects,
+    activeProjectId: cfg.activeProjectId,
+    llm: cfg.llm,
+    modelPricing: cfg.modelPricing,
+    holidays: cfg.holidays,
+  })
 }
 
 function toMeta(session: Session): SessionMeta {
@@ -104,6 +110,11 @@ export async function saveLlm(input: LLMConfig & { apiKey?: string }): Promise<v
   const cfg = await window.api.saveLlm(input)
   applyConfig(cfg)
   closeSettings()
+}
+
+export async function savePricing(pricing: ModelPricing[]): Promise<void> {
+  const cfg = await window.api.savePricing(pricing)
+  applyConfig(cfg)
 }
 
 /** 把当前会话整体写盘，并同步会话列表的 updatedAt 排序 */

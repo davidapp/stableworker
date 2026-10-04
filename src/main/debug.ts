@@ -2,7 +2,8 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import type { DebugDetail, DebugListItem, LLMConfig } from '../shared/types'
+import { computeCost } from './pricing'
+import type { DebugDetail, DebugListItem, LLMConfig, ModelPricing, Money } from '../shared/types'
 
 /**
  * API 调用检查器（学习用途）：
@@ -14,7 +15,7 @@ import type { DebugDetail, DebugListItem, LLMConfig } from '../shared/types'
  * 敏感头（API Key）已脱敏；"清空"会删除磁盘上的全部记录。
  *
  * 费用：API 返回的是 token 用量而非金额。usage.cost 直接给出金额的服务商
- * （如 OpenRouter）按报告值记账；否则按请求时快照的模型单价（美元/百万 tokens）估算。
+ * （如 OpenRouter）按报告值记账；否则按请求时快照的模型价格表精确计算（见 pricing.ts）。
  */
 
 const MAX_EVENTS_PER_EXCHANGE = 800
@@ -43,12 +44,15 @@ interface Exchange {
   usage: unknown
   inputTokens: number | null
   outputTokens: number | null
-  /** 费用（美元）：provider 报告或按价格快照估算 */
-  costUSD: number | null
-  costSource: 'provider' | 'estimated' | null
-  /** 请求时的模型价格快照（美元 / 每百万 tokens）；null = 未配置价格 */
-  priceInputUSD: number | null
-  priceOutputUSD: number | null
+  /** 缓存命中/未命中的输入拆分（按 usage 里的对应字段提取） */
+  cacheHitTokens: number | null
+  cacheMissTokens: number | null
+  /** 本次费用（精确十进制字符串）；null = 未能计费 */
+  cost: Money | null
+  /** 请求时快照的模型价格表；null = 配置里没有该模型的价格 */
+  pricing: ModelPricing | null
+  /** 请求发起时刻（北京时间）是否高峰时段 */
+  peak: boolean
   /** 非流式请求（测试连接）的原始响应体 */
   responseBody: string | null
   error: string | null
@@ -135,6 +139,8 @@ export function beginExchange(input: {
   method: string
   url: string
   proxyURL: string | null
+  pricing: ModelPricing | null
+  peak: boolean
   headers: Record<string, string>
   body: string
 }): Exchange {
@@ -157,10 +163,11 @@ export function beginExchange(input: {
     usage: null,
     inputTokens: null,
     outputTokens: null,
-    costUSD: null,
-    costSource: null,
-    priceInputUSD: input.llm.priceInputUSD ?? null,
-    priceOutputUSD: input.llm.priceOutputUSD ?? null,
+    cacheHitTokens: null,
+    cacheMissTokens: null,
+    cost: null,
+    pricing: input.pricing,
+    peak: input.peak,
     responseBody: null,
     error: null,
   }
@@ -196,8 +203,9 @@ export function recordDelta(ex: Exchange, delta: string): void {
 
 /**
  * 从响应 JSON 中提取 usage 并重算费用。
- * - OpenAI 兼容：最后一个 chunk 的 usage.prompt_tokens / completion_tokens
- *   （需要在请求里带 stream_options.include_usage，见 llm.ts）
+ * - OpenAI 兼容：最后一个 chunk 的 usage（需请求里带 stream_options.include_usage，见 llm.ts），
+ *   DeepSeek 额外返回 prompt_cache_hit_tokens / prompt_cache_miss_tokens
+ * - OpenAI 通用：prompt_tokens_details.cached_tokens；Anthropic：cache_read_input_tokens
  * - Anthropic：message_start 带输入、message_delta 累计输出
  * - usage.cost（如 OpenRouter）：直接是美元金额，优先采用
  */
@@ -206,16 +214,19 @@ export function recordUsageEvent(ex: Exchange, json: Record<string, unknown>): v
   if (!usage || typeof usage !== 'object') return
   ex.usage = usage
   const u = usage as Record<string, unknown>
-  const input =
-    typeof u.prompt_tokens === 'number' ? u.prompt_tokens : typeof u.input_tokens === 'number' ? u.input_tokens : null
-  const output =
-    typeof u.completion_tokens === 'number'
-      ? u.completion_tokens
-      : typeof u.output_tokens === 'number'
-        ? u.output_tokens
-        : null
+  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  const details = u.prompt_tokens_details as Record<string, unknown> | undefined
+
+  const input = num(u.prompt_tokens) ?? num(u.input_tokens)
+  const output = num(u.completion_tokens) ?? num(u.output_tokens)
+  const hit =
+    num(u.prompt_cache_hit_tokens) ?? num(details?.cached_tokens) ?? num(u.cache_read_input_tokens) ?? 0
+  const miss = num(u.prompt_cache_miss_tokens) ?? (input != null ? input - hit : null)
+
   if (input != null) ex.inputTokens = input
   if (output != null) ex.outputTokens = output
+  if (input != null) ex.cacheHitTokens = hit
+  if (miss != null) ex.cacheMissTokens = miss
   recomputeCost(ex)
   scheduleSave(ex)
   notifyUpdated()
@@ -224,14 +235,21 @@ export function recordUsageEvent(ex: Exchange, json: Record<string, unknown>): v
 function recomputeCost(ex: Exchange): void {
   const reported = (ex.usage as Record<string, unknown> | null)?.cost
   if (typeof reported === 'number') {
-    ex.costUSD = reported
-    ex.costSource = 'provider'
+    // 服务商直接报告金额（如 OpenRouter），以报告值为准
+    ex.cost = { currency: 'USD', amount: String(reported), source: 'provider' }
     return
   }
-  if (ex.inputTokens != null && ex.outputTokens != null && ex.priceInputUSD != null && ex.priceOutputUSD != null) {
-    ex.costUSD = (ex.inputTokens * ex.priceInputUSD + ex.outputTokens * ex.priceOutputUSD) / 1_000_000
-    ex.costSource = 'estimated'
+  if (!ex.pricing) {
+    ex.cost = null
+    return
   }
+  ex.cost = computeCost({
+    pricing: ex.pricing,
+    peak: ex.peak,
+    inputHit: ex.cacheHitTokens,
+    inputMiss: ex.cacheMissTokens,
+    output: ex.outputTokens,
+  })
 }
 
 export function recordResponseBody(ex: Exchange, body: string): void {
@@ -286,8 +304,7 @@ function toListItem(ex: Exchange): DebugListItem {
     eventCount: ex.eventCount ?? ex.sseEvents?.length ?? 0, // 兼容旧版本文件
     inputTokens: ex.inputTokens ?? null,
     outputTokens: ex.outputTokens ?? null,
-    costUSD: ex.costUSD ?? null,
-    costSource: ex.costSource ?? null,
+    cost: ex.cost ?? null,
   }
 }
 
@@ -296,6 +313,9 @@ function toDetail(ex: Exchange): DebugDetail {
     ...toListItem(ex),
     method: ex.method,
     proxyURL: ex.proxyURL,
+    peak: ex.peak ?? false,
+    cacheHitTokens: ex.cacheHitTokens ?? null,
+    cacheMissTokens: ex.cacheMissTokens ?? null,
     requestHeaders: ex.requestHeaders,
     requestBody: prettyJSON(ex.requestBody),
     sseEvents: ex.sseEvents,

@@ -1,7 +1,8 @@
 import { app, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
-import type { ConfigView, LLMConfig, ProjectInfo } from '../shared/types'
+import { DEFAULT_HOLIDAYS } from './pricing'
+import type { ConfigView, LLMConfig, ModelPricing, ProjectInfo } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -9,16 +10,34 @@ import type { ConfigView, LLMConfig, ProjectInfo } from '../shared/types'
  * - 单一全局 JSON 文件 + 内存缓存（读走缓存、写全量覆盖）
  * - apiKey 用 Electron safeStorage 加密后落盘；系统不支持时降级为带标记的明文
  * - 对渲染进程只暴露 ConfigView（apiKey 掩码），密钥原文永远不出主进程
+ * - modelPricing：各模型价格表（按模型名），用于调试面板的精确计费
+ * - holidays：中国法定节假日（北京时间日期），供高峰/空闲判定，可编辑
  */
 
 const ENCRYPTED_PREFIX = 'enc:v1:'
 const PLAIN_PREFIX = 'plain:'
+
+/** 预置价格：DeepSeek deepseek-flash（人民币，2026-10 官方定价） */
+const DEFAULT_MODEL_PRICING: ModelPricing[] = [
+  {
+    model: 'deepseek-flash',
+    currency: 'CNY',
+    inputCacheHitOffPeak: 0.02,
+    inputCacheHitPeak: 0.04,
+    inputCacheMissOffPeak: 1.0,
+    inputCacheMissPeak: 2.0,
+    outputOffPeak: 4.0,
+    outputPeak: 8.0,
+  },
+]
 
 /** 落盘的完整配置形态（含 apiKey 明文/密文） */
 interface StoredConfig {
   projects: ProjectInfo[]
   activeProjectId: string | null
   llm: (LLMConfig & { apiKey: string }) | null
+  modelPricing?: ModelPricing[]
+  holidays?: string[]
 }
 
 let cache: StoredConfig | null = null
@@ -37,6 +56,9 @@ export async function loadConfig(): Promise<StoredConfig> {
   cache.projects ??= []
   // 旧版本配置没有 proxyURL 字段，归一化成空串（= 直连）
   if (cache.llm) cache.llm.proxyURL ??= ''
+  // 价格表 / 节假日首次使用时预置；字段一旦存在（哪怕为空数组）就完全尊重用户编辑
+  if (cache.modelPricing === undefined) cache.modelPricing = DEFAULT_MODEL_PRICING
+  if (cache.holidays === undefined) cache.holidays = DEFAULT_HOLIDAYS
   return cache
 }
 
@@ -77,6 +99,8 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
   return {
     projects: cfg.projects,
     activeProjectId: cfg.activeProjectId,
+    modelPricing: cfg.modelPricing ?? [],
+    holidays: cfg.holidays ?? [],
     llm: cfg.llm
       ? {
           provider: cfg.llm.provider,
@@ -84,8 +108,6 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
           baseURL: cfg.llm.baseURL,
           model: cfg.llm.model,
           proxyURL: cfg.llm.proxyURL,
-          priceInputUSD: cfg.llm.priceInputUSD,
-          priceOutputUSD: cfg.llm.priceOutputUSD,
           hasApiKey: Boolean(cfg.llm.apiKey),
           apiKeyHint: maskKey(decryptApiKey(cfg.llm.apiKey)),
         }
@@ -106,10 +128,15 @@ export function registerConfigHandlers(): void {
       baseURL: input.baseURL.trim(),
       model: input.model.trim(),
       proxyURL: input.proxyURL?.trim() ?? '',
-      priceInputUSD: typeof input.priceInputUSD === 'number' ? input.priceInputUSD : undefined,
-      priceOutputUSD: typeof input.priceOutputUSD === 'number' ? input.priceOutputUSD : undefined,
       apiKey: keepOldKey ? (cfg.llm as { apiKey: string }).apiKey : encryptApiKey(input.apiKey?.trim() ?? ''),
     }
+    return saveConfig(cfg)
+  })
+
+  // 保存模型价格表（全局，按模型名；供调试面板精确计费）
+  ipcMain.handle('config:savePricing', async (_e, pricing: ModelPricing[]): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.modelPricing = pricing
     return saveConfig(cfg)
   })
 }

@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DebugDetail, DebugListItem } from '../../../shared/types'
+import { decimalToPico, picoToDecimalString } from '../../../shared/money'
+import type { Currency, DebugDetail, DebugListItem, Money } from '../../../shared/types'
 import * as actions from '../actions'
 
-function formatCost(d: DebugDetail): string {
-  if (d.costUSD == null) return '未计费（未返回 usage 或未配置模型单价）'
-  const amount = `$${d.costUSD.toFixed(6)}`
-  return d.costSource === 'provider' ? `${amount}（服务方报告）` : `≈${amount}（按配置单价估算）`
+function moneyLabel(m: Money): string {
+  const symbol = m.currency === 'CNY' ? '¥' : '$'
+  // amount 本身就是精确的十进制字符串，直接展示，不做任何舍入
+  return `${m.source === 'provider' ? '' : '≈'}${symbol}${m.amount}`
 }
 
-/**
- * API 调试面板：观察每次 LLM 调用的原始请求/响应。
- * 学习要点：请求 JSON 的形状、SSE "data:" 逐行事件流、最终文本如何从增量拼装出来。
- * 数据在主进程内存里（重启清空），密钥已脱敏。
- */
 export function ApiInspector() {
   const [list, setList] = useState<DebugListItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -22,8 +18,15 @@ export function ApiInspector() {
     setList(await window.api.listDebugExchanges())
   }, [])
 
-  const totalCost = list.reduce((sum, i) => sum + (i.costUSD ?? 0), 0)
-  const costedCount = list.filter((i) => i.costUSD != null).length
+  // 列表底部按币种精确累计（BigInt，无浮点误差）
+  const totals = new Map<Currency, { pico: bigint; count: number }>()
+  for (const item of list) {
+    if (!item.cost) continue
+    const cur = totals.get(item.cost.currency) ?? { pico: 0n, count: 0 }
+    cur.pico += decimalToPico(item.cost.amount)
+    cur.count++
+    totals.set(item.cost.currency, cur)
+  }
 
   useEffect(() => {
     void refreshList()
@@ -83,9 +86,7 @@ export function ApiInspector() {
                   <div className="inspector-item-sub">
                     {new Date(item.startedAt).toLocaleTimeString()} · {item.eventCount} 个事件
                     {item.durationMs != null ? ` · ${item.durationMs}ms` : ''}
-                    {item.costUSD != null
-                      ? ` · ${item.costSource === 'provider' ? '' : '≈'}$${item.costUSD.toFixed(6)}`
-                      : ''}
+                    {item.cost ? ` · ${moneyLabel(item.cost)}` : ''}
                   </div>
                 </div>
               ))
@@ -93,8 +94,17 @@ export function ApiInspector() {
             {list.length > 0 ? (
               <footer className="inspector-total">
                 共 {list.length} 次调用
-                {costedCount > 0
-                  ? ` · 花费合计 $${totalCost.toFixed(4)}${costedCount < list.length ? '（部分未计费）' : ''}`
+                {totals.size > 0
+                  ? ' · ' +
+                    [...totals.entries()]
+                      .map(([currency, t]) => {
+                        const symbol = currency === 'CNY' ? '¥' : '$'
+                        const approx = list.some(
+                          (i) => i.cost?.currency === currency && i.cost.source === 'estimated',
+                        )
+                        return `${approx ? '≈' : ''}${symbol}${picoToDecimalString(t.pico)}（${t.count} 次）`
+                      })
+                      .join('，')
                   : ''}
               </footer>
             ) : null}
@@ -119,31 +129,41 @@ export function ApiInspector() {
                 </pre>
                 <pre className="debug-pre">{detail.requestBody}</pre>
 
-                <h3>响应</h3>
-                {detail.error ? <div className="msg-error">出错：{detail.error}</div> : null}
-                {detail.responseBody != null ? (
-                  <pre className="debug-pre">{detail.responseBody}</pre>
-                ) : (
-                  <>
-                    <div className="hint-line">
-                      SSE 事件流（每行就是一条 "data: ..." 原始消息；OpenAI 系看 choices[0].delta.content，Anthropic
-                      看 type=content_block_delta 的 delta.text）：
-                    </div>
-                    <pre className="debug-pre sse">
-                      {detail.sseEvents.length
-                        ? detail.sseEvents.map((l) => `data: ${l}`).join('\n')
-                        : '（还没有收到事件）'}
-                    </pre>
-                  </>
-                )}
-                {detail.inputTokens != null || detail.usage ? (
-                  <pre className="debug-pre">
-                    {`输入 tokens: ${detail.inputTokens ?? '未返回'}\n输出 tokens: ${detail.outputTokens ?? '未返回'}\n花费: ${formatCost(detail)}\n\n原始 usage:\n${detail.usage ? JSON.stringify(detail.usage, null, 2) : '（无）'}`}
-                  </pre>
-                ) : null}
-
-                <h3>从增量拼装出的最终文本</h3>
+                <h3>回复内容（从流式增量拼装）</h3>
                 <pre className="debug-pre">{detail.assembledText || '（空）'}</pre>
+
+                <details className="sse-details">
+                  <summary>
+                    展开详情：token 用量 / 计费 / 原始 SSE 事件（{detail.eventCount} 条）
+                  </summary>
+
+                  <div className="hint-line">
+                    计费档位：{detail.peak ? '高峰时段' : '空闲时段'}（按请求发起时刻的北京时间判定）
+                  </div>
+                  <pre className="debug-pre">
+                    {`输入 tokens: ${detail.inputTokens ?? '未返回'}${
+                      detail.cacheHitTokens != null
+                        ? `（缓存命中 ${detail.cacheHitTokens} + 未命中 ${detail.cacheMissTokens ?? '?'}）`
+                        : ''
+                    }\n输出 tokens: ${detail.outputTokens ?? '未返回'}\n花费: ${
+                      detail.cost ? moneyLabel(detail.cost) : '未计费（未返回 usage 或未配置该模型价格）'
+                    }`}
+                  </pre>
+
+                  <div className="hint-line">
+                    SSE 事件流（每行就是一条 "data: ..." 原始消息；OpenAI 系看 choices[0].delta.content，
+                    Anthropic 看 type=content_block_delta 的 delta.text）：
+                  </div>
+                  <pre className="debug-pre sse">
+                    {detail.sseEvents.length
+                      ? detail.sseEvents.map((l) => `data: ${l}`).join('\n')
+                      : '（还没有收到事件）'}
+                  </pre>
+
+                  {detail.usage ? (
+                    <pre className="debug-pre">{`原始 usage:\n${JSON.stringify(detail.usage, null, 2)}`}</pre>
+                  ) : null}
+                </details>
               </>
             )}
           </section>

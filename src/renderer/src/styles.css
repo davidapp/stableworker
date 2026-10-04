@@ -369,7 +369,7 @@ body {
 }
 
 .modal {
-  width: 520px;
+  width: 680px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   overflow-y: auto;
@@ -720,4 +720,77 @@ body {
   color: var(--text-dim);
   background: var(--panel);
   border-top: 1px solid var(--border);
+}
+
+/* ---------- 模型价格表 ---------- */
+.pricing-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.pricing-row {
+  display: grid;
+  grid-template-columns: 1.3fr 0.6fr repeat(6, 1fr) 24px;
+  gap: 4px;
+  align-items: center;
+}
+
+.pricing-head {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 0 2px;
+}
+
+.pricing-head span:first-child {
+  text-align: left;
+}
+
+.pricing-row input,
+.pricing-row select {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 6px;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.pricing-row input:focus,
+.pricing-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pricing-remove {
+  visibility: visible;
+  color: var(--text-dim);
+}
+
+.pricing-remove:hover {
+  color: var(--danger);
+}
+
+/* ---------- 调试面板折叠详情 ---------- */
+.sse-details {
+  margin-top: 4px;
+}
+
+.sse-details summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-size: 13px;
+  padding: 6px 0;
+  user-select: none;
+}
+
+.sse-details summary:hover {
+  text-decoration: underline;
+}
+
+.sse-details[open] summary {
+  margin-bottom: 8px;
 }

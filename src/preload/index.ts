@@ -8,6 +8,7 @@ import type {
   DebugListItem,
   LLMConfig,
   LLMTestPayload,
+  ModelPricing,
   ProjectInfo,
   Session,
   SessionMeta,
@@ -23,6 +24,7 @@ const api = {
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
   saveLlm: (llm: LLMConfig & { apiKey?: string }): Promise<ConfigView> => ipcRenderer.invoke('config:saveLlm', llm),
+  savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   testLlm: (payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('llm:test', payload),
 

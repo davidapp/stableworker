@@ -5,6 +5,31 @@
 
 export type ProviderType = 'openai-compatible' | 'anthropic'
 
+export type Currency = 'CNY' | 'USD'
+
+/** 金额：amount 是精确的十进制字符串（不做浮点舍入），source 标明金额来源 */
+export interface Money {
+  currency: Currency
+  amount: string
+  source: 'provider' | 'estimated'
+}
+
+/**
+ * 模型价格：单价均为"本币 / 每百万 tokens"。
+ * 输入区分缓存命中/未命中，输出与输入都区分高峰/空闲时段（DeepSeek 式计费）；
+ * 不分时段的服务商把两档填成一样即可。
+ */
+export interface ModelPricing {
+  model: string
+  currency: Currency
+  inputCacheHitOffPeak: number
+  inputCacheHitPeak: number
+  inputCacheMissOffPeak: number
+  inputCacheMissPeak: number
+  outputOffPeak: number
+  outputPeak: number
+}
+
 /** LLM 接入配置（apiKey 不会原样发给渲染进程，渲染进程只看得到掩码，见 ConfigView） */
 export interface LLMConfig {
   provider: ProviderType
@@ -16,10 +41,6 @@ export interface LLMConfig {
   model: string
   /** 可选 HTTP 代理，例如 http://127.0.0.1:7890；留空 = 直连 */
   proxyURL: string
-  /** 模型单价：输入（美元 / 每百万 tokens），用于估算花费；不填只记 token 不算钱 */
-  priceInputUSD?: number
-  /** 模型单价：输出（美元 / 每百万 tokens） */
-  priceOutputUSD?: number
 }
 
 export interface ProjectInfo {
@@ -62,6 +83,10 @@ export interface ConfigView {
   projects: ProjectInfo[]
   activeProjectId: string | null
   llm: (LLMConfig & { hasApiKey: boolean; apiKeyHint: string }) | null
+  /** 各模型的价格表（全局，按模型名） */
+  modelPricing: ModelPricing[]
+  /** 中国法定节假日（北京时间 YYYY-MM-DD），用于高峰/空闲判定 */
+  holidays: string[]
 }
 
 export interface ChatRequest {
@@ -97,9 +122,8 @@ export interface DebugListItem {
   eventCount: number
   inputTokens: number | null
   outputTokens: number | null
-  /** 费用（美元）：provider 报告或按价格估算，null = 未能计费 */
-  costUSD: number | null
-  costSource: 'provider' | 'estimated' | null
+  /** 本次费用（精确十进制字符串）；null = 未能计费 */
+  cost: Money | null
 }
 
 /** 调试详情：原始请求/响应内容（密钥已脱敏） */
@@ -107,6 +131,11 @@ export interface DebugDetail extends DebugListItem {
   method: string
   /** 本次调用经过的代理地址；null = 直连 */
   proxyURL: string | null
+  /** 计费档位：请求发起时刻（北京时间）是否为高峰时段 */
+  peak: boolean
+  /** 缓存命中/未命中的输入 token 拆分（DeepSeek 等返回） */
+  cacheHitTokens: number | null
+  cacheMissTokens: number | null
   requestHeaders: Record<string, string>
   /** 请求体（pretty JSON 字符串） */
   requestBody: string
@@ -114,7 +143,7 @@ export interface DebugDetail extends DebugListItem {
   sseEvents: string[]
   /** 从流中拼装出的最终文本 */
   assembledText: string
-  /** 响应中出现的 usage（token 用量），无则 null */
+  /** 响应中出现的原始 usage 对象，无则 null */
   usage: unknown
   /** 非流式请求（测试连接）的原始响应体 */
   responseBody: string | null

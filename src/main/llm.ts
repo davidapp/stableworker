@@ -12,6 +12,7 @@ import {
   endExchange,
   maskHeaders,
 } from './debug'
+import { isPeakTime } from './pricing'
 import type { ChatEvent, ChatRequest, LLMConfig, LLMTestPayload, MessageRole } from '../shared/types'
 
 /**
@@ -183,12 +184,17 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const controller = new AbortController()
   aborters.set(req.sessionId, controller)
   const { url, headers, body } = buildRequest(llm, apiKey, req.messages, true)
+  // 计费快照：价格表与高峰/空闲档位在请求发起时确定，之后改配置不影响这条记录
+  const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
+  const peak = isPeakTime(new Date(), cfg.holidays ?? [])
   const exchange = beginExchange({
     kind: 'chat',
     llm,
     method: 'POST',
     url,
     proxyURL: llm.proxyURL?.trim() || null,
+    pricing,
+    peak,
     headers: maskHeaders(headers),
     body,
   })
@@ -252,12 +258,16 @@ export function registerChatHandlers(): void {
       if (!llm.model) return { ok: false, message: '模型名不能为空' }
 
       const { url, headers, body } = buildRequest(llm, apiKey, [{ role: 'user', content: 'ping' }], false)
+      const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
+      const peak = isPeakTime(new Date(), cfg.holidays ?? [])
       const exchange = beginExchange({
         kind: 'test',
         llm,
         method: 'POST',
         url,
         proxyURL: llm.proxyURL?.trim() || null,
+        pricing,
+        peak,
         headers: maskHeaders(headers),
         body,
       })
