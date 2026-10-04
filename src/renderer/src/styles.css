@@ -420,6 +420,12 @@ body {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
 }
 
+/* 靠近窗口右缘的菜单（如思考力度）向左展开，避免超出窗口被裁剪 */
+.mode-menu-wrap.align-right .mode-menu {
+  left: auto;
+  right: 0;
+}
+
 .mode-item {
   display: flex;
   align-items: center;

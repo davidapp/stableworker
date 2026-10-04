@@ -18,7 +18,7 @@ export function ThinkingEffortMenu() {
   const currentLabel = LEVELS.find((l) => l.id === current)?.label ?? '默认'
 
   return (
-    <div className="mode-menu-wrap">
+    <div className="mode-menu-wrap align-right">
       <button className="mode-btn" onClick={() => setOpen((v) => !v)} title="思考力度（推理模型）">
         <span>🧠 {currentLabel}</span>
         <span className="mode-caret">⌄</span>
