@@ -1,10 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffLines } from '../../../shared/diff'
 import type { ToolUseBlock } from '../../../shared/types'
 import { copyText } from '../clipboard'
 
 /** 参数展示截断：write_file 这类工具的 content 可能非常大 */
 const MAX_ARGS_DISPLAY = 800
+
+/** 执行中的实时输出：内容更新时自动滚到底部 */
+function LiveOutput({ text }: { text: string }) {
+  const ref = useRef<HTMLPreElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [text])
+
+  return (
+    <div className="tool-live">
+      <div className="tool-live-label">实时输出</div>
+      <pre ref={ref}>{text}</pre>
+    </div>
+  )
+}
 
 /** 工具调用卡片：显示工具名、参数、执行状态；危险操作显示批准按钮；结果默认折叠 */
 export function ToolCallCard({ block }: { block: ToolUseBlock }) {
@@ -75,6 +92,8 @@ export function ToolCallCard({ block }: { block: ToolUseBlock }) {
           )}
         </div>
       ) : null}
+
+      {block.status === 'running' && block.output ? <LiveOutput text={block.output} /> : null}
 
       {diff ? (
         <div className="tool-diff">

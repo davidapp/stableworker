@@ -95,6 +95,8 @@ export interface ToolUseBlock {
   approvalId?: string
   /** 工具执行结果（文本） */
   result?: string
+  /** 执行期间的实时输出（如 run_command 的 stdout 流，逐块追加） */
+  output?: string
   durationMs?: number
 }
 
@@ -178,6 +180,7 @@ export type ChatEvent =
   | { type: 'delta'; sessionId: string; delta: string }
   | { type: 'reasoning_delta'; sessionId: string; delta: string }
   | { type: 'tool_use'; sessionId: string; toolUseId: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_output'; sessionId: string; toolUseId: string; text: string }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string }
   | { type: 'done'; sessionId: string }

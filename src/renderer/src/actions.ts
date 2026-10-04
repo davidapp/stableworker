@@ -411,6 +411,16 @@ export function subscribeChatEvents(): () => void {
         status: 'running',
       }
       updateStreamingAssistant((m) => ({ ...m, blocks: [...m.blocks, block] }))
+    } else if (event.type === 'tool_output') {
+      // 命令执行中的实时 stdout：追加到对应工具卡片的 output 字段
+      updateStreamingAssistant((m) => ({
+        ...m,
+        blocks: m.blocks.map((b) =>
+          b.type === 'tool_use' && b.id === event.toolUseId
+            ? { ...b, output: (b.output ?? '') + event.text }
+            : b,
+        ),
+      }))
     } else if (event.type === 'tool_result') {
       updateStreamingAssistant((m) => ({
         ...m,

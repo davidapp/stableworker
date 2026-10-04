@@ -615,7 +615,10 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
             continue
           }
         }
-        const result = await runToolUseBlock(tu, projectPath, controller.signal)
+        const result = await runToolUseBlock(tu, projectPath, {
+          signal: controller.signal,
+          onOutput: (text) => emit({ type: 'tool_output', sessionId: req.sessionId, toolUseId: tu.id, text }),
+        })
         tu.status = result.isError ? 'error' : 'done'
         tu.result = result.content
         tu.durationMs = result.durationMs

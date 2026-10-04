@@ -18,6 +18,8 @@ import type { ToolUseBlock } from '../../shared/types'
 export interface ToolContext {
   /** 激活项目的绝对路径，工具只能在这个目录内活动 */
   projectPath: string
+  /** 可选：把执行过程的实时输出（如命令的 stdout 流）推给聊天界面 */
+  onOutput?: (text: string) => void
 }
 
 export interface ToolOutput {
@@ -239,11 +241,14 @@ const runCommandTool: ToolDefinition = {
       let out = ''
       let truncated = false
       const append = (data: Buffer): void => {
+        const text = data.toString('utf-8')
+        // 实时推给聊天卡片（同样有总量上限，防止海量输出刷爆 IPC）
+        if (ctx.onOutput && out.length < MAX_OUTPUT_CHARS) ctx.onOutput(text)
         if (out.length >= MAX_OUTPUT_CHARS) {
           truncated = true
           return // 继续排空流让进程正常结束，只是不再记录
         }
-        out += data.toString('utf-8')
+        out += text
         if (out.length > MAX_OUTPUT_CHARS) {
           out = out.slice(0, MAX_OUTPUT_CHARS)
           truncated = true
@@ -298,12 +303,13 @@ export interface ToolRunResult {
 }
 
 /** 执行一次工具调用：含超时、异常转结果、结果截断。未知工具/无项目目录也转成错误结果。
- * signal 来自请求的中止控制器——用户点"停止"时，正在执行的工具（如长命令）也会被打断 */
+ * signal 来自请求的中止控制器——用户点"停止"时，正在执行的工具（如长命令）也会被打断；
+ * onOutput 用于把执行过程输出实时推给界面 */
 export async function executeToolCall(
   name: string,
   input: Record<string, unknown>,
   projectPath: string | null,
-  signal?: AbortSignal,
+  opts: { signal?: AbortSignal; onOutput?: (text: string) => void } = {},
 ): Promise<ToolRunResult> {
   const started = Date.now()
   const tool = registry.get(name)
@@ -311,7 +317,7 @@ export async function executeToolCall(
   const run = async (): Promise<ToolOutput> => {
     if (!projectPath) return { content: '当前没有激活的项目目录，无法使用文件工具', isError: true }
     if (!tool) return { content: `未知工具：${name}`, isError: true }
-    return tool.execute(input, { projectPath })
+    return tool.execute(input, { projectPath, onOutput: opts.onOutput })
   }
 
   let out: ToolOutput
@@ -325,9 +331,10 @@ export async function executeToolCall(
         const t = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
         t.unref()
       }),
-      ...(signal
+      ...(opts.signal
         ? [
             new Promise<never>((_, reject) => {
+              const signal = opts.signal as AbortSignal
               if (signal.aborted) {
                 reject(new Error('用户已停止，操作中断'))
                 return
@@ -348,9 +355,9 @@ export async function executeToolCall(
 export async function runToolUseBlock(
   block: ToolUseBlock,
   projectPath: string | null,
-  signal?: AbortSignal,
+  opts: { signal?: AbortSignal; onOutput?: (text: string) => void } = {},
 ): Promise<ToolRunResult> {
-  return executeToolCall(block.name, block.input, projectPath, signal)
+  return executeToolCall(block.name, block.input, projectPath, opts)
 }
 
 // ---------- 工具元数据（供"工具开关"设置页展示） ----------
