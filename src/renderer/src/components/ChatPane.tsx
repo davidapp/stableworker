@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -7,6 +7,30 @@ import * as actions from '../actions'
 import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
 import { ContextMeter } from './ContextMeter'
+import { copyText } from '../clipboard'
+
+/** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
+function CodeBlock({ children }: { children?: ReactNode }) {
+  const [copied, setCopied] = useState(false)
+  const ref = useRef<HTMLPreElement>(null)
+
+  const copy = async (): Promise<void> => {
+    const text = ref.current?.innerText ?? ''
+    if (!text) return
+    await copyText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="chat-code">
+      <button className="copy-btn" onClick={() => void copy()}>
+        {copied ? '✓ 已复制' : '复制'}
+      </button>
+      <pre ref={ref}>{children}</pre>
+    </div>
+  )
+}
 
 export function ChatPane() {
   const { projects, activeProjectId, sessions, activeSessionId, messages, streaming, llmProfiles, activeLlmId } =
@@ -120,7 +144,11 @@ export function ChatPane() {
                     if (b.type === 'text') {
                       return (
                         <div key={i} className="block-text">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeHighlight]}
+                            components={{ pre: CodeBlock }}
+                          >
                             {b.text}
                           </ReactMarkdown>
                         </div>

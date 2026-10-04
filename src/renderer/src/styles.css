@@ -777,6 +777,35 @@ body {
   line-height: 1.55;
 }
 
+/* 聊天代码块的悬浮复制按钮 */
+.chat-code {
+  position: relative;
+}
+
+.chat-code .copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 2;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.chat-code:hover .copy-btn {
+  opacity: 1;
+}
+
+.chat-code .copy-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .bubble.md table {
   border-collapse: collapse;
   margin: 8px 0;
