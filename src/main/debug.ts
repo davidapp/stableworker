@@ -80,7 +80,7 @@ let writeChain: Promise<void> = Promise.resolve()
 
 function notifyUpdated(): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('debug:updated')
+    if (!win.isDestroyed()) win.webContents.send('debug:updated')
   }
 }
 

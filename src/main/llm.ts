@@ -59,7 +59,9 @@ type HistoryMessage = ChatHistoryMessage
 
 function emit(event: ChatEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('chat:event', event)
+    // 跳过已销毁的窗口：调试悬浮窗关闭的瞬间 send 会抛
+    // "Object has been destroyed"，导致 done 事件发不出去、UI 永远停在生成中
+    if (!win.isDestroyed()) win.webContents.send('chat:event', event)
   }
 }
 
@@ -613,7 +615,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
             continue
           }
         }
-        const result = await runToolUseBlock(tu, projectPath)
+        const result = await runToolUseBlock(tu, projectPath, controller.signal)
         tu.status = result.isError ? 'error' : 'done'
         tu.result = result.content
         tu.durationMs = result.durationMs

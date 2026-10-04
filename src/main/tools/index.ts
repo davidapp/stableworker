@@ -297,11 +297,13 @@ export interface ToolRunResult {
   durationMs: number
 }
 
-/** 执行一次工具调用：含超时、异常转结果、结果截断。未知工具/无项目目录也转成错误结果 */
+/** 执行一次工具调用：含超时、异常转结果、结果截断。未知工具/无项目目录也转成错误结果。
+ * signal 来自请求的中止控制器——用户点"停止"时，正在执行的工具（如长命令）也会被打断 */
 export async function executeToolCall(
   name: string,
   input: Record<string, unknown>,
   projectPath: string | null,
+  signal?: AbortSignal,
 ): Promise<ToolRunResult> {
   const started = Date.now()
   const tool = registry.get(name)
@@ -323,6 +325,18 @@ export async function executeToolCall(
         const t = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
         t.unref()
       }),
+      ...(signal
+        ? [
+            new Promise<never>((_, reject) => {
+              if (signal.aborted) {
+                reject(new Error('用户已停止，操作中断'))
+                return
+              }
+              const onAbort = (): void => reject(new Error('用户已停止，操作中断'))
+              signal.addEventListener('abort', onAbort, { once: true })
+            }),
+          ]
+        : []),
     ])
   } catch (err) {
     out = { content: err instanceof Error ? err.message : String(err), isError: true }
@@ -334,8 +348,9 @@ export async function executeToolCall(
 export async function runToolUseBlock(
   block: ToolUseBlock,
   projectPath: string | null,
+  signal?: AbortSignal,
 ): Promise<ToolRunResult> {
-  return executeToolCall(block.name, block.input, projectPath)
+  return executeToolCall(block.name, block.input, projectPath, signal)
 }
 
 // ---------- 工具元数据（供"工具开关"设置页展示） ----------

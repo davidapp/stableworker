@@ -334,7 +334,21 @@ export async function sendChat(text: string): Promise<void> {
         : m.blocks,
     }))
 
-  const res = await window.api.sendChat({ sessionId, projectId: ap, messages: history })
+  let res: { ok: boolean; error?: string }
+  try {
+    res = await window.api.sendChat({ sessionId, projectId: ap, messages: history })
+  } catch (err) {
+    // 主进程异常（如 emit 到已销毁窗口失败）会让 chat:send 整体拒绝——按错误收尾
+    res = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+  // 兜底：主循环已结束，无论 done 事件是否送达，强制收尾流式状态
+  if (store.getState().streaming) {
+    store.setState((prev) => ({
+      streaming: false,
+      messages: prev.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+    }))
+    await persistCurrentSession()
+  }
   // 主进程在流开始前的失败（如未配置）会直接返回 ok:false，这里兜底标注
   if (!res.ok) markStreamingError(res.error ?? '发送失败')
 }
