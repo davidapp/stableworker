@@ -37,6 +37,8 @@ export function ChatPane() {
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
+  // 记录上一次的会话 id：切换会话（含启动恢复）后强制定位到最新消息
+  const sessionRef = useRef<string | null>(activeSessionId)
 
   // 距底部超过一屏时显示"回到底部"按钮
   const onScroll = (): void => {
@@ -46,20 +48,25 @@ export function ChatPane() {
     setShowJumpButton(distance > el.clientHeight)
   }
 
-  // 新消息到达时：贴底（80px 容差）则自动跟随；用户已上滚则不打扰
+  // 新消息到达时：贴底（80px 容差）则自动跟随；用户已上滚则不打扰；
+  // 会话刚切换（含启动恢复）或用户刚发送消息时无条件定位到底部
   useEffect(() => {
     const el = listRef.current
     if (!el) return
+    const sessionChanged = sessionRef.current !== activeSessionId
+    sessionRef.current = activeSessionId
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    // 用户自己发送消息（最后一条是用户消息）时无条件滚到底部，不受"上滚阅读"保护影响
     const userJustSent = messages[messages.length - 1]?.role === 'user'
-    if (distance <= 80 || userJustSent) el.scrollTop = el.scrollHeight
+    if (sessionChanged || userJustSent || distance <= 80) el.scrollTop = el.scrollHeight
     setShowJumpButton(distance > el.clientHeight)
-  }, [messages])
+  }, [messages, activeSessionId])
 
+  // 回到底部：瞬时定位，不做滚动动画
   const jumpToBottom = (): void => {
     const el = listRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    setShowJumpButton(false)
   }
 
   const project = projects.find((p) => p.id === activeProjectId)
