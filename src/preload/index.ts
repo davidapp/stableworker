@@ -31,6 +31,8 @@ const api = {
   deleteProfile: (id: string): Promise<ConfigView> => ipcRenderer.invoke('config:deleteProfile', id),
   setActiveLlm: (id: LLMProfileView['id']): Promise<ConfigView> => ipcRenderer.invoke('config:setActiveLlm', id),
   setApprovalMode: (mode: ApprovalMode): Promise<ConfigView> => ipcRenderer.invoke('config:setApprovalMode', mode),
+  setThinkingEffort: (effort: string): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setThinkingEffort', effort),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
   saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>

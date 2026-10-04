@@ -198,6 +198,16 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
+  // 设置激活配置档的思考力度（写入该配置档，随请求发给模型）
+  ipcMain.handle('config:setThinkingEffort', async (_e, effort: string): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    const p = cfg.llmProfiles?.find((x) => x.id === cfg.activeLlmId)
+    if (p && ['off', 'low', 'medium', 'high'].includes(effort)) {
+      p.thinkingEffort = effort as LLMConfig['thinkingEffort']
+    }
+    return saveConfig(cfg)
+  })
+
   // 保存模型价格表（全局，按模型名；供调试面板精确计费）
   ipcMain.handle('config:savePricing', async (_e, pricing: ModelPricing[]): Promise<ConfigView> => {
     const cfg = await loadConfig()

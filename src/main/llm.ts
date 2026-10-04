@@ -196,6 +196,9 @@ function buildRequest(
         })
       }
     }
+    // 思考力度 → Anthropic extended thinking（预算随档位，max_tokens 必须大于预算）
+    const effort = llm.thinkingEffort && llm.thinkingEffort !== 'off' ? llm.thinkingEffort : null
+    const budget = effort ? { low: 2048, medium: 8192, high: 24576 }[effort] : 0
     return {
       url: joinURL(baseURL, '/v1/messages'),
       headers: {
@@ -205,7 +208,8 @@ function buildRequest(
       },
       body: JSON.stringify({
         model: llm.model,
-        max_tokens: MAX_TOKENS,
+        max_tokens: effort ? Math.max(MAX_TOKENS, budget + 4096) : MAX_TOKENS,
+        ...(effort ? { thinking: { type: 'enabled', budget_tokens: budget } } : {}),
         system,
         messages,
         stream,
@@ -250,6 +254,8 @@ function buildRequest(
       model: llm.model,
       messages: [{ role: 'system', content: system }, ...messages],
       stream,
+      // 思考力度 → OpenAI 系的 reasoning_effort；off 时不传（走模型默认，兼容不认识该字段的服务）
+      ...(llm.thinkingEffort && llm.thinkingEffort !== 'off' ? { reasoning_effort: llm.thinkingEffort } : {}),
       ...(stream ? { stream_options: { include_usage: true } } : {}),
       ...(tools.length
         ? {

@@ -159,6 +159,11 @@ export async function setApprovalMode(mode: ApprovalMode): Promise<void> {
   applyConfig(cfg)
 }
 
+export async function setThinkingEffort(effort: string): Promise<void> {
+  const cfg = await window.api.setThinkingEffort(effort)
+  applyConfig(cfg)
+}
+
 export async function savePricing(pricing: ModelPricing[]): Promise<void> {
   const cfg = await window.api.savePricing(pricing)
   applyConfig(cfg)

@@ -282,47 +282,48 @@ body {
 }
 
 .composer-box {
-  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--elevated);
+}
+
+.composer-box:focus-within {
+  border-color: var(--accent);
 }
 
 .composer-box textarea {
+  display: block;
   width: 100%;
   resize: none;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--elevated);
+  border: none;
+  background: transparent;
   color: var(--text);
-  /* 右下留出内嵌按钮的空间 */
-  padding: 10px 60px 34px 12px;
+  padding: 10px 12px 2px;
   font: inherit;
   line-height: 1.5;
 }
 
 .composer-box textarea:focus {
   outline: none;
-  border-color: var(--accent);
 }
 
-.composer-hint {
-  position: absolute;
-  left: 12px;
-  bottom: 9px;
-  font-size: 11.5px;
-  color: var(--warn);
-  pointer-events: none;
+/* 输入框内最下面一行：批准模式（左） | 模型 / 思考力度 / 发送（右） */
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 6px;
 }
 
 .composer-send {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
+  flex-shrink: 0;
   width: 32px;
-  height: 26px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 8px;
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
   font-size: 15px;
@@ -335,7 +336,7 @@ body {
 }
 
 .composer-send:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -344,22 +345,20 @@ body {
   font-size: 10px;
 }
 
-/* ---------- 输入框下方工具条：模型选择 + 批准模式 ---------- */
-.composer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+/* ---------- 输入框内的选择器（模型 / 批准模式 / 思考力度） ---------- */
+.model-select {
+  max-width: 220px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 4px;
+  font-size: 12.5px;
+  cursor: pointer;
 }
 
-.model-select {
-  max-width: 260px;
-  background: var(--elevated);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 4px 8px;
-  font-size: 12.5px;
+.model-select:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .mode-menu-wrap {
@@ -369,23 +368,34 @@ body {
 .mode-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--elevated);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: var(--radius);
-  padding: 4px 10px;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 4px 6px;
   font-size: 12.5px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .mode-btn:hover {
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
 }
 
 .mode-caret {
   color: var(--text-dim);
+  font-size: 10px;
+}
+
+.mode-foot-hint {
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
   font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
 }
 
 .popover-backdrop {

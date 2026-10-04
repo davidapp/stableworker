@@ -44,6 +44,8 @@ export interface LLMConfig {
   model: string
   /** 可选 HTTP 代理，例如 http://127.0.0.1:7890；留空 = 直连 */
   proxyURL: string
+  /** 思考力度（推理模型）：off = 不传参数走模型默认；low/medium/high 映射到各协议的对应参数 */
+  thinkingEffort?: 'off' | 'low' | 'medium' | 'high'
 }
 
 /** 渲染进程可见的配置档视图（apiKey 掩码） */

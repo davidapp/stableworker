@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import { ApprovalModeMenu } from './ApprovalModeMenu'
+import { ThinkingEffortMenu } from './ThinkingEffortMenu'
 
 export function Composer({ disabled }: { disabled: boolean }) {
   const { llmProfiles, activeLlmId } = useApp()
@@ -30,44 +31,43 @@ export function Composer({ disabled }: { disabled: boolean }) {
             }
           }}
         />
-        {disabled ? <span className="composer-hint">回复生成中…</span> : null}
-        {disabled ? (
-          <button className="composer-send stop" title="停止生成" onClick={() => void actions.stopChat()}>
-            ■
-          </button>
-        ) : (
-          <button
-            className="composer-send"
-            title="发送（Enter）"
-            disabled={!text.trim()}
-            onClick={submit}
+        <div className="composer-row">
+          <ApprovalModeMenu />
+          <div className="spacer" />
+          <select
+            className="model-select"
+            value={activeLlmId ?? ''}
+            title="切换模型配置档"
+            onChange={(e) => {
+              if (e.target.value) void actions.setActiveLlm(e.target.value)
+            }}
           >
-            ↑
-          </button>
-        )}
-      </div>
-
-      <div className="composer-toolbar">
-        <select
-          className="model-select"
-          value={activeLlmId ?? ''}
-          title="切换模型配置档"
-          onChange={(e) => {
-            if (e.target.value) void actions.setActiveLlm(e.target.value)
-          }}
-        >
-          {llmProfiles.length === 0 ? (
-            <option value="">未配置模型</option>
+            {llmProfiles.length === 0 ? (
+              <option value="">未配置模型</option>
+            ) : (
+              llmProfiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {p.model}
+                </option>
+              ))
+            )}
+          </select>
+          <ThinkingEffortMenu />
+          {disabled ? (
+            <button className="composer-send stop" title="停止生成" onClick={() => void actions.stopChat()}>
+              ■
+            </button>
           ) : (
-            llmProfiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.model}
-              </option>
-            ))
+            <button
+              className="composer-send"
+              title="发送（Enter）"
+              disabled={!text.trim()}
+              onClick={submit}
+            >
+              ↑
+            </button>
           )}
-        </select>
-        <div className="spacer" />
-        <ApprovalModeMenu />
+        </div>
       </div>
     </footer>
   )
