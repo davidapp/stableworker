@@ -6,6 +6,7 @@ import type {
   ConfigView,
   DebugDetail,
   DebugListItem,
+  FeatureEntry,
   LLMConfig,
   LLMTestPayload,
   ModelPricing,
@@ -25,6 +26,9 @@ const api = {
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
   saveLlm: (llm: LLMConfig & { apiKey?: string }): Promise<ConfigView> => ipcRenderer.invoke('config:saveLlm', llm),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
+  saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
+  saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:saveFeatures', features),
   testLlm: (payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('llm:test', payload),
 

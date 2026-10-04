@@ -2,7 +2,7 @@ import { app, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
-import type { ConfigView, LLMConfig, ModelPricing, ProjectInfo } from '../shared/types'
+import type { ConfigView, FeatureEntry, LLMConfig, ModelPricing, ProjectInfo } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -38,6 +38,7 @@ interface StoredConfig {
   llm: (LLMConfig & { apiKey: string }) | null
   modelPricing?: ModelPricing[]
   holidays?: string[]
+  features?: FeatureEntry[]
 }
 
 let cache: StoredConfig | null = null
@@ -59,6 +60,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   // 价格表 / 节假日首次使用时预置；字段一旦存在（哪怕为空数组）就完全尊重用户编辑
   if (cache.modelPricing === undefined) cache.modelPricing = DEFAULT_MODEL_PRICING
   if (cache.holidays === undefined) cache.holidays = DEFAULT_HOLIDAYS
+  if (cache.features === undefined) cache.features = []
   return cache
 }
 
@@ -101,6 +103,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     activeProjectId: cfg.activeProjectId,
     modelPricing: cfg.modelPricing ?? [],
     holidays: cfg.holidays ?? [],
+    features: cfg.features ?? [],
     llm: cfg.llm
       ? {
           provider: cfg.llm.provider,
@@ -137,6 +140,20 @@ export function registerConfigHandlers(): void {
   ipcMain.handle('config:savePricing', async (_e, pricing: ModelPricing[]): Promise<ConfigView> => {
     const cfg = await loadConfig()
     cfg.modelPricing = pricing
+    return saveConfig(cfg)
+  })
+
+  // 保存节假日表（北京时间日期，供分时计费判定高峰/空闲）
+  ipcMain.handle('config:saveHolidays', async (_e, holidays: string[]): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.holidays = holidays
+    return saveConfig(cfg)
+  })
+
+  // 保存功能入口的显隐状态
+  ipcMain.handle('config:saveFeatures', async (_e, features: FeatureEntry[]): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.features = features
     return saveConfig(cfg)
   })
 }

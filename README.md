@@ -17,12 +17,9 @@ npm run typecheck  # TypeScript 类型检查
 ## 使用流程
 
 1. 左侧 **＋ 添加项目** —— 选一个本地目录作为工作区（可添加多个，随时切换）
-2. 右下角 **⚙ LLM 设置** —— 顶部先选**预设**（DeepSeek / 智谱 GLM / Kimi / Anthropic / OpenAI / Ollama 本地），
-   BaseURL、协议、候选模型自动填好，你只需要填 API Key；预设旁边附官方文档链接，点击会用系统浏览器打开。
-2. 右下角 **⚙ LLM 设置** —— 顶部先选**预设**（DeepSeek / 智谱 GLM / Kimi / Anthropic / OpenAI / Ollama 本地），
-   BaseURL、协议、候选模型自动填好，你只需要填 API Key；预设旁边附官方文档链接，点击会用系统浏览器打开。
-   非预设服务选"自定义…"手动填写。底部还有**可选的 HTTP 代理**（填了走代理、留空直连）和
-   **模型价格表**（每百万 tokens 单价，区分高峰/空闲与缓存命中/未命中，供调试面板精确计费）
+2. 左下角 **⚙ 设置** —— 统一设置对话框（左侧导航，未来功能都收在这里）：
+   **LLM 配置**（预设 / BaseURL / API Key / 代理，附官方文档链接）、**模型价格**（每百万 tokens 单价表 +
+   法定节假日表，供精确计费）、**功能开关**（每个功能入口可设为隐藏/显示）
 3. 底部输入框发消息 —— 助手回复以 **Markdown 渲染**（支持表格、代码高亮）；Enter 发送，Shift+Enter 换行
 4. 顶部可新建 / 切换 / 删除会话；会话自动持久化，重启应用后可恢复
 5. 左下角 **🔍 API 调试** —— 查看每次 LLM 调用的原始请求/响应（学习协议细节用，见下文）
@@ -73,14 +70,19 @@ src/
 │   ├── projects.ts        #   项目管理：目录选择，按规范化路径去重
 │   ├── sessions.ts        #   会话持久化：每会话一个 JSON 文件
 │   ├── llm.ts             #   LLM 调用：OpenAI 兼容 & Anthropic 双协议，SSE 流式，代理/计费
+│   ├── pricing.ts         #   分时计费：高峰/空闲判定（北京时间+节假日表）+ BigInt 精确算钱
 │   └── debug.ts           #   API 调试日志：原始请求/响应永久落盘 + 用量费用统计
 ├── preload/index.ts       # 桥接层：contextBridge 暴露 window.api（渲染进程唯一入口）
 └── renderer/              # 界面（浏览器环境，不碰 Node）
     └── src/
         ├── store.ts       #   极简全局 store + useSyncExternalStore
         ├── actions.ts     #   全部业务动作（组件只展示、不写逻辑）
+        ├── features.ts    #   功能入口注册表（新增功能登记后即可在设置里控制显隐）
         ├── App.tsx        #   布局编排
-        └── components/    #   Sidebar / ChatPane / Composer / SettingsDialog / ApiInspector
+        └── components/
+            ├── Sidebar / ChatPane / Composer / ApiInspector
+            ├── SettingsDialog.tsx        #   统一设置对话框（左侧导航外壳）
+            └── settings/                #   设置的各个页面：LLM 配置 / 模型价格 / 功能开关
 ```
 
 ## 架构要点（学习笔记）

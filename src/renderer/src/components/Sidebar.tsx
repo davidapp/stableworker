@@ -1,8 +1,15 @@
 import { useApp } from '../store'
 import * as actions from '../actions'
 
+/** 判断某功能入口是否被用户隐藏（配置里没有记录时默认显示） */
+function useFeatureVisible(): (id: string) => boolean {
+  const { features } = useApp()
+  return (id: string) => !(features.find((f) => f.id === id)?.hidden ?? false)
+}
+
 export function Sidebar() {
   const { projects, activeProjectId, llm } = useApp()
+  const visible = useFeatureVisible()
 
   return (
     <aside className="sidebar">
@@ -39,11 +46,14 @@ export function Sidebar() {
         <div className={`llm-status ${llm ? 'ok' : 'warn'}`} title={llm?.baseURL ?? ''}>
           {llm ? `${llm.name} · ${llm.model}` : 'LLM 未配置'}
         </div>
-        <button className="btn btn-block" onClick={() => actions.openInspector()}>
-          🔍 API 调试
-        </button>
+        {/* 功能入口按"功能开关"页的配置渲染；"⚙ 设置"是对话框本体，始终可见 */}
+        {visible('apiInspector') ? (
+          <button className="btn btn-block" onClick={() => actions.openInspector()}>
+            🔍 API 调试
+          </button>
+        ) : null}
         <button className="btn btn-block" onClick={() => actions.openSettings()}>
-          ⚙ LLM 设置
+          ⚙ 设置
         </button>
       </div>
     </aside>

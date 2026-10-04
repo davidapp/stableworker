@@ -1,5 +1,14 @@
 import { store } from './store'
-import type { ChatEvent, ChatMessage, ConfigView, LLMConfig, ModelPricing, Session, SessionMeta } from '../../shared/types'
+import type {
+  ChatEvent,
+  ChatMessage,
+  ConfigView,
+  FeatureEntry,
+  LLMConfig,
+  ModelPricing,
+  Session,
+  SessionMeta,
+} from '../../shared/types'
 
 /**
  * 渲染进程的所有动作收敛在这里，组件只负责展示与调用动作。
@@ -16,6 +25,7 @@ function applyConfig(cfg: ConfigView): void {
     llm: cfg.llm,
     modelPricing: cfg.modelPricing,
     holidays: cfg.holidays,
+    features: cfg.features,
   })
 }
 
@@ -90,8 +100,8 @@ export async function deleteSession(id: string): Promise<void> {
   })
 }
 
-export function openSettings(): void {
-  store.setState({ settingsOpen: true })
+export function openSettings(page = 'llm'): void {
+  store.setState({ settingsOpen: true, settingsPage: page })
 }
 
 export function closeSettings(): void {
@@ -114,6 +124,16 @@ export async function saveLlm(input: LLMConfig & { apiKey?: string }): Promise<v
 
 export async function savePricing(pricing: ModelPricing[]): Promise<void> {
   const cfg = await window.api.savePricing(pricing)
+  applyConfig(cfg)
+}
+
+export async function saveHolidays(holidays: string[]): Promise<void> {
+  const cfg = await window.api.saveHolidays(holidays)
+  applyConfig(cfg)
+}
+
+export async function saveFeatures(features: FeatureEntry[]): Promise<void> {
+  const cfg = await window.api.saveFeatures(features)
   applyConfig(cfg)
 }
 

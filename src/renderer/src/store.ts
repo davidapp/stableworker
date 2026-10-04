@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { ChatMessage, ConfigView, ModelPricing, ProjectInfo, SessionMeta } from '../../shared/types'
+import type { ChatMessage, ConfigView, FeatureEntry, ModelPricing, ProjectInfo, SessionMeta } from '../../shared/types'
 
 /**
  * 极简全局 store：getState / setState / subscribe（约 20 行），
@@ -21,6 +21,10 @@ export interface AppState {
   modelPricing: ModelPricing[]
   /** 中国法定节假日（北京时间日期） */
   holidays: string[]
+  /** 功能入口的显隐状态 */
+  features: FeatureEntry[]
+  /** 设置对话框当前页 */
+  settingsPage: string
   settingsOpen: boolean
   inspectorOpen: boolean
   /** 是否正在流式生成回复 */
@@ -56,6 +60,8 @@ export const store = createStore<AppState>({
   llm: null,
   modelPricing: [],
   holidays: [],
+  features: [],
+  settingsPage: 'llm',
   settingsOpen: false,
   inspectorOpen: false,
   streaming: false,

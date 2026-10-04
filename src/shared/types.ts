@@ -78,6 +78,13 @@ export interface Session extends SessionMeta {
   messages: ChatMessage[]
 }
 
+/** 功能入口的显示/隐藏状态（配置里没有该条目时默认显示） */
+export interface FeatureEntry {
+  id: string
+  label: string
+  hidden: boolean
+}
+
 /** 渲染进程可见的配置视图：apiKey 永远不出主进程 */
 export interface ConfigView {
   projects: ProjectInfo[]
@@ -87,6 +94,8 @@ export interface ConfigView {
   modelPricing: ModelPricing[]
   /** 中国法定节假日（北京时间 YYYY-MM-DD），用于高峰/空闲判定 */
   holidays: string[]
+  /** 功能入口的显隐状态 */
+  features: FeatureEntry[]
 }
 
 export interface ChatRequest {
