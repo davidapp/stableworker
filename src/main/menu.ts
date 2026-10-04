@@ -6,7 +6,24 @@ import { Menu, type MenuItemConstructorOptions } from 'electron'
  * 标准快捷键，去掉会导致输入框无法复制粘贴。
  */
 export function createAppMenu(onOpenInspector: () => void): void {
-  const template: MenuItemConstructorOptions[] = [
+  const template: MenuItemConstructorOptions[] = []
+
+  // macOS：第一个菜单是应用菜单（关于/隐藏/退出），缺了它应用菜单显示不完整
+  if (process.platform === 'darwin') {
+    template.push({
+      label: 'StableWorker',
+      submenu: [
+        { role: 'about', label: '关于 StableWorker' },
+        { type: 'separator' },
+        { role: 'hide', label: '隐藏 StableWorker' },
+        { role: 'unhide', label: '全部显示' },
+        { type: 'separator' },
+        { role: 'quit', label: '退出 StableWorker' },
+      ],
+    })
+  }
+
+  template.push(
     {
       label: '文件',
       submenu: [{ role: 'close', label: '关闭窗口' }],
@@ -50,7 +67,7 @@ export function createAppMenu(onOpenInspector: () => void): void {
         },
       ],
     },
-  ]
+  )
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

@@ -48,6 +48,15 @@
         }
       ]
     },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.developer-tools"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
