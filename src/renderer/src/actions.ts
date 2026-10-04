@@ -93,7 +93,7 @@ export async function selectSession(id: string): Promise<void> {
       ...m,
       streaming: false,
       blocks: m.blocks.map((b) =>
-        b.type === 'tool_use' && b.status === 'running'
+        b.type === 'tool_use' && (b.status === 'running' || b.status === 'pending_approval')
           ? { ...b, status: 'error' as const, result: '（会话中断，未获得结果）' }
           : b,
       ),
@@ -215,13 +215,13 @@ export async function sendChat(text: string): Promise<void> {
   store.setState({ messages, streaming: true })
   await persistCurrentSession() // 先把用户消息落盘，防中途崩溃丢失
 
-  // 发给 LLM 的历史：去掉空占位回复；中断留下的未完成工具调用不进历史
+  // 发给 LLM 的历史：去掉空占位回复；未完成/未批准的工具调用没有结果，不进历史
   const history: ChatHistoryMessage[] = messages
     .filter((m) => !(m.role === 'assistant' && m.blocks.length === 0))
     .map((m) => ({
       role: m.role,
       blocks: m.role === 'assistant'
-        ? m.blocks.filter((b) => b.type === 'text' || b.status !== 'running')
+        ? m.blocks.filter((b) => b.type === 'text' || b.status === 'done' || b.status === 'error')
         : m.blocks,
     }))
 
@@ -283,6 +283,16 @@ export function subscribeChatEvents(): () => void {
         blocks: m.blocks.map((b) =>
           b.type === 'tool_use' && b.id === event.toolUseId
             ? { ...b, status: event.isError ? 'error' : 'done', result: event.content }
+            : b,
+        ),
+      }))
+    } else if (event.type === 'approval_request') {
+      // 危险工具执行前：把对应工具卡片切到"等待批准"状态
+      updateStreamingAssistant((m) => ({
+        ...m,
+        blocks: m.blocks.map((b) =>
+          b.type === 'tool_use' && b.id === event.toolUseId
+            ? { ...b, status: 'pending_approval' as const, approvalId: event.approvalId }
             : b,
         ),
       }))

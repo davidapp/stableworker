@@ -5,6 +5,7 @@ import { registerProjectHandlers } from './projects'
 import { registerSessionHandlers } from './sessions'
 import { registerChatHandlers } from './llm'
 import { registerDebugHandlers, initDebugLog } from './debug'
+import { registerApprovalHandlers } from './approvals'
 
 /**
  * 主进程入口：创建窗口、注册所有 IPC 处理器。
@@ -63,6 +64,7 @@ app.whenReady().then(async () => {
   registerSessionHandlers()
   registerChatHandlers()
   registerDebugHandlers()
+  registerApprovalHandlers()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createWindow()
 

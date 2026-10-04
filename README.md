@@ -42,9 +42,13 @@ npm run typecheck  # TypeScript 类型检查
   历史消息按"带结果的工具调用"切分成各协议要求的形状（OpenAI 的 `role:'tool'` / Anthropic 的
   `tool_result`）——切分逻辑见 `toApiTurns()`，是理解两种协议差异的最佳教材
 - **工具注册中心**（借鉴 Claude Code）：`tools/index.ts` 里每个工具 = 名称 + 描述 + JSON Schema + 执行函数；
-  当前有 `list_files`（列目录）和 `read_file`（带行号读文件，支持 offset/limit 分段）
-- **安全底线**：工具只在主进程执行、渲染进程无调用通道；路径越界直接报错；15 秒超时；
-  结果截断到 2 万字符；异常一律转成错误结果喂回模型（模型能看到失败原因并自行调整）
+  当前有 `list_files`（列目录）、`read_file`（带行号读文件，支持 offset/limit 分段）和
+  `write_file`（创建/覆盖文件，**危险操作**）
+- **批准门**：带副作用的工具（`requiresApproval: true`）执行前循环挂起，聊天里弹出"允许/拒绝"卡片；
+  拒绝/超时（120 秒）/停止都会作为错误结果喂回模型（它会自己调整方案）；
+  实现在 `src/main/approvals.ts`——一个由 IPC 事件 resolve 的 Promise，即"主进程等待用户决策"的模式
+- **安全底线**：工具只在主进程执行、渲染进程无执行通道；路径越界直接报错；15 秒超时；
+  写入内容上限 500KB；结果截断到 2 万字符；异常一律转成错误结果喂回模型（模型能看到失败原因并自行调整）
 - **流式工具调用解析**：OpenAI 的 `delta.tool_calls` 按 index 分片累积 `arguments`；
   Anthropic 用 `content_block_start` / `input_json_delta` / `content_block_stop` 组装——
   在 API 调试面板里可以看到这些原始事件
@@ -140,8 +144,8 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 ## 下一步路线（建议顺序）
 
 1. ~~Markdown 渲染 + 代码高亮~~（已完成）
-2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file + 代理循环）
-3. 更多工具与权限体系：写文件 / 执行命令（需确认机制）、工具开关
+2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file / write_file + 代理循环 + 批准门）
+3. edit_file 精准编辑 + diff 展示；工具开关（接入功能开关页）
 4. 上下文管理：token 计量、历史裁剪、会话压缩
 5. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
 6. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发

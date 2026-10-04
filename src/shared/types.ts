@@ -66,7 +66,13 @@ export interface ToolUseBlock {
   id: string
   name: string
   input: Record<string, unknown>
-  status: 'running' | 'done' | 'error'
+  /**
+   * pending_approval = 危险操作（如写文件）等待用户批准；
+   * running = 已批准执行中；done / error = 执行完成或失败
+   */
+  status: 'pending_approval' | 'running' | 'done' | 'error'
+  /** 批准请求的 id（等待批准时存在，用于回传用户决定） */
+  approvalId?: string
   /** 工具执行结果（文本） */
   result?: string
   durationMs?: number
@@ -136,11 +142,12 @@ export interface LLMTestPayload extends LLMConfig {
   apiKey?: string
 }
 
-/** 主进程 → 渲染进程 的流式聊天事件（含工具调用回合） */
+/** 主进程 → 渲染进程 的流式聊天事件（含工具调用与批准请求） */
 export type ChatEvent =
   | { type: 'delta'; sessionId: string; delta: string }
   | { type: 'tool_use'; sessionId: string; toolUseId: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
+  | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string }
   | { type: 'done'; sessionId: string }
   | { type: 'error'; sessionId: string; message: string }
 

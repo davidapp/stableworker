@@ -14,6 +14,7 @@ import {
   maskHeaders,
 } from './debug'
 import { isPeakTime } from './pricing'
+import { requestApproval, resolveSessionApprovals } from './approvals'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
 import type {
   ChatEvent,
@@ -144,8 +145,8 @@ function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
     for (const b of msg.blocks) {
       if (b.type === 'text') {
         texts.push(b.text)
-      } else if (b.status === 'running') {
-        continue // 中断留下的未完成调用不进历史
+      } else if (b.status !== 'done' && b.status !== 'error') {
+        continue // 中断/未批准留下的无结果调用不进历史
       } else {
         calls.push({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })
         flush()
@@ -504,8 +505,31 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         return { ok: false, error: message }
       }
 
-      // 执行本轮的每个工具调用，结果回传给模型进入下一轮
+      // 执行本轮的每个工具调用：危险操作先过批准门，结果回传给模型进入下一轮
       for (const tu of toolUses) {
+        const def = tools.find((d) => d.name === tu.name)
+        if (def?.requiresApproval) {
+          // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
+          const outcome = await requestApproval(req.sessionId, tu.id, emit)
+          if (outcome !== 'approved') {
+            const note =
+              outcome === 'timeout'
+                ? '批准超时（120 秒无响应），操作未执行'
+                : outcome === 'stopped'
+                  ? '用户停止了生成，操作未执行'
+                  : '用户拒绝了本次操作'
+            tu.status = 'error'
+            tu.result = note
+            emit({
+              type: 'tool_result',
+              sessionId: req.sessionId,
+              toolUseId: tu.id,
+              content: note,
+              isError: true,
+            })
+            continue
+          }
+        }
         const result = await runToolUseBlock(tu, projectPath)
         tu.status = result.isError ? 'error' : 'done'
         tu.result = result.content
@@ -538,6 +562,7 @@ export function registerChatHandlers(): void {
 
   ipcMain.handle('chat:stop', (_e, sessionId: string) => {
     aborters.get(sessionId)?.abort()
+    resolveSessionApprovals(sessionId) // 挂起中的批准按"已停止"处理，循环随即收尾
     return true
   })
 

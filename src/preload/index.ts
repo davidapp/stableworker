@@ -51,6 +51,18 @@ const api = {
   sendChat: (req: ChatRequest): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('chat:send', req),
   stopChat: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('chat:stop', sessionId),
 
+  /** 回传用户对危险操作的批准决定；ok=false 表示该批准已失效（超时/停止） */
+  respondApproval: (approvalId: string, approved: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('approval:respond', approvalId, approved),
+
+  /** 订阅批准请求（危险工具执行前触发） */
+  onApprovalRequest: (callback: (event: { sessionId: string; toolUseId: string; approvalId: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, event: { sessionId: string; toolUseId: string; approvalId: string }): void =>
+      callback(event)
+    ipcRenderer.on('approval:request', listener)
+    return () => ipcRenderer.removeListener('approval:request', listener)
+  },
+
   /** 订阅主进程的流式聊天事件，返回取消订阅函数 */
   onChatEvent: (callback: (event: ChatEvent) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, event: ChatEvent): void => callback(event)

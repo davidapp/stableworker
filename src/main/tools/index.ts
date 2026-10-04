@@ -1,5 +1,5 @@
-import { readFile, readdir } from 'node:fs/promises'
-import { resolve, sep } from 'node:path'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { dirname, resolve, sep } from 'node:path'
 import type { ToolUseBlock } from '../../shared/types'
 
 /**
@@ -28,11 +28,14 @@ export interface ToolDefinition {
   /** JSON Schema（Anthropic 直接用作 input_schema，OpenAI 包在 parameters 里） */
   inputSchema: Record<string, unknown>
   execute: (input: Record<string, unknown>, ctx: ToolContext) => Promise<ToolOutput>
+  /** true = 有副作用的危险操作（如写文件），执行前必须经用户在界面上批准 */
+  requiresApproval?: boolean
 }
 
 const MAX_LIST_ENTRIES = 300
 const MAX_READ_LINES = 2000
 const MAX_OUTPUT_CHARS = 20_000
+const MAX_WRITE_CHARS = 500_000
 const TOOL_TIMEOUT_MS = 15_000
 
 /** 把项目内相对路径解析为绝对路径；越出项目目录立即抛错 */
@@ -107,9 +110,39 @@ const readFileTool: ToolDefinition = {
   },
 }
 
+const writeFileTool: ToolDefinition = {
+  name: 'write_file',
+  description:
+    '创建或覆盖项目内的一个文本文件（整文件写入，父目录不存在会自动创建）。该操作会修改用户磁盘，写入前需要用户批准；被拒绝时请改用其他方案或向用户说明。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '项目内相对路径' },
+      content: { type: 'string', description: '完整的文件内容（UTF-8 文本）' },
+    },
+    required: ['path', 'content'],
+  },
+  requiresApproval: true,
+  async execute(input, ctx) {
+    const rel = typeof input.path === 'string' ? input.path : ''
+    const content = typeof input.content === 'string' ? input.content : null
+    if (!rel) return { content: '缺少 path 参数', isError: true }
+    if (content == null) return { content: '缺少 content 参数', isError: true }
+    if (content.length > MAX_WRITE_CHARS) {
+      return { content: `内容过大（${content.length} 字符，上限 ${MAX_WRITE_CHARS}），拒绝写入`, isError: true }
+    }
+    const file = safeResolve(ctx.projectPath, rel)
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(file, content, 'utf-8')
+    const lines = content.split('\n').length
+    return { content: `已写入 ${rel}（${lines} 行，${content.length} 字符）` }
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
+  [writeFileTool.name, writeFileTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */
