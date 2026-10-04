@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import hljs from 'highlight.js/lib/core'
+import json from 'highlight.js/lib/languages/json'
 import { decimalToPico, picoToDecimalString } from '../../../shared/money'
 import type { Currency, DebugDetail, DebugListItem, Money } from '../../../shared/types'
+import { copyText } from '../clipboard'
 import * as actions from '../actions'
+
+hljs.registerLanguage('json', json)
 
 function moneyLabel(m: Money): string {
   const symbol = m.currency === 'CNY' ? '¥' : '$'
@@ -15,6 +20,37 @@ function prettyJson(raw: string): string {
   } catch {
     return raw
   }
+}
+
+/**
+ * 调试面板的内容块：右上角一键复制；json=true 时用 highlight.js 做 JSON 语法高亮。
+ * 主题色来自全局引入的 highlight.js github-dark 样式。
+ */
+function DebugPre({ text, json = false, className = 'debug-pre' }: { text: string; json?: boolean; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const html = useMemo(
+    () => (json && text ? hljs.highlight(text, { language: 'json' }).value : null),
+    [text, json],
+  )
+
+  const copy = async (): Promise<void> => {
+    await copyText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="copyable-pre">
+      <button className="copy-btn" onClick={() => void copy()}>
+        {copied ? '✓ 已复制' : '复制'}
+      </button>
+      {html !== null ? (
+        <pre className={className} dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <pre className={className}>{text}</pre>
+      )}
+    </div>
+  )
 }
 
 export function ApiInspector() {
@@ -45,6 +81,25 @@ export function ApiInspector() {
       if (selectedId) void window.api.getDebugExchange(selectedId).then(setDetail)
     })
   }, [selectedId, refreshList])
+
+  const sseText = detail ? detail.sseEvents.map((l) => `data: ${l}`).join('\n') : ''
+  const headersText = detail
+    ? Object.entries(detail.requestHeaders)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n')
+    : ''
+  const usageText = detail?.usage ? JSON.stringify(detail.usage, null, 2) : ''
+  // 测试连接的原始响应：是 JSON 就高亮，否则原样展示
+  const responseIsJson =
+    detail?.responseBody != null &&
+    (() => {
+      try {
+        JSON.parse(detail.responseBody)
+        return true
+      } catch {
+        return false
+      }
+    })()
 
   return (
     <div className="modal-overlay" onClick={() => actions.closeInspector()}>
@@ -92,7 +147,9 @@ export function ApiInspector() {
                     </span>
                   </div>
                   <div className="inspector-item-sub">
-                    {new Date(item.startedAt).toLocaleTimeString()} · {item.eventCount} 个事件
+                    {new Date(item.startedAt).toLocaleTimeString()}
+                    {item.round > 1 ? ` · R${item.round}` : ''}
+                    {` · ${item.eventCount} 个事件`}
                     {item.durationMs != null ? ` · ${item.durationMs}ms` : ''}
                     {item.cost ? ` · ${moneyLabel(item.cost)}` : ''}
                   </div>
@@ -123,77 +180,83 @@ export function ApiInspector() {
               <div className="inspector-empty">选择左侧一条记录，查看原始请求与响应。</div>
             ) : (
               <>
-                <h3>请求 {detail.kind === 'test' ? '（测试连接，非流式）' : '（对话，流式）'}</h3>
-                <pre className="debug-pre">
-                  {detail.method} {detail.url}
-                </pre>
+                <h3>请求 {detail.kind === 'test' ? '（测试连接，非流式）' : `（对话，流式${detail.round > 1 ? ` · 第 ${detail.round} 轮` : ''}）`}</h3>
+                <DebugPre text={`${detail.method} ${detail.url}`} />
                 <div className="hint-line">
                   {detail.proxyURL ? `经代理发送：${detail.proxyURL}` : '直连（未配置代理）'}
                 </div>
-                <pre className="debug-pre">
-                  {Object.entries(detail.requestHeaders)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join('\n')}
-                </pre>
-                <pre className="debug-pre">{detail.requestBody}</pre>
+                <DebugPre text={headersText} />
+                <DebugPre text={detail.requestBody} json />
 
-                <h3>回复内容（从流式增量拼装）</h3>
-                <pre className="debug-pre">
-                  {detail.assembledText ||
-                    (detail.reasoningText || detail.toolCalls.length
-                      ? '（本轮无正文：模型只输出了思考内容和/或工具调用）'
-                      : '（空）')}
-                </pre>
-
-                {detail.toolCalls.length > 0 ? (
+                {detail.responseBody != null ? (
                   <>
-                    <h3>本轮发起的工具调用（{detail.toolCalls.length} 个，结果见下一轮请求体 / 聊天气泡）</h3>
-                    {detail.toolCalls.map((c) => (
-                      <pre key={c.id} className="debug-pre">
-                        {`${c.name}  (id: ${c.id})\n${prettyJson(c.argsJson)}`}
-                      </pre>
-                    ))}
+                    <h3>响应体（非流式原始响应）</h3>
+                    {responseIsJson ? (
+                      <DebugPre json text={prettyJson(detail.responseBody)} />
+                    ) : (
+                      <DebugPre text={detail.responseBody} />
+                    )}
                   </>
                 ) : null}
 
-                {detail.reasoningText ? (
+                {detail.kind === 'chat' ? (
                   <>
-                    <h3>思考过程（reasoning_content，按协议约定不回传给模型）</h3>
-                    <pre className="debug-pre">{detail.reasoningText}</pre>
+                    <h3>回复内容（从流式增量拼装）</h3>
+                    <DebugPre
+                      text={
+                        detail.assembledText ||
+                        (detail.reasoningText || detail.toolCalls.length
+                          ? '（本轮无正文：模型只输出了思考内容和/或工具调用）'
+                          : '（空）')
+                      }
+                    />
+
+                    {detail.toolCalls.length > 0 ? (
+                      <>
+                        <h3>本轮发起的工具调用（{detail.toolCalls.length} 个，结果见下一轮请求体 / 聊天气泡）</h3>
+                        {detail.toolCalls.map((c) => (
+                          <div key={c.id}>
+                            <div className="hint-line">
+                              {`${c.name}  (id: ${c.id})`}
+                            </div>
+                            <DebugPre json text={prettyJson(c.argsJson)} />
+                          </div>
+                        ))}
+                      </>
+                    ) : null}
+
+                    {detail.reasoningText ? (
+                      <>
+                        <h3>思考过程（reasoning_content，按协议约定不回传给模型）</h3>
+                        <DebugPre text={detail.reasoningText} />
+                      </>
+                    ) : null}
                   </>
                 ) : null}
 
                 <details className="sse-details">
-                  <summary>
-                    展开详情：token 用量 / 计费 / 原始 SSE 事件（{detail.eventCount} 条）
-                  </summary>
+                  <summary>展开详情：token 用量 / 计费 / 原始 SSE 事件（{detail.eventCount} 条）</summary>
 
                   <div className="hint-line">
                     计费档位：{detail.peak ? '高峰时段' : '空闲时段'}（按请求发起时刻的北京时间判定）
                   </div>
-                  <pre className="debug-pre">
-                    {`输入 tokens: ${detail.inputTokens ?? '未返回'}${
-                      detail.cacheHitTokens != null
-                        ? `（缓存命中 ${detail.cacheHitTokens} + 未命中 ${detail.cacheMissTokens ?? '?'}）`
-                        : ''
-                    }\n输出 tokens: ${detail.outputTokens ?? '未返回'}\n花费: ${
-                      detail.cost ? moneyLabel(detail.cost) : '未计费（未返回 usage 或未配置该模型价格）'
-                    }`}
-                  </pre>
+                  <DebugPre
+                    json
+                    text={`{\n  "input_tokens": ${detail.inputTokens ?? '未返回'},\n  "output_tokens": ${detail.outputTokens ?? '未返回'},\n  "cost": ${JSON.stringify(detail.cost ?? '未计费')}\n}`}
+                  />
+
+                  {usageText ? (
+                    <>
+                      <div className="hint-line">原始 usage：</div>
+                      <DebugPre json text={usageText} />
+                    </>
+                  ) : null}
 
                   <div className="hint-line">
                     SSE 事件流（每行就是一条 "data: ..." 原始消息；OpenAI 系看 choices[0].delta.content，
                     Anthropic 看 type=content_block_delta 的 delta.text）：
                   </div>
-                  <pre className="debug-pre sse">
-                    {detail.sseEvents.length
-                      ? detail.sseEvents.map((l) => `data: ${l}`).join('\n')
-                      : '（还没有收到事件）'}
-                  </pre>
-
-                  {detail.usage ? (
-                    <pre className="debug-pre">{`原始 usage:\n${JSON.stringify(detail.usage, null, 2)}`}</pre>
-                  ) : null}
+                  <DebugPre className="debug-pre sse" text={sseText || '（还没有收到事件）'} />
                 </details>
               </>
             )}

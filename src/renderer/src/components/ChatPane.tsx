@@ -59,6 +59,19 @@ export function ChatPane() {
           ＋ 新会话
         </button>
         <div className="spacer" />
+        {activeSessionId && messages.length > 0 ? (
+          <button
+            className="btn"
+            title="清空当前会话的消息历史（保留会话，下一句从零开始）"
+            onClick={() => {
+              if (window.confirm('确定清空当前会话的上下文吗？消息将从会话中移除且不可恢复。')) {
+                void actions.clearSessionContext()
+              }
+            }}
+          >
+            🧹 清空上下文
+          </button>
+        ) : null}
         {activeSessionId && (
           <button className="btn btn-danger-ghost" onClick={() => void actions.deleteSession(activeSessionId)}>
             删除会话

@@ -111,6 +111,14 @@ export async function deleteSession(id: string): Promise<void> {
   })
 }
 
+/** 清空当前会话的上下文（保留会话本身，消息历史清零，下一句从零开始） */
+export async function clearSessionContext(): Promise<void> {
+  const s = store.getState()
+  if (!s.activeSessionId || s.streaming) return
+  store.setState({ messages: [] })
+  await persistCurrentSession()
+}
+
 export function openSettings(page = 'llm'): void {
   store.setState({ settingsOpen: true, settingsPage: page })
 }
