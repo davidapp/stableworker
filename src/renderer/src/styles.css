@@ -325,17 +325,15 @@ body {
 
 .composer-send {
   flex-shrink: 0;
-  width: 36px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   background: var(--accent);
   color: #fff;
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -350,7 +348,6 @@ body {
 
 .composer-send.stop {
   background: var(--danger);
-  font-size: 10px;
 }
 
 /* ---------- 输入框内的选择器（模型 / 批准模式 / 思考力度） ---------- */
