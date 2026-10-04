@@ -14,7 +14,9 @@ import type {
   ModelPricing,
   ProjectInfo,
   Session,
+  SessionLoadResult,
   SessionMeta,
+  SessionSaveResult,
 } from '../shared/types'
 
 /**
@@ -57,9 +59,13 @@ const api = {
   listSessions: (projectId: string): Promise<SessionMeta[]> => ipcRenderer.invoke('sessions:list', projectId),
   createSession: (projectId: string, title: string): Promise<Session> =>
     ipcRenderer.invoke('sessions:create', projectId, title),
-  loadSession: (projectId: string, sessionId: string): Promise<Session | null> =>
+  loadSession: (projectId: string, sessionId: string): Promise<SessionLoadResult | null> =>
     ipcRenderer.invoke('sessions:load', projectId, sessionId),
-  saveSession: (session: Session): Promise<boolean> => ipcRenderer.invoke('sessions:save', session),
+  saveSession: (session: Session): Promise<SessionSaveResult> =>
+    ipcRenderer.invoke('sessions:save', session),
+  /** 在资源管理器中显示会话文件（损坏恢复引导用） */
+  revealSessionFile: (projectId: string, sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:reveal', projectId, sessionId),
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>

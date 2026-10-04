@@ -32,7 +32,8 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 }
 
 export function ChatPane() {
-  const { projects, activeProjectId, activeSessionId, messages, streaming, llmProfiles, activeLlmId } = useApp()
+  const { projects, activeProjectId, activeSessionId, messages, streaming, llmProfiles, activeLlmId, sessionWarning, saveError } =
+    useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
@@ -105,6 +106,33 @@ export function ChatPane() {
           </button>
         ) : null}
       </header>
+
+      {saveError ? (
+        <div className="chat-banner error">
+          <span>
+            ⚠ 会话保存失败：{saveError}。新消息目前只存在内存中，请勿关闭应用。
+          </span>
+          <div className="chat-banner-actions">
+            <button className="btn" onClick={() => void actions.retrySaveSession()}>
+              重试保存
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {sessionWarning ? (
+        <div className="chat-banner warn">
+          <span>{sessionWarning}</span>
+          <div className="chat-banner-actions">
+            <button className="btn" onClick={() => void actions.revealSessionFile()}>
+              在文件夹中显示
+            </button>
+            <button className="btn" onClick={() => actions.dismissSessionWarning()}>
+              知道了
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {!activeLlm ? (
         <div className="empty-state">

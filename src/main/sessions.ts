@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, appendFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -67,20 +67,34 @@ interface ReplayResult {
   updatedAt: number
   messages: ChatMessage[]
   exists: boolean
+  /** 无法解析的行数（崩溃 / 磁盘问题导致的残缺） */
+  corruptLines: number
+  /** 文件总行数 */
+  totalLines: number
 }
 
-/** 逐行回放一个 JSONL 文件；解析失败的行（崩溃残尾）跳过 */
+/** 逐行回放一个 JSONL 文件；解析失败的行（崩溃残尾）跳过但计数，供损坏告警 */
 async function replay(projectId: string, sessionId: string): Promise<ReplayResult> {
-  const result: ReplayResult = { title: '新会话', createdAt: 0, updatedAt: 0, messages: [], exists: false }
+  const result: ReplayResult = {
+    title: '新会话',
+    createdAt: 0,
+    updatedAt: 0,
+    messages: [],
+    exists: false,
+    corruptLines: 0,
+    totalLines: 0,
+  }
   const lines = await readLines(sessionFile(projectId, sessionId))
   if (lines.length === 0) return result
   result.exists = true
+  result.totalLines = lines.length
   for (const line of lines) {
     let o: { t?: string; ts?: number; title?: string; createdAt?: number; i?: number; m?: ChatMessage }
     try {
       o = JSON.parse(line)
     } catch {
-      continue // 崩溃残缺行
+      result.corruptLines++
+      continue
     }
     const ts = typeof o.ts === 'number' ? o.ts : 0
     if (ts > result.updatedAt) result.updatedAt = ts
@@ -120,26 +134,30 @@ async function migrateLegacy(projectId: string, sessionId: string): Promise<Sess
   }
 }
 
-async function loadSessionAny(projectId: string, sessionId: string): Promise<Session | null> {
+async function loadSessionAny(
+  projectId: string,
+  sessionId: string,
+): Promise<{ session: Session | null; damaged: boolean; corruptLines: number; totalLines: number }> {
   const r = await replay(projectId, sessionId)
+  const damaged = r.exists && r.corruptLines > 0
   if (r.exists) {
     const session: Session = {
       id: sessionId,
       projectId,
-      title: r.title,
+      title: r.createdAt || r.messages.length ? r.title : '（损坏的会话）',
       createdAt: r.createdAt || r.updatedAt,
       updatedAt: r.updatedAt,
       messages: r.messages,
     }
     knownMessages.set(cacheKey(projectId, sessionId), r.messages)
-    return session
+    return { session, damaged, corruptLines: r.corruptLines, totalLines: r.totalLines }
   }
   const legacy = await migrateLegacy(projectId, sessionId)
   if (legacy) {
     knownMessages.set(cacheKey(projectId, sessionId), legacy.messages)
-    return legacy
+    return { session: legacy, damaged: false, corruptLines: 0, totalLines: 0 }
   }
-  return null
+  return { session: null, damaged: false, corruptLines: 0, totalLines: 0 }
 }
 
 // ---------- IPC ----------
@@ -156,8 +174,16 @@ export function registerSessionHandlers(): void {
       }
       const metas: SessionMeta[] = []
       for (const id of ids) {
-        const s = await loadSessionAny(projectId, id)
-        if (s) metas.push({ id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt })
+        const r = await loadSessionAny(projectId, id)
+        if (r.session) {
+          metas.push({
+            id: r.session.id,
+            title: r.session.title,
+            createdAt: r.session.createdAt,
+            updatedAt: r.session.updatedAt,
+            damaged: r.damaged || undefined,
+          })
+        }
       }
       return metas.sort((a, b) => b.updatedAt - a.updatedAt)
     } catch {
@@ -181,37 +207,59 @@ export function registerSessionHandlers(): void {
     return session
   })
 
-  ipcMain.handle('sessions:load', async (_e, projectId: string, sessionId: string): Promise<Session | null> => {
+  ipcMain.handle('sessions:load', async (_e, projectId: string, sessionId: string) => {
     return loadSessionAny(projectId, sessionId)
   })
 
-  // 全量保存：与已知状态 diff 后只追加变化（新消息追加、尾消息原地替换、清空记 clear）
-  ipcMain.handle('sessions:save', async (_e, session: Session): Promise<boolean> => {
+  // 全量保存：与已知状态 diff 后只追加变化（新消息追加、尾消息原地替换、清空记 clear）。
+  // 写入失败（磁盘满 / 文件被占用等）重试一次，仍失败则把错误带回界面提示。
+  ipcMain.handle('sessions:save', async (_e, session: Session): Promise<{ ok: boolean; error?: string }> => {
     const file = sessionFile(session.projectId, session.id)
     const key = cacheKey(session.projectId, session.id)
     const known = knownMessages.get(key)
 
-    await mkdir(projectDir(session.projectId), { recursive: true })
+    const attempt = async (): Promise<void> => {
+      await mkdir(projectDir(session.projectId), { recursive: true })
 
-    let lines: unknown[]
-    if (!known) {
-      // 内存里没有该会话的状态（如应用重启后首次保存）：整段补写（回放幂等，结果正确）
-      lines = [
-        { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt },
-        ...session.messages.map((m, i) => ({ t: 'm', ts: session.updatedAt, i, m })),
-      ]
-    } else if (session.messages.length === 0) {
-      lines = known.length > 0 ? [{ t: 'clear', ts: Date.now() }] : []
-    } else {
-      lines = []
-      for (let i = 0; i < session.messages.length; i++) {
-        if (!known[i] || JSON.stringify(known[i]) !== JSON.stringify(session.messages[i])) {
-          lines.push({ t: 'm', ts: Date.now(), i, m: session.messages[i] })
+      let lines: unknown[]
+      if (!known) {
+        // 内存里没有该会话的状态（如应用重启后首次保存）：整段补写（回放幂等，结果正确）
+        lines = [
+          { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt },
+          ...session.messages.map((m, i) => ({ t: 'm', ts: session.updatedAt, i, m })),
+        ]
+      } else if (session.messages.length === 0) {
+        lines = known.length > 0 ? [{ t: 'clear', ts: Date.now() }] : []
+      } else {
+        lines = []
+        for (let i = 0; i < session.messages.length; i++) {
+          if (!known[i] || JSON.stringify(known[i]) !== JSON.stringify(session.messages[i])) {
+            lines.push({ t: 'm', ts: Date.now(), i, m: session.messages[i] })
+          }
         }
+      }
+      if (lines.length > 0) await appendLines(file, lines)
+    }
+
+    try {
+      await attempt()
+    } catch (first) {
+      await new Promise((r) => setTimeout(r, 300)) // 短暂等待后重试一次（同步工具占用等瞬时问题）
+      try {
+        await attempt()
+      } catch (second) {
+        const detail = second instanceof Error ? second.message : String(second)
+        return { ok: false, error: `${detail}（首次错误：${first instanceof Error ? first.message : String(first)}）` }
       }
     }
     knownMessages.set(key, session.messages)
-    if (lines.length > 0) await appendLines(file, lines)
+    return { ok: true }
+  })
+
+  // 在资源管理器中显示会话文件（损坏恢复引导用）
+  ipcMain.handle('sessions:reveal', async (_e, projectId: string, sessionId: string): Promise<boolean> => {
+    const file = sessionFile(projectId, sessionId)
+    shell.showItemInFolder(file)
     return true
   })
 

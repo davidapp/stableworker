@@ -7,7 +7,7 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 
 - [ ] **应用图标**：设计 / 制作 Windows `.ico` 与 macOS `.icns`，配置进 electron-builder
 - [ ] **代码签名与公证**：Windows 证书签名（消除 SmartScreen 提示）；macOS Developer ID 签名 + 公证（消除 Gatekeeper 提示）
-- [ ] **JSONL 会话文件安全**：写入失败的兜底提示 UI；会话文件损坏时的恢复引导
+- [x] **JSONL 会话文件安全**：写入失败重试一次并在界面持续告警（红条 + 重试按钮）；损坏行自动跳过 + 打开会话时显示恢复引导（黄条：恢复统计 / 在文件夹中显示 / 删除重建）；侧栏叶子 ⚠ 标记
 
 ## 中优先级
 

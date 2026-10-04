@@ -74,13 +74,13 @@ async function refreshProjectSessions(projectId: string): Promise<void> {
 
 /** 把某个会话载入聊天视图（含中断状态清理）；必要时先切换激活项目 */
 async function loadSessionIntoView(projectId: string, sessionId: string): Promise<void> {
-  const session = await window.api.loadSession(projectId, sessionId)
-  if (!session) {
-    store.setState({ activeSessionId: null, messages: [] })
+  const res = await window.api.loadSession(projectId, sessionId)
+  if (!res || !res.session) {
+    store.setState({ activeSessionId: null, messages: [], sessionWarning: null })
     return
   }
   // 清理上次中断留下的流式/运行中状态
-  const messages = session.messages
+  const messages = res.session.messages
     .filter((m) => !(m.role === 'assistant' && m.blocks.length === 0))
     .map((m) => ({
       ...m,
@@ -91,7 +91,11 @@ async function loadSessionIntoView(projectId: string, sessionId: string): Promis
           : b,
       ),
     }))
-  store.setState({ activeProjectId: projectId, activeSessionId: session.id, messages })
+  const warning = res.damaged
+    ? `⚠ 该会话文件存在损坏：${res.corruptLines}/${res.totalLines} 行无法解析（通常是写入中断或磁盘故障），` +
+      `已尽力恢复出 ${messages.length} 条消息。建议尽快导出重要内容；也可以在文件夹中查看原始文件，或删除本会话重建。`
+    : null
+  store.setState({ activeProjectId: projectId, activeSessionId: res.session.id, messages, sessionWarning: warning })
 }
 
 export async function addProject(): Promise<void> {
@@ -144,6 +148,7 @@ export async function newSessionInProject(projectId: string): Promise<void> {
     expandedProjects: { ...prev.expandedProjects, [projectId]: true },
     activeSessionId: null,
     messages: [],
+    sessionWarning: null,
   }))
 }
 
@@ -151,7 +156,7 @@ export async function selectSession(projectId: string, sessionId: string): Promi
   if (store.getState().activeProjectId !== projectId) {
     const cfg = await window.api.setActiveProject(projectId)
     applyConfig(cfg)
-    store.setState({ activeSessionId: null, messages: [] })
+    store.setState({ activeSessionId: null, messages: [], sessionWarning: null })
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [projectId]: true } }))
   }
   await loadSessionIntoView(projectId, sessionId)
@@ -164,7 +169,9 @@ export async function deleteSession(projectId: string, id: string): Promise<void
       ...prev.sessionsByProject,
       [projectId]: (prev.sessionsByProject[projectId] ?? []).filter((s) => s.id !== id),
     },
-    ...(prev.activeSessionId === id ? { activeSessionId: null, messages: [] } : {}),
+    ...(prev.activeSessionId === id
+      ? { activeSessionId: null, messages: [], sessionWarning: null, saveError: null }
+      : {}),
   }))
 }
 
@@ -264,7 +271,13 @@ async function persistCurrentSession(): Promise<void> {
     updatedAt: Date.now(),
     messages: s.messages,
   }
-  await window.api.saveSession(session)
+  const res = await window.api.saveSession(session)
+  if (!res.ok) {
+    // 写盘失败：新消息只存在内存里，界面持续告警直到保存成功
+    store.setState({ saveError: res.error ?? '未知写入错误' })
+    return
+  }
+  store.setState({ saveError: null })
   const newMeta = toMeta(session)
   const ap = s.activeProjectId
   store.setState((prev) => {
@@ -274,6 +287,23 @@ async function persistCurrentSession(): Promise<void> {
     )
     return { sessionsByProject: { ...prev.sessionsByProject, [ap]: updated } }
   })
+}
+
+/** 保存失败后的手动重试 */
+export async function retrySaveSession(): Promise<void> {
+  await persistCurrentSession()
+}
+
+/** 在资源管理器中显示当前会话文件（损坏恢复引导用） */
+export async function revealSessionFile(): Promise<void> {
+  const s = store.getState()
+  if (s.activeProjectId && s.activeSessionId) {
+    await window.api.revealSessionFile(s.activeProjectId, s.activeSessionId)
+  }
+}
+
+export function dismissSessionWarning(): void {
+  store.setState({ sessionWarning: null })
 }
 
 export async function sendChat(text: string): Promise<void> {

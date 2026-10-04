@@ -118,6 +118,22 @@ export interface SessionMeta {
   title: string
   createdAt: number
   updatedAt: number
+  /** 会话文件存在损坏行（打开时会有恢复引导） */
+  damaged?: boolean
+}
+
+/** 会话加载结果：session 为 null 表示不存在；damaged 表示文件有损坏行已被跳过 */
+export interface SessionLoadResult {
+  session: Session | null
+  damaged: boolean
+  corruptLines: number
+  totalLines: number
+}
+
+/** 会话保存结果：ok=false 时 error 带原因（磁盘满 / 文件被占用等） */
+export interface SessionSaveResult {
+  ok: boolean
+  error?: string
 }
 
 /** 一个聊天会话（聊天上下文的持久化单位） */

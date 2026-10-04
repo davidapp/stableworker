@@ -288,6 +288,39 @@ body {
   color: var(--danger);
 }
 
+/* ---------- 聊天区告警横幅（保存失败 / 文件损坏） ---------- */
+.chat-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.chat-banner.warn {
+  background: rgba(245, 166, 35, 0.12);
+  color: var(--warn);
+  border-bottom: 1px solid rgba(245, 166, 35, 0.35);
+}
+
+.chat-banner.error {
+  background: rgba(229, 72, 77, 0.12);
+  color: var(--danger);
+  border-bottom: 1px solid rgba(229, 72, 77, 0.35);
+}
+
+.chat-banner span {
+  flex: 1;
+}
+
+.chat-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .project-item {
   display: flex;
   align-items: center;

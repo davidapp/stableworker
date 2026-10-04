@@ -79,7 +79,10 @@ export function Sidebar() {
                           setMenu({ x: e.clientX, y: e.clientY, projectId: p.id, session: s })
                         }}
                       >
-                        <span className="session-title">{s.title}</span>
+                        <span className="session-title">
+                          {s.damaged ? '⚠ ' : ''}
+                          {s.title}
+                        </span>
                         <button
                           className="icon-btn session-delete"
                           title="删除会话"

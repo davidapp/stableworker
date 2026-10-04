@@ -26,6 +26,10 @@ export interface AppState {
   activeSessionId: string | null
   /** 当前会话的消息（聊天上下文） */
   messages: ChatMessage[]
+  /** 会话文件损坏告警（打开会话时检测到损坏行） */
+  sessionWarning: string | null
+  /** 会话保存失败的原因（非空 = 有新消息只存在内存里） */
+  saveError: string | null
   llmProfiles: LLMProfileView[]
   activeLlmId: string | null
   /** 批准模式 */
@@ -76,6 +80,8 @@ export const store = createStore<AppState>({
   expandedProjects: {},
   activeSessionId: null,
   messages: [],
+  sessionWarning: null,
+  saveError: null,
   llmProfiles: [],
   activeLlmId: null,
   approvalMode: 'confirm',
