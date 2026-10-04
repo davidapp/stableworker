@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import type { ApprovalMode } from '../../../shared/types'
+import { CaretIcon } from './CaretIcon'
 
 /** 批准模式选项（对齐 Claude Code 的权限模式） */
 const MODES: { id: ApprovalMode; icon: string; label: string; description: string }[] = [
@@ -22,7 +23,7 @@ export function ApprovalModeMenu() {
         <span>
           {current.icon} {current.label}
         </span>
-        <span className="mode-caret">⌄</span>
+        <CaretIcon />
       </button>
 
       {open ? (

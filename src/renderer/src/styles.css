@@ -728,10 +728,9 @@ body {
 
 .mode-caret {
   color: var(--text-dim);
-  font-size: 14px;
-  line-height: 1;
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .popover-backdrop {

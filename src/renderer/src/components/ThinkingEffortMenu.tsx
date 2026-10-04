@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../store'
 import * as actions from '../actions'
+import { CaretIcon } from './CaretIcon'
 
 const LEVELS: { id: 'off' | 'low' | 'medium' | 'high'; label: string }[] = [
   { id: 'off', label: '默认' },
@@ -21,7 +22,7 @@ export function ThinkingEffortMenu() {
     <div className="mode-menu-wrap align-right">
       <button className="mode-btn" onClick={() => setOpen((v) => !v)} title="思考力度（推理模型）">
         <span>🧠 {currentLabel}</span>
-        <span className="mode-caret">⌄</span>
+        <CaretIcon />
       </button>
 
       {open ? (

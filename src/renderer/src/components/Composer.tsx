@@ -4,6 +4,7 @@ import * as actions from '../actions'
 import { ApprovalModeMenu } from './ApprovalModeMenu'
 import { ThinkingEffortMenu } from './ThinkingEffortMenu'
 import { ContextMeter } from './ContextMeter'
+import { CaretIcon } from './CaretIcon'
 
 export function Composer({ disabled }: { disabled: boolean }) {
   const { llmProfiles, activeLlmId } = useApp()
@@ -55,7 +56,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
                 ))
               )}
             </select>
-            <span className="mode-caret">⌄</span>
+            <CaretIcon />
           </div>
           <ThinkingEffortMenu />
         {disabled ? (
