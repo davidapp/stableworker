@@ -40,7 +40,12 @@ import type {
  * 两种协议的线上格式都可以在"API 调试"面板里逐行观察。
  */
 
-const SYSTEM_PROMPT_BASE = '你是 StableWorker，一个运行在用户本地电脑上的 AI 编程助手。回答简洁准确，使用与用户相同的语言。'
+const SYSTEM_PROMPT_BASE = [
+  '你是 StableWorker，一个运行在用户本地电脑上的 AI 编程助手。回答简洁准确，使用与用户相同的语言。',
+  // 工具使用纪律：防止模型"口头交差"——声称完成却没调用工具落盘
+  '凡创建或修改文件，必须调用 write_file / edit_file 工具执行；只在回复里贴出代码或声称"已写好"而未调用工具，视为任务未完成。',
+  '汇报结果前先核对：只有看到工具返回成功结果，才可以说文件已写入。',
+].join('\n')
 const MAX_TOKENS = 8192
 const MAX_TOOL_ROUNDS = 8
 
