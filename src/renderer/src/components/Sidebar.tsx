@@ -2,8 +2,7 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 
 export function Sidebar() {
-  const { projects, activeProjectId, llmProfiles, activeLlmId } = useApp()
-  const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
+  const { projects, activeProjectId } = useApp()
 
   return (
     <aside className="sidebar">
@@ -37,12 +36,18 @@ export function Sidebar() {
       </ul>
 
       <div className="sidebar-footer">
-        <div className={`llm-status ${activeLlm ? 'ok' : 'warn'}`} title={activeLlm?.baseURL ?? ''}>
-          {activeLlm ? `${activeLlm.name} · ${activeLlm.model}` : 'LLM 未配置'}
+        <div className="sidebar-footer-actions">
+          <button className="icon-btn-lg" title="设置" onClick={() => actions.openSettings()}>
+            ⚙
+          </button>
+          <button
+            className="icon-btn-lg"
+            title="API 调试（Ctrl+Alt+D）"
+            onClick={() => void window.api.openInspector()}
+          >
+            🔍
+          </button>
         </div>
-        <button className="btn btn-block" onClick={() => actions.openSettings()}>
-          ⚙ 设置
-        </button>
       </div>
     </aside>
   )

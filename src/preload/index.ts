@@ -63,6 +63,9 @@ const api = {
   respondApproval: (approvalId: string, approved: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('approval:respond', approvalId, approved),
 
+  /** 打开独立的 API 调试悬浮窗口 */
+  openInspector: (): Promise<void> => ipcRenderer.invoke('inspector:open'),
+
   /** 订阅批准请求（危险工具执行前触发） */
   onApprovalRequest: (callback: (event: { sessionId: string; toolUseId: string; approvalId: string }) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, event: { sessionId: string; toolUseId: string; approvalId: string }): void =>

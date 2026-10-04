@@ -6,7 +6,7 @@ import { registerSessionHandlers } from './sessions'
 import { registerChatHandlers } from './llm'
 import { registerDebugHandlers, initDebugLog } from './debug'
 import { registerApprovalHandlers } from './approvals'
-import { openInspectorWindow } from './inspectorWindow'
+import { openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
 
 /**
@@ -23,6 +23,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     title: 'StableWorker',
+    autoHideMenuBar: true, // 不显示菜单栏（按 Alt 可临时呼出，快捷键仍有效）
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       // Electron 安全基线：上下文隔离 + 关闭 Node 集成 + 沙箱
@@ -67,6 +68,7 @@ app.whenReady().then(async () => {
   registerChatHandlers()
   registerDebugHandlers()
   registerApprovalHandlers()
+  registerInspectorHandlers()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createAppMenu(() => openInspectorWindow())
   createWindow()

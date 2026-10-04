@@ -153,28 +153,30 @@ body {
 .sidebar-footer {
   border-top: 1px solid var(--border);
   padding-top: 10px;
+}
+
+.sidebar-footer-actions {
   display: flex;
-  flex-direction: column;
   gap: 8px;
 }
 
-.llm-status {
-  font-size: 12px;
-  padding: 0 6px 2px;
+.icon-btn-lg {
+  flex: 1;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   color: var(--text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 15px;
+  cursor: pointer;
 }
 
-.llm-status.ok::before {
-  content: '● ';
-  color: var(--ok);
-}
-
-.llm-status.warn::before {
-  content: '● ';
-  color: var(--warn);
+.icon-btn-lg:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 /* ---------- 聊天区 ---------- */

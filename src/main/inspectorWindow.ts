@@ -1,4 +1,4 @@
-import { BrowserWindow, app } from 'electron'
+import { BrowserWindow, app, ipcMain } from 'electron'
 import { join } from 'node:path'
 
 /**
@@ -19,6 +19,7 @@ export function openInspectorWindow(): void {
     height: 680,
     title: 'API 调试',
     alwaysOnTop: true,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -36,4 +37,9 @@ export function openInspectorWindow(): void {
   } else {
     void inspectorWin.loadFile(join(__dirname, '../renderer/index.html'), { query: { page: 'inspector' } })
   }
+}
+
+export function registerInspectorHandlers(): void {
+  // 渲染进程（如侧栏小图标）请求打开调试窗口
+  ipcMain.handle('inspector:open', () => openInspectorWindow())
 }
