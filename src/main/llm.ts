@@ -16,6 +16,8 @@ import {
 import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals } from './approvals'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
+import { estimateTokens } from '../shared/tokens'
+import { recordContextBreakdown } from './debug'
 import type {
   ChatEvent,
   ChatRequest,
@@ -477,6 +479,12 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const peak = isPeakTime(new Date(), cfg.holidays ?? [])
   const proxyURL = llm.proxyURL?.trim() || null
   const approvalMode = cfg.approvalMode ?? 'confirm'
+  // 上下文构成明细用：系统提示词与工具定义是我们自己的固定文本，可本地估算；
+  // messages 部分用服务端总量减去这两项得出余量
+  const systemText = buildSystemPrompt(projectPath)
+  const toolsText = JSON.stringify(
+    tools.map((d) => ({ name: d.name, description: d.description, input_schema: d.inputSchema })),
+  )
 
   const controller = new AbortController()
   aborters.set(req.sessionId, controller)
@@ -538,6 +546,20 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
       )
       if (reasoning) recordReasoningText(exchange as NonNullable<typeof exchange>, reasoning)
       recordAssembledText(exchange as NonNullable<typeof exchange>, textOfBlocks(assistantBlocks))
+      // 上下文构成：总量用服务端 usage，系统/工具用本地估算，余量记为消息
+      const ex = exchange as NonNullable<typeof exchange>
+      if (ex.inputTokens != null) {
+        const systemTokens = estimateTokens(systemText)
+        const toolsTokens = estimateTokens(toolsText)
+        recordContextBreakdown(ex, {
+          totalTokens: ex.inputTokens,
+          systemTokens,
+          toolsTokens,
+          messagesTokens: Math.max(0, ex.inputTokens - systemTokens - toolsTokens),
+          cacheHitTokens: ex.cacheHitTokens,
+          cacheHitRate: ex.inputTokens > 0 ? (ex.cacheHitTokens ?? 0) / ex.inputTokens : null,
+        })
+      }
       endExchange(exchange)
       exchange = null
 

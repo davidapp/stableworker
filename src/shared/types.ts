@@ -183,6 +183,21 @@ export type ChatEvent =
 
 // ---------- API 调试面板（学习用） ----------
 
+/** 上下文构成的明细拆分（total 为服务端精确值；system/tools 为本地估算，messages 为余量） */
+export interface ContextBreakdown {
+  totalTokens: number
+  /** 系统提示词（含项目目录说明），估算 */
+  systemTokens: number
+  /** 工具定义（名称/描述/JSON Schema），估算 */
+  toolsTokens: number
+  /** 消息部分 = 总量 - 系统 - 工具（聊天历史 + 工具结果），余量推算 */
+  messagesTokens: number
+  /** 命中缓存的输入 tokens（DeepSeek/OpenAI/Anthropic 均有对应字段） */
+  cacheHitTokens: number | null
+  /** 缓存命中率 = cacheHit / total */
+  cacheHitRate: number | null
+}
+
 /** 调试列表条目（轻量，不含大字段） */
 export interface DebugListItem {
   id: string
@@ -202,6 +217,8 @@ export interface DebugListItem {
   outputTokens: number | null
   /** 请求发出时的上下文总输入 tokens（= prompt_tokens，即"这轮历史有多大"） */
   contextTokens: number | null
+  /** 上下文构成明细（该轮请求结束后计算） */
+  breakdown: ContextBreakdown | null
   /** 本次费用（精确十进制字符串）；null = 未能计费 */
   cost: Money | null
 }

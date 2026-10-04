@@ -292,6 +292,73 @@ body {
   color: var(--danger);
 }
 
+/* ---------- 上下文明细弹层 ---------- */
+.context-meter-btn {
+  gap: 7px;
+}
+
+.ctx-popover {
+  width: 320px;
+  padding: 12px;
+}
+
+.ctx-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.ctx-total-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--elevated);
+  margin-bottom: 10px;
+}
+
+.ctx-seg {
+  height: 100%;
+}
+
+.ctx-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ctx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.ctx-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ctx-label {
+  flex: 1;
+  color: var(--text);
+}
+
+.ctx-value {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.ctx-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
 .message-list-wrap {
   position: relative;
   flex: 1;

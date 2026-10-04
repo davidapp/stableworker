@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { computeCost } from './pricing'
-import type { DebugDetail, DebugListItem, LLMConfig, ModelPricing, Money } from '../shared/types'
+import type { ContextBreakdown, DebugDetail, DebugListItem, LLMConfig, ModelPricing, Money } from '../shared/types'
 
 /**
  * API 调用检查器（学习用途）：
@@ -53,6 +53,8 @@ interface Exchange {
   /** 缓存命中/未命中的输入拆分（按 usage 里的对应字段提取） */
   cacheHitTokens: number | null
   cacheMissTokens: number | null
+  /** 上下文构成明细（请求结束后计算） */
+  breakdown: ContextBreakdown | null
   /** 本次费用（精确十进制字符串）；null = 未能计费 */
   cost: Money | null
   /** 请求时快照的模型价格表；null = 配置里没有该模型的价格 */
@@ -175,6 +177,7 @@ export function beginExchange(input: {
     outputTokens: null,
     cacheHitTokens: null,
     cacheMissTokens: null,
+    breakdown: null,
     cost: null,
     pricing: input.pricing,
     peak: input.peak,
@@ -202,6 +205,13 @@ export function recordStatus(ex: Exchange, status: number): void {
 export function recordSSELine(ex: Exchange, rawLine: string): void {
   ex.eventCount++
   if (ex.sseEvents.length < MAX_EVENTS_PER_EXCHANGE) ex.sseEvents.push(rawLine)
+  scheduleSave(ex)
+  notifyUpdated()
+}
+
+/** 记录上下文构成明细（请求结束后用服务端总量 + 本地估算拆分） */
+export function recordContextBreakdown(ex: Exchange, breakdown: ContextBreakdown): void {
+  ex.breakdown = breakdown
   scheduleSave(ex)
   notifyUpdated()
 }
@@ -332,6 +342,7 @@ function toListItem(ex: Exchange): DebugListItem {
     inputTokens: ex.inputTokens ?? null,
     outputTokens: ex.outputTokens ?? null,
     contextTokens: ex.inputTokens ?? null,
+    breakdown: ex.breakdown ?? null,
     cost: ex.cost ?? null,
   }
 }
