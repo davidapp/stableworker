@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { useApp } from '../store'
 import * as actions from '../actions'
+import { ApprovalModeMenu } from './ApprovalModeMenu'
 
 export function Composer({ disabled }: { disabled: boolean }) {
+  const { llmProfiles, activeLlmId } = useApp()
   const [text, setText] = useState('')
 
   const submit = (): void => {
@@ -42,6 +45,29 @@ export function Composer({ disabled }: { disabled: boolean }) {
             ↑
           </button>
         )}
+      </div>
+
+      <div className="composer-toolbar">
+        <select
+          className="model-select"
+          value={activeLlmId ?? ''}
+          title="切换模型配置档"
+          onChange={(e) => {
+            if (e.target.value) void actions.setActiveLlm(e.target.value)
+          }}
+        >
+          {llmProfiles.length === 0 ? (
+            <option value="">未配置模型</option>
+          ) : (
+            llmProfiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {p.model}
+              </option>
+            ))
+          )}
+        </select>
+        <div className="spacer" />
+        <ApprovalModeMenu />
       </div>
     </footer>
   )

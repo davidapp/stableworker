@@ -1,8 +1,9 @@
 import { app, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
-import type { ConfigView, FeatureEntry, LLMConfig, ModelPricing, ProjectInfo } from '../shared/types'
+import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, ModelPricing, ProjectInfo } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -10,8 +11,8 @@ import type { ConfigView, FeatureEntry, LLMConfig, ModelPricing, ProjectInfo } f
  * - 单一全局 JSON 文件 + 内存缓存（读走缓存、写全量覆盖）
  * - apiKey 用 Electron safeStorage 加密后落盘；系统不支持时降级为带标记的明文
  * - 对渲染进程只暴露 ConfigView（apiKey 掩码），密钥原文永远不出主进程
- * - modelPricing：各模型价格表（按模型名），用于调试面板的精确计费
- * - holidays：中国法定节假日（北京时间日期），供高峰/空闲判定，可编辑
+ * - LLM 配置是多配置档（llmProfiles + activeLlmId）；旧版单配置在加载时自动迁移
+ * - modelPricing：各模型价格表（按模型名）；holidays：法定节假日；features：功能入口显隐
  */
 
 const ENCRYPTED_PREFIX = 'enc:v1:'
@@ -31,11 +32,20 @@ const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
 ]
 
-/** 落盘的完整配置形态（含 apiKey 明文/密文） */
+const APPROVAL_MODES: ApprovalMode[] = ['confirm', 'autoEdit', 'fullAccess']
+
+/** 一条 LLM 配置档的落盘形态（apiKey 为加密后字符串） */
+type StoredProfile = LLMConfig & { id: string; apiKey: string }
+
+/** 落盘的完整配置形态 */
 interface StoredConfig {
   projects: ProjectInfo[]
   activeProjectId: string | null
-  llm: (LLMConfig & { apiKey: string }) | null
+  /** v0.3 起为多配置档；llm 是旧版单配置字段，加载时迁移进 llmProfiles 后删除 */
+  llm?: (LLMConfig & { apiKey: string }) | null
+  llmProfiles?: StoredProfile[]
+  activeLlmId?: string | null
+  approvalMode?: ApprovalMode
   modelPricing?: ModelPricing[]
   holidays?: string[]
   features?: FeatureEntry[]
@@ -52,12 +62,27 @@ export async function loadConfig(): Promise<StoredConfig> {
   try {
     cache = JSON.parse(await readFile(configPath(), 'utf-8')) as StoredConfig
   } catch {
-    cache = { projects: [], activeProjectId: null, llm: null }
+    cache = { projects: [], activeProjectId: null }
   }
   cache.projects ??= []
-  // 旧版本配置没有 proxyURL 字段，归一化成空串（= 直连）
-  if (cache.llm) cache.llm.proxyURL ??= ''
-  // 价格表 / 节假日首次使用时预置；字段一旦存在（哪怕为空数组）就完全尊重用户编辑
+
+  // 旧版单配置 → 多配置档迁移（只在本字段不存在时执行一次，之后完全尊重用户编辑）
+  if (cache.llmProfiles === undefined) {
+    if (cache.llm) {
+      const legacy = cache.llm
+      cache.llmProfiles = [{ ...legacy, proxyURL: legacy.proxyURL ?? '', id: randomUUID() }]
+      cache.activeLlmId = cache.llmProfiles[0].id
+    } else {
+      cache.llmProfiles = []
+      cache.activeLlmId = null
+    }
+    delete cache.llm
+  }
+  cache.llmProfiles.forEach((p) => {
+    p.proxyURL ??= ''
+  })
+  if (cache.activeLlmId === undefined) cache.activeLlmId = null
+  if (cache.approvalMode === undefined) cache.approvalMode = 'confirm'
   if (cache.modelPricing === undefined) cache.modelPricing = DEFAULT_MODEL_PRICING
   if (cache.holidays === undefined) cache.holidays = DEFAULT_HOLIDAYS
   if (cache.features === undefined) cache.features = []
@@ -101,38 +126,75 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
   return {
     projects: cfg.projects,
     activeProjectId: cfg.activeProjectId,
+    llmProfiles: (cfg.llmProfiles ?? []).map((p) => ({
+      id: p.id,
+      provider: p.provider,
+      name: p.name,
+      baseURL: p.baseURL,
+      model: p.model,
+      proxyURL: p.proxyURL,
+      hasApiKey: Boolean(p.apiKey),
+      apiKeyHint: maskKey(decryptApiKey(p.apiKey)),
+    })),
+    activeLlmId: cfg.activeLlmId ?? null,
+    approvalMode: cfg.approvalMode ?? 'confirm',
     modelPricing: cfg.modelPricing ?? [],
     holidays: cfg.holidays ?? [],
     features: cfg.features ?? [],
-    llm: cfg.llm
-      ? {
-          provider: cfg.llm.provider,
-          name: cfg.llm.name,
-          baseURL: cfg.llm.baseURL,
-          model: cfg.llm.model,
-          proxyURL: cfg.llm.proxyURL,
-          hasApiKey: Boolean(cfg.llm.apiKey),
-          apiKeyHint: maskKey(decryptApiKey(cfg.llm.apiKey)),
-        }
-      : null,
   }
 }
 
 export function registerConfigHandlers(): void {
   ipcMain.handle('config:get', async (): Promise<ConfigView> => toConfigView(await loadConfig()))
 
-  // 保存 LLM 配置；apiKey 留空且原来已保存过 key 时，保留旧 key
-  ipcMain.handle('config:saveLlm', async (_e, input: LLMConfig & { apiKey?: string }): Promise<ConfigView> => {
+  // 新增或更新一条配置档；apiKey 留空且原来已保存过 key 时保留旧 key；新增即激活
+  ipcMain.handle(
+    'config:saveProfile',
+    async (_e, input: LLMConfig & { id?: string; apiKey?: string }): Promise<ConfigView> => {
+      const cfg = await loadConfig()
+      cfg.llmProfiles ??= []
+      if (input.id) {
+        const p = cfg.llmProfiles.find((x) => x.id === input.id)
+        if (!p) return toConfigView(cfg)
+        const keepOldKey = (!input.apiKey || !input.apiKey.trim()) && Boolean(p.apiKey)
+        p.provider = input.provider
+        p.name = input.name.trim() || p.name
+        p.baseURL = input.baseURL.trim()
+        p.model = input.model.trim()
+        p.proxyURL = input.proxyURL?.trim() ?? ''
+        p.apiKey = keepOldKey ? p.apiKey : encryptApiKey(input.apiKey?.trim() ?? '')
+      } else {
+        cfg.llmProfiles.push({
+          id: randomUUID(),
+          provider: input.provider,
+          name: input.name.trim() || '默认配置',
+          baseURL: input.baseURL.trim(),
+          model: input.model.trim(),
+          proxyURL: input.proxyURL?.trim() ?? '',
+          apiKey: encryptApiKey(input.apiKey?.trim() ?? ''),
+        })
+        cfg.activeLlmId = cfg.llmProfiles[cfg.llmProfiles.length - 1].id
+      }
+      return saveConfig(cfg)
+    },
+  )
+
+  ipcMain.handle('config:deleteProfile', async (_e, id: string): Promise<ConfigView> => {
     const cfg = await loadConfig()
-    const keepOldKey = (!input.apiKey || !input.apiKey.trim()) && Boolean(cfg.llm)
-    cfg.llm = {
-      provider: input.provider,
-      name: input.name.trim() || '默认配置',
-      baseURL: input.baseURL.trim(),
-      model: input.model.trim(),
-      proxyURL: input.proxyURL?.trim() ?? '',
-      apiKey: keepOldKey ? (cfg.llm as { apiKey: string }).apiKey : encryptApiKey(input.apiKey?.trim() ?? ''),
-    }
+    cfg.llmProfiles = (cfg.llmProfiles ?? []).filter((p) => p.id !== id)
+    if (cfg.activeLlmId === id) cfg.activeLlmId = cfg.llmProfiles[0]?.id ?? null
+    return saveConfig(cfg)
+  })
+
+  ipcMain.handle('config:setActiveLlm', async (_e, id: string): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    if ((cfg.llmProfiles ?? []).some((p) => p.id === id)) cfg.activeLlmId = id
+    return saveConfig(cfg)
+  })
+
+  ipcMain.handle('config:setApprovalMode', async (_e, mode: ApprovalMode): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    if (APPROVAL_MODES.includes(mode)) cfg.approvalMode = mode
     return saveConfig(cfg)
   })
 

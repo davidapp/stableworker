@@ -8,8 +8,9 @@ function useFeatureVisible(): (id: string) => boolean {
 }
 
 export function Sidebar() {
-  const { projects, activeProjectId, llm } = useApp()
+  const { projects, activeProjectId, llmProfiles, activeLlmId } = useApp()
   const visible = useFeatureVisible()
+  const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
 
   return (
     <aside className="sidebar">
@@ -43,8 +44,8 @@ export function Sidebar() {
       </ul>
 
       <div className="sidebar-footer">
-        <div className={`llm-status ${llm ? 'ok' : 'warn'}`} title={llm?.baseURL ?? ''}>
-          {llm ? `${llm.name} · ${llm.model}` : 'LLM 未配置'}
+        <div className={`llm-status ${activeLlm ? 'ok' : 'warn'}`} title={activeLlm?.baseURL ?? ''}>
+          {activeLlm ? `${activeLlm.name} · ${activeLlm.model}` : 'LLM 未配置'}
         </div>
         {/* 功能入口按"功能开关"页的配置渲染；"⚙ 设置"是对话框本体，始终可见 */}
         {visible('apiInspector') ? (

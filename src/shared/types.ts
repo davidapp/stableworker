@@ -5,6 +5,9 @@
 
 export type ProviderType = 'openai-compatible' | 'anthropic'
 
+/** 批准模式：决定危险工具执行前是否需要用户确认 */
+export type ApprovalMode = 'confirm' | 'autoEdit' | 'fullAccess'
+
 export type Currency = 'CNY' | 'USD'
 
 /** 金额：amount 是精确的十进制字符串（不做浮点舍入），source 标明金额来源 */
@@ -30,17 +33,24 @@ export interface ModelPricing {
   outputPeak: number
 }
 
-/** LLM 接入配置（apiKey 不会原样发给渲染进程，渲染进程只看得到掩码，见 ConfigView） */
+/** 一条 LLM 配置档（多配置档体系；apiKey 永不出主进程，见 LLMProfileView） */
 export interface LLMConfig {
   provider: ProviderType
   /** 显示名称，例如 "DeepSeek"、"GLM" */
   name: string
   /** 例如 https://api.deepseek.com/v1（OpenAI 兼容）/ https://api.anthropic.com（Anthropic） */
   baseURL: string
-  /** 模型名，例如 deepseek-chat / claude-sonnet-4-5 */
+  /** 模型名，例如 deepseek-flash / claude-sonnet-4-5 */
   model: string
   /** 可选 HTTP 代理，例如 http://127.0.0.1:7890；留空 = 直连 */
   proxyURL: string
+}
+
+/** 渲染进程可见的配置档视图（apiKey 掩码） */
+export interface LLMProfileView extends LLMConfig {
+  id: string
+  hasApiKey: boolean
+  apiKeyHint: string
 }
 
 export interface ProjectInfo {
@@ -115,7 +125,11 @@ export interface FeatureEntry {
 export interface ConfigView {
   projects: ProjectInfo[]
   activeProjectId: string | null
-  llm: (LLMConfig & { hasApiKey: boolean; apiKeyHint: string }) | null
+  /** 所有 LLM 配置档与当前激活项 */
+  llmProfiles: LLMProfileView[]
+  activeLlmId: string | null
+  /** 批准模式 */
+  approvalMode: ApprovalMode
   /** 各模型的价格表（全局，按模型名） */
   modelPricing: ModelPricing[]
   /** 中国法定节假日（北京时间 YYYY-MM-DD），用于高峰/空闲判定 */
@@ -137,8 +151,9 @@ export interface ChatRequest {
   messages: ChatHistoryMessage[]
 }
 
-/** 测试连接的入参：允许用尚未保存的表单值来测试 */
+/** 测试连接的入参：允许用尚未保存的表单值来测试（id 用于回退到该配置档已存的 key） */
 export interface LLMTestPayload extends LLMConfig {
+  id?: string
   apiKey?: string
 }
 

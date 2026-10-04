@@ -8,8 +8,10 @@ import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
 
 export function ChatPane() {
-  const { projects, activeProjectId, sessions, activeSessionId, messages, streaming, llm } = useApp()
+  const { projects, activeProjectId, sessions, activeSessionId, messages, streaming, llmProfiles, activeLlmId } =
+    useApp()
   const listRef = useRef<HTMLDivElement>(null)
+  const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
 
   // 消息变化时自动滚到底部
   useEffect(() => {
@@ -79,7 +81,7 @@ export function ChatPane() {
         )}
       </header>
 
-      {!llm ? (
+      {!activeLlm ? (
         <div className="empty-state">
           <p>还没有配置 LLM API。</p>
           <button className="btn btn-primary" onClick={() => actions.openSettings()}>

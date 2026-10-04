@@ -344,6 +344,118 @@ body {
   font-size: 10px;
 }
 
+/* ---------- 输入框下方工具条：模型选择 + 批准模式 ---------- */
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.model-select {
+  max-width: 260px;
+  background: var(--elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
+.mode-menu-wrap {
+  position: relative;
+}
+
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.mode-btn:hover {
+  border-color: var(--accent);
+}
+
+.mode-caret {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 190;
+}
+
+.mode-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 200;
+  width: 260px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.mode-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+}
+
+.mode-item:hover {
+  background: var(--elevated);
+}
+
+.mode-item.active {
+  background: var(--elevated);
+}
+
+.mode-icon {
+  font-size: 15px;
+}
+
+.mode-texts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-label {
+  font-size: 13px;
+}
+
+.mode-texts small {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.mode-check {
+  color: var(--ok);
+}
+
 /* ---------- 按钮 ---------- */
 .btn {
   background: var(--elevated);
@@ -1114,4 +1226,67 @@ body {
   color: var(--text-dim);
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* ---------- 配置档管理器 ---------- */
+.profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.profile-row.active {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.profile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.profile-name {
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-active-badge {
+  font-size: 10.5px;
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  border-radius: 4px;
+  padding: 0 6px;
+}
+
+.profile-info small {
+  color: var(--text-dim);
+}
+
+.profile-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.profile-empty {
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
 }

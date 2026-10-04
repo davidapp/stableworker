@@ -28,8 +28,13 @@ export interface ToolDefinition {
   /** JSON Schema（Anthropic 直接用作 input_schema，OpenAI 包在 parameters 里） */
   inputSchema: Record<string, unknown>
   execute: (input: Record<string, unknown>, ctx: ToolContext) => Promise<ToolOutput>
-  /** true = 有副作用的危险操作（如写文件），执行前必须经用户在界面上批准 */
+  /** true = 有副作用的危险操作（如写文件），执行前必须经用户在界面上批准（除非批准模式放行） */
   requiresApproval?: boolean
+  /**
+   * 危险类别：edit = 文件编辑（"自动编辑"模式放行）；system = 执行命令等更高风险操作；
+   * 只读工具可省略
+   */
+  kind?: 'read' | 'edit' | 'system'
 }
 
 const MAX_LIST_ENTRIES = 300
@@ -123,6 +128,7 @@ const writeFileTool: ToolDefinition = {
     required: ['path', 'content'],
   },
   requiresApproval: true,
+  kind: 'edit',
   async execute(input, ctx) {
     const rel = typeof input.path === 'string' ? input.path : ''
     const content = typeof input.content === 'string' ? input.content : null

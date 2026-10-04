@@ -1,5 +1,6 @@
 import { store } from './store'
 import type {
+  ApprovalMode,
   ChatEvent,
   ChatHistoryMessage,
   ChatMessage,
@@ -25,7 +26,9 @@ function applyConfig(cfg: ConfigView): void {
   store.setState({
     projects: cfg.projects,
     activeProjectId: cfg.activeProjectId,
-    llm: cfg.llm,
+    llmProfiles: cfg.llmProfiles,
+    activeLlmId: cfg.activeLlmId,
+    approvalMode: cfg.approvalMode,
     modelPricing: cfg.modelPricing,
     holidays: cfg.holidays,
     features: cfg.features,
@@ -135,10 +138,25 @@ export function closeInspector(): void {
   store.setState({ inspectorOpen: false })
 }
 
-export async function saveLlm(input: LLMConfig & { apiKey?: string }): Promise<void> {
-  const cfg = await window.api.saveLlm(input)
+export async function saveProfile(profile: LLMConfig & { id?: string; apiKey?: string }): Promise<void> {
+  const cfg = await window.api.saveProfile(profile)
   applyConfig(cfg)
   closeSettings()
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+  const cfg = await window.api.deleteProfile(id)
+  applyConfig(cfg)
+}
+
+export async function setActiveLlm(id: string): Promise<void> {
+  const cfg = await window.api.setActiveLlm(id)
+  applyConfig(cfg)
+}
+
+export async function setApprovalMode(mode: ApprovalMode): Promise<void> {
+  const cfg = await window.api.setApprovalMode(mode)
+  applyConfig(cfg)
 }
 
 export async function savePricing(pricing: ModelPricing[]): Promise<void> {
@@ -182,8 +200,8 @@ export async function sendChat(text: string): Promise<void> {
   const s = store.getState()
   const content = text.trim()
   if (!content || s.streaming || !s.activeProjectId) return
-  if (!s.llm) {
-    openSettings() // 没配置 LLM 时直接带用户去设置
+  if (!s.activeLlmId) {
+    openSettings() // 没有可用配置档时直接带用户去设置
     return
   }
 

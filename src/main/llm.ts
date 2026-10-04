@@ -418,16 +418,17 @@ function createStreamCollector(
 
 async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string }> {
   const cfg = await loadConfig()
-  if (!cfg.llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中填写' }
-  const llm = cfg.llm
+  const llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
+  if (!llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中添加配置档' }
   const apiKey = decryptApiKey(llm.apiKey)
-  if (!apiKey) return { ok: false, error: 'API Key 为空，请在设置中填写' }
+  if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
 
   const projectPath = cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
   const tools = getToolDefinitions()
   const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
   const peak = isPeakTime(new Date(), cfg.holidays ?? [])
   const proxyURL = llm.proxyURL?.trim() || null
+  const approvalMode = cfg.approvalMode ?? 'confirm'
 
   const controller = new AbortController()
   aborters.set(req.sessionId, controller)
@@ -505,10 +506,13 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         return { ok: false, error: message }
       }
 
-      // 执行本轮的每个工具调用：危险操作先过批准门，结果回传给模型进入下一轮
+      // 执行本轮的每个工具调用：危险操作按批准模式决定是否先过批准门
       for (const tu of toolUses) {
         const def = tools.find((d) => d.name === tu.name)
-        if (def?.requiresApproval) {
+        // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问
+        const autoApprove =
+          approvalMode === 'fullAccess' || (approvalMode === 'autoEdit' && def?.kind === 'edit')
+        if (def?.requiresApproval && !autoApprove) {
           // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
           const outcome = await requestApproval(req.sessionId, tu.id, emit)
           if (outcome !== 'approved') {
@@ -566,18 +570,22 @@ export function registerChatHandlers(): void {
     return true
   })
 
-  // 测试连接：允许用尚未保存的表单值；apiKey 留空时用已保存的
+  // 测试连接：允许用尚未保存的表单值；apiKey 留空时回退到对应配置档（编辑中）或激活配置档已存的 key
   ipcMain.handle('llm:test', async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> => {
     try {
       const cfg = await loadConfig()
+      const profiles = cfg.llmProfiles ?? []
+      const byId = payload?.id ? profiles.find((p) => p.id === payload.id) : undefined
+      const active = profiles.find((p) => p.id === cfg.activeLlmId) ?? profiles[0]
+      const source = byId ?? active
       const llm: LLMConfig = {
-        provider: payload?.provider ?? cfg.llm?.provider ?? 'openai-compatible',
+        provider: payload?.provider ?? source?.provider ?? 'openai-compatible',
         name: payload?.name ?? 'test',
-        baseURL: payload?.baseURL ?? cfg.llm?.baseURL ?? '',
-        model: payload?.model ?? cfg.llm?.model ?? '',
-        proxyURL: payload?.proxyURL ?? cfg.llm?.proxyURL ?? '',
+        baseURL: payload?.baseURL ?? source?.baseURL ?? '',
+        model: payload?.model ?? source?.model ?? '',
+        proxyURL: payload?.proxyURL ?? source?.proxyURL ?? '',
       }
-      const apiKey = payload?.apiKey?.trim() || decryptApiKey(cfg.llm?.apiKey ?? '')
+      const apiKey = payload?.apiKey?.trim() || decryptApiKey(byId?.apiKey ?? active?.apiKey ?? '')
       if (!apiKey) return { ok: false, message: 'API Key 为空' }
       if (!llm.model) return { ok: false, message: '模型名不能为空' }
 

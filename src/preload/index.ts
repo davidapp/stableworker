@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
+  ApprovalMode,
   ChatEvent,
   ChatRequest,
   ConfigView,
@@ -8,6 +9,7 @@ import type {
   DebugListItem,
   FeatureEntry,
   LLMConfig,
+  LLMProfileView,
   LLMTestPayload,
   ModelPricing,
   ProjectInfo,
@@ -24,7 +26,11 @@ import type {
 const api = {
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
-  saveLlm: (llm: LLMConfig & { apiKey?: string }): Promise<ConfigView> => ipcRenderer.invoke('config:saveLlm', llm),
+  saveProfile: (profile: LLMConfig & { id?: string; apiKey?: string }): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:saveProfile', profile),
+  deleteProfile: (id: string): Promise<ConfigView> => ipcRenderer.invoke('config:deleteProfile', id),
+  setActiveLlm: (id: LLMProfileView['id']): Promise<ConfigView> => ipcRenderer.invoke('config:setActiveLlm', id),
+  setApprovalMode: (mode: ApprovalMode): Promise<ConfigView> => ipcRenderer.invoke('config:setApprovalMode', mode),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
   saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>

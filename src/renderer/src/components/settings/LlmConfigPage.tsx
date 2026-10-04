@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../../store'
 import * as actions from '../../actions'
-import type { ProviderType } from '../../../../shared/types'
+import type { LLMProfileView, ProviderType } from '../../../../shared/types'
 
 /** 预设配置：选一下就填好名称 / 协议 / BaseURL，模型给出常见候选（仍可手输），附官方文档 */
 interface ProviderPreset {
@@ -102,8 +102,8 @@ const PROVIDER_OPTIONS: {
 
 const stripSlash = (s: string): string => s.replace(/\/+$/, '')
 
-/** 已保存的配置反查预设（按 baseURL + provider 匹配），匹配不上算自定义 */
-function detectPresetId(llm: ReturnType<typeof useApp>['llm']): string {
+/** 按 baseURL + provider 反查预设，匹配不上算自定义 */
+function detectPresetId(llm: LLMProfileView | null): string {
   if (!llm) return 'custom'
   const hit = PRESETS.find(
     (p) => p.baseURL && stripSlash(p.baseURL) === stripSlash(llm.baseURL) && p.provider === llm.provider,
@@ -111,174 +111,292 @@ function detectPresetId(llm: ReturnType<typeof useApp>['llm']): string {
   return hit?.id ?? 'custom'
 }
 
-export function LlmConfigPage() {
-  const { llm } = useApp()
-  const [form, setForm] = useState(() => ({
-    presetId: detectPresetId(llm),
-    name: llm?.name ?? '',
-    provider: llm?.provider ?? ('openai-compatible' as ProviderType),
-    baseURL: llm?.baseURL ?? '',
-    model: llm?.model ?? '',
-    proxyURL: llm?.proxyURL ?? '',
+interface ProfileDraft {
+  id: string | null // null = 新增
+  presetId: string
+  name: string
+  provider: ProviderType
+  baseURL: string
+  model: string
+  proxyURL: string
+  apiKey: string
+  /** 编辑已有配置档时用于 apiKey 占位提示 */
+  hasApiKey: boolean
+  apiKeyHint: string
+}
+
+function draftFromProfile(p: LLMProfileView): ProfileDraft {
+  return {
+    id: p.id,
+    presetId: detectPresetId(p),
+    name: p.name,
+    provider: p.provider,
+    baseURL: p.baseURL,
+    model: p.model,
+    proxyURL: p.proxyURL,
     apiKey: '',
-  }))
+    hasApiKey: p.hasApiKey,
+    apiKeyHint: p.apiKeyHint,
+  }
+}
+
+function blankDraft(): ProfileDraft {
+  return {
+    id: null,
+    presetId: 'custom',
+    name: '',
+    provider: 'openai-compatible',
+    baseURL: '',
+    model: '',
+    proxyURL: '',
+    apiKey: '',
+    hasApiKey: false,
+    apiKeyHint: '',
+  }
+}
+
+/** LLM 配置页：配置档管理器（列表 + 新增/编辑/删除，激活项在输入框下方可随时切换） */
+export function LlmConfigPage() {
+  const { llmProfiles, activeLlmId } = useApp()
+  const [editing, setEditing] = useState<ProfileDraft | null>(null)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState('')
   const [saved, setSaved] = useState(false)
 
-  const preset = PRESETS.find((p) => p.id === form.presetId) ?? PRESETS[PRESETS.length - 1]
-  const providerOption = PROVIDER_OPTIONS.find((o) => o.value === form.provider)!
-
-  const applyPreset = (presetId: string): void => {
-    if (presetId === 'custom') {
-      // 切到自定义只切换模式，不清空已填内容
-      setForm((prev) => ({ ...prev, presetId }))
-      return
-    }
-    const p = PRESETS.find((x) => x.id === presetId)
-    if (!p) return
-    setForm((prev) => ({
-      ...prev,
-      presetId,
-      name: p.name,
-      provider: p.provider,
-      baseURL: p.baseURL,
-      model: p.models[0] ?? '',
-    }))
+  const startNew = (): void => {
     setTestResult('')
+    setEditing(blankDraft())
+  }
+
+  const startEdit = (p: LLMProfileView): void => {
+    setTestResult('')
+    setEditing(draftFromProfile(p))
   }
 
   const save = async (): Promise<void> => {
-    await actions.saveLlm({
-      name: form.name,
-      provider: form.provider,
-      baseURL: form.baseURL,
-      model: form.model,
-      proxyURL: form.proxyURL,
-      apiKey: form.apiKey.trim() || undefined,
+    if (!editing) return
+    await actions.saveProfile({
+      id: editing.id ?? undefined,
+      name: editing.name,
+      provider: editing.provider,
+      baseURL: editing.baseURL,
+      model: editing.model,
+      proxyURL: editing.proxyURL,
+      apiKey: editing.apiKey.trim() || undefined,
     })
+    setEditing(null)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
+  const remove = async (p: LLMProfileView): Promise<void> => {
+    if (
+      !window.confirm(
+        `删除配置档「${p.name}」？${
+          p.id === activeLlmId ? '\n\n这是当前激活的配置档，删除后会自动切换到列表中的第一个。' : ''
+        }`,
+      )
+    ) {
+      return
+    }
+    await actions.deleteProfile(p.id)
+  }
+
   const test = async (): Promise<void> => {
+    if (!editing) return
     setTesting(true)
     setTestResult('')
     const res = await window.api.testLlm({
-      name: form.name,
-      provider: form.provider,
-      baseURL: form.baseURL,
-      model: form.model,
-      proxyURL: form.proxyURL,
-      apiKey: form.apiKey.trim() || undefined,
+      id: editing.id ?? undefined,
+      name: editing.name,
+      provider: editing.provider,
+      baseURL: editing.baseURL,
+      model: editing.model,
+      proxyURL: editing.proxyURL,
+      apiKey: editing.apiKey.trim() || undefined,
     })
     setTestResult(res.ok ? `✅ ${res.message}` : `❌ ${res.message}`)
     setTesting(false)
   }
 
+  // ---------- 编辑器视图 ----------
+  if (editing) {
+    const preset = PRESETS.find((p) => p.id === editing.presetId) ?? PRESETS[PRESETS.length - 1]
+    const providerOption = PROVIDER_OPTIONS.find((o) => o.value === editing.provider)!
+
+    const applyPreset = (presetId: string): void => {
+      if (presetId === 'custom') {
+        setEditing((prev) => (prev ? { ...prev, presetId } : prev))
+        return
+      }
+      const p = PRESETS.find((x) => x.id === presetId)
+      if (!p) return
+      setEditing((prev) =>
+        prev ? { ...prev, presetId, name: p.name, provider: p.provider, baseURL: p.baseURL, model: p.models[0] ?? '' } : prev,
+      )
+      setTestResult('')
+    }
+
+    return (
+      <div className="settings-page">
+        <h2>{editing.id ? '编辑配置档' : '新增配置档'}</h2>
+
+        <label className="field">
+          <span>预设（快速填入）</span>
+          <select value={editing.presetId} onChange={(e) => applyPreset(e.target.value)}>
+            {PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {preset.docsURL ? (
+          <div className="docs-link">
+            官方文档（获取 API Key / 模型列表 / 定价）：
+            <a href={preset.docsURL} target="_blank" rel="noreferrer">
+              {preset.docsURL}
+            </a>
+          </div>
+        ) : null}
+
+        <label className="field">
+          <span>配置名称</span>
+          <input
+            value={editing.name}
+            placeholder="例如 DeepSeek"
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+          />
+        </label>
+
+        <label className="field">
+          <span>协议类型</span>
+          <select
+            value={editing.provider}
+            onChange={(e) => setEditing({ ...editing, provider: e.target.value as ProviderType })}
+          >
+            {PROVIDER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span>Base URL</span>
+          <input
+            value={editing.baseURL}
+            placeholder={providerOption.baseURLPlaceholder}
+            onChange={(e) => setEditing({ ...editing, baseURL: e.target.value })}
+          />
+        </label>
+
+        <label className="field">
+          <span>模型</span>
+          <input
+            value={editing.model}
+            list="model-suggestions"
+            placeholder={providerOption.modelPlaceholder}
+            onChange={(e) => setEditing({ ...editing, model: e.target.value })}
+          />
+          <datalist id="model-suggestions">
+            {preset.models.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+        </label>
+
+        <label className="field">
+          <span>API Key</span>
+          <input
+            type="password"
+            value={editing.apiKey}
+            placeholder={
+              editing.hasApiKey ? `已保存 ${editing.apiKeyHint}（留空则保持不变）` : 'sk-…'
+            }
+            onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })}
+          />
+          <small>密钥经 Electron safeStorage 加密后保存在本地，不会原样出现在配置里。</small>
+        </label>
+
+        <label className="field">
+          <span>HTTP 代理（可选，留空直连）</span>
+          <input
+            value={editing.proxyURL}
+            placeholder="例如 http://127.0.0.1:7890"
+            onChange={(e) => setEditing({ ...editing, proxyURL: e.target.value })}
+          />
+          <small>填写后该配置档的所有 API 请求经此代理发送（http/https 代理）；留空则直连。</small>
+        </label>
+
+        {testResult ? <div className="test-result">{testResult}</div> : null}
+
+        <div className="settings-page-actions">
+          <button className="btn" disabled={testing} onClick={() => void test()}>
+            {testing ? '测试中…' : '测试连接'}
+          </button>
+          <div className="spacer" />
+          <button className="btn" onClick={() => setEditing(null)}>
+            取消
+          </button>
+          <button className="btn btn-primary" onClick={() => void save()}>
+            保存
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- 列表视图 ----------
   return (
     <div className="settings-page">
       <h2>LLM 配置</h2>
+      <p className="hint-line">
+        可以配置多套模型（不同服务商 / 不同模型 / 不同代理），在输入框下方的模型选择器里随时切换。
+      </p>
 
-      <label className="field">
-        <span>预设（快速填入）</span>
-        <select value={form.presetId} onChange={(e) => applyPreset(e.target.value)}>
-          {PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
+      {llmProfiles.length === 0 ? (
+        <div className="profile-empty">还没有配置档，点下面"＋ 新增配置"开始。</div>
+      ) : (
+        <div className="profile-list">
+          {llmProfiles.map((p) => (
+            <div key={p.id} className={`profile-row ${p.id === activeLlmId ? 'active' : ''}`}>
+              <div className="profile-info">
+                <span className="profile-name">
+                  {p.name}
+                  {p.id === activeLlmId ? <span className="profile-active-badge">激活中</span> : null}
+                </span>
+                <small>
+                  {p.provider === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'} · {p.model || '(未设模型)'} ·{' '}
+                  {p.hasApiKey ? `密钥 ${p.apiKeyHint}` : '未设密钥'}
+                </small>
+              </div>
+              <div className="profile-actions">
+                {p.id !== activeLlmId ? (
+                  <button className="btn" onClick={() => void actions.setActiveLlm(p.id)}>
+                    使用
+                  </button>
+                ) : null}
+                <button className="btn" onClick={() => startEdit(p)}>
+                  编辑
+                </button>
+                <button className="btn btn-danger-ghost" onClick={() => void remove(p)}>
+                  删除
+                </button>
+              </div>
+            </div>
           ))}
-        </select>
-      </label>
-
-      {preset.docsURL ? (
-        <div className="docs-link">
-          官方文档（获取 API Key / 模型列表 / 定价）：
-          <a href={preset.docsURL} target="_blank" rel="noreferrer">
-            {preset.docsURL}
-          </a>
         </div>
-      ) : null}
-
-      <label className="field">
-        <span>配置名称</span>
-        <input
-          value={form.name}
-          placeholder="例如 DeepSeek"
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-        />
-      </label>
-
-      <label className="field">
-        <span>协议类型</span>
-        <select
-          value={form.provider}
-          onChange={(e) => setForm({ ...form, provider: e.target.value as ProviderType })}
-        >
-          {PROVIDER_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="field">
-        <span>Base URL</span>
-        <input
-          value={form.baseURL}
-          placeholder={providerOption.baseURLPlaceholder}
-          onChange={(e) => setForm({ ...form, baseURL: e.target.value })}
-        />
-      </label>
-
-      <label className="field">
-        <span>模型</span>
-        <input
-          value={form.model}
-          list="model-suggestions"
-          placeholder={providerOption.modelPlaceholder}
-          onChange={(e) => setForm({ ...form, model: e.target.value })}
-        />
-        <datalist id="model-suggestions">
-          {preset.models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-      </label>
-
-      <label className="field">
-        <span>API Key</span>
-        <input
-          type="password"
-          value={form.apiKey}
-          placeholder={llm?.hasApiKey ? `已保存 ${llm.apiKeyHint}（留空则保持不变）` : 'sk-…'}
-          onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-        />
-        <small>密钥经 Electron safeStorage 加密后保存在本地，不会原样出现在配置里。</small>
-      </label>
-
-      <label className="field">
-        <span>HTTP 代理（可选，留空直连）</span>
-        <input
-          value={form.proxyURL}
-          placeholder="例如 http://127.0.0.1:7890"
-          onChange={(e) => setForm({ ...form, proxyURL: e.target.value })}
-        />
-        <small>填写后该配置的所有 API 请求经此代理发送（http/https 代理）；留空则直连。</small>
-      </label>
-
-      {testResult ? <div className="test-result">{testResult}</div> : null}
+      )}
 
       <div className="settings-page-actions">
-        <button className="btn" disabled={testing} onClick={() => void test()}>
-          {testing ? '测试中…' : '测试连接'}
+        <button className="btn btn-primary" onClick={startNew}>
+          ＋ 新增配置
         </button>
         <div className="spacer" />
         {saved ? <span className="saved-hint">✅ 已保存</span> : null}
-        <button className="btn btn-primary" onClick={() => void save()}>
-          保存
-        </button>
       </div>
     </div>
   )
