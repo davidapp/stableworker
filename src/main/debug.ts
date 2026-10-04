@@ -44,6 +44,8 @@ interface Exchange {
   assembledText: string
   /** 推理模型的思考内容（reasoning_content / thinking）；按协议约定不回传给后续请求 */
   reasoningText: string
+  /** 本轮模型发起的工具调用（从响应解析；工具结果在下一轮请求体里可见） */
+  toolCalls: { id: string; name: string; argsJson: string }[]
   /** 响应中的原始 usage 对象（最后一次出现的） */
   usage: unknown
   inputTokens: number | null
@@ -167,6 +169,7 @@ export function beginExchange(input: {
     eventCount: 0,
     assembledText: '',
     reasoningText: '',
+    toolCalls: [],
     usage: null,
     inputTokens: null,
     outputTokens: null,
@@ -212,6 +215,15 @@ export function recordAssembledText(ex: Exchange, text: string): void {
 /** 记录推理模型的思考内容（reasoning_content / thinking，仅供观察，不回传给模型） */
 export function recordReasoningText(ex: Exchange, text: string): void {
   ex.reasoningText = text
+  scheduleSave(ex)
+}
+
+/** 记录本轮响应里解析出的工具调用（参数为原始 JSON 字符串） */
+export function recordToolCalls(
+  ex: Exchange,
+  calls: { id: string; name: string; argsJson: string }[],
+): void {
+  ex.toolCalls = calls
   scheduleSave(ex)
 }
 
@@ -336,6 +348,7 @@ function toDetail(ex: Exchange): DebugDetail {
     sseEvents: ex.sseEvents,
     assembledText: ex.assembledText,
     reasoningText: ex.reasoningText ?? '',
+    toolCalls: ex.toolCalls ?? [],
     usage: ex.usage,
     responseBody: ex.responseBody,
   }

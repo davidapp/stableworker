@@ -9,6 +9,7 @@ import {
   recordUsageEvent,
   recordAssembledText,
   recordReasoningText,
+  recordToolCalls,
   endExchange,
   maskHeaders,
 } from './debug'
@@ -479,6 +480,12 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         collector.onEvent(json)
       })
       const { blocks: assistantBlocks, reasoning } = collector.finish()
+      recordToolCalls(
+        exchange as NonNullable<typeof exchange>,
+        assistantBlocks
+          .filter((b): b is ToolUseBlock => b.type === 'tool_use')
+          .map((b) => ({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })),
+      )
       if (reasoning) recordReasoningText(exchange as NonNullable<typeof exchange>, reasoning)
       recordAssembledText(exchange as NonNullable<typeof exchange>, textOfBlocks(assistantBlocks))
       endExchange(exchange)

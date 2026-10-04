@@ -186,6 +186,8 @@ export interface DebugDetail extends DebugListItem {
   assembledText: string
   /** 推理模型的思考内容（reasoning_content / thinking），仅供观察 */
   reasoningText: string
+  /** 本轮模型发起的工具调用（从响应解析） */
+  toolCalls: { id: string; name: string; argsJson: string }[]
   /** 响应中出现的原始 usage 对象，无则 null */
   usage: unknown
   /** 非流式请求（测试连接）的原始响应体 */

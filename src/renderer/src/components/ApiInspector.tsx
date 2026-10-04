@@ -9,6 +9,14 @@ function moneyLabel(m: Money): string {
   return `${m.source === 'provider' ? '' : '≈'}${symbol}${m.amount}`
 }
 
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
+
 export function ApiInspector() {
   const [list, setList] = useState<DebugListItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -132,10 +140,21 @@ export function ApiInspector() {
                 <h3>回复内容（从流式增量拼装）</h3>
                 <pre className="debug-pre">
                   {detail.assembledText ||
-                    (detail.reasoningText
+                    (detail.reasoningText || detail.toolCalls.length
                       ? '（本轮无正文：模型只输出了思考内容和/或工具调用）'
                       : '（空）')}
                 </pre>
+
+                {detail.toolCalls.length > 0 ? (
+                  <>
+                    <h3>本轮发起的工具调用（{detail.toolCalls.length} 个，结果见下一轮请求体 / 聊天气泡）</h3>
+                    {detail.toolCalls.map((c) => (
+                      <pre key={c.id} className="debug-pre">
+                        {`${c.name}  (id: ${c.id})\n${prettyJson(c.argsJson)}`}
+                      </pre>
+                    ))}
+                  </>
+                ) : null}
 
                 {detail.reasoningText ? (
                   <>
