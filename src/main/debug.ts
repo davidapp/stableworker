@@ -357,7 +357,10 @@ function toDetail(ex: Exchange): DebugDetail {
 // ---------- IPC ----------
 
 export function registerDebugHandlers(): void {
-  ipcMain.handle('debug:list', (): DebugListItem[] => [...recent.map(toListItem), ...olderMeta])
+  // 列表只展示最近 10 次调用（更早的记录仍在磁盘上，可按 id 查详情）
+  ipcMain.handle('debug:list', (): DebugListItem[] =>
+    [...recent.map(toListItem), ...olderMeta].slice(0, 10),
+  )
 
   ipcMain.handle('debug:get', async (_e, id: string): Promise<DebugDetail | null> => {
     const inMemory = recent.find((x) => x.id === id)
