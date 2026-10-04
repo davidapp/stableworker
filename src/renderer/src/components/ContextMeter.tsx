@@ -45,6 +45,10 @@ export function ContextMeter() {
   if (!contextLimit || contextTokens == null) return null
   const pct = Math.min(100, (contextTokens / contextLimit) * 100)
   const tone = pct >= 80 ? 'danger' : pct >= 60 ? 'warn' : 'ok'
+  const toneColor = tone === 'danger' ? '#e5484d' : tone === 'warn' ? '#f5a623' : '#3dd68c'
+  // 环形进度：整圈周长按占用比例显示
+  const ringR = 6
+  const ringC = 2 * Math.PI * ringR
 
   return (
     <div className="mode-menu-wrap">
@@ -57,9 +61,21 @@ export function ContextMeter() {
         }
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="context-meter-bar">
-          <span className={`context-meter-fill ${tone}`} style={{ width: `${pct}%` }} />
-        </span>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r={ringR} fill="none" stroke="#3a3e46" strokeWidth="2.5" />
+          <circle
+            cx="8"
+            cy="8"
+            r={ringR}
+            fill="none"
+            stroke={toneColor}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeDasharray={ringC}
+            strokeDashoffset={ringC * (1 - pct / 100)}
+            transform="rotate(-90 8 8)"
+          />
+        </svg>
         <span className={`context-meter-text ${tone}`}>
           {fmtNum(contextTokens)} / {Math.round(contextLimit / 1000)}k
         </span>
@@ -123,9 +139,6 @@ export function ContextMeter() {
                 </div>
               </div>
             )}
-            <div className="mode-foot-hint">
-              总量与缓存命中率为服务端精确值；消息/工具/提示词拆分为本地估算，供观察量级。
-            </div>
           </div>
         </>
       ) : null}
