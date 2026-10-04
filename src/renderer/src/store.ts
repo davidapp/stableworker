@@ -19,8 +19,10 @@ export interface AppState {
   booted: boolean
   projects: ProjectInfo[]
   activeProjectId: string | null
-  /** 当前项目的会话列表 */
-  sessions: SessionMeta[]
+  /** 每个项目的会话列表（侧栏树用；key = 项目 id） */
+  sessionsByProject: Record<string, SessionMeta[]>
+  /** 侧栏里展开的项目（key = 项目 id） */
+  expandedProjects: Record<string, boolean>
   activeSessionId: string | null
   /** 当前会话的消息（聊天上下文） */
   messages: ChatMessage[]
@@ -70,7 +72,8 @@ export const store = createStore<AppState>({
   booted: false,
   projects: [],
   activeProjectId: null,
-  sessions: [],
+  sessionsByProject: {},
+  expandedProjects: {},
   activeSessionId: null,
   messages: [],
   llmProfiles: [],

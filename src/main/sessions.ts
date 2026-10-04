@@ -93,6 +93,21 @@ export function registerSessionHandlers(): void {
     await rm(sessionPath(projectId, sessionId), { force: true })
     return true
   })
+
+  // 重命名会话：只改标题，不动 updatedAt（列表排序保持原位）
+  ipcMain.handle(
+    'sessions:rename',
+    async (_e, projectId: string, sessionId: string, title: string): Promise<boolean> => {
+      try {
+        const s = JSON.parse(await readFile(sessionPath(projectId, sessionId), 'utf-8')) as Session
+        s.title = title
+        await saveSessionFile(s)
+        return true
+      } catch {
+        return false
+      }
+    },
+  )
 }
 
 /** 供 projects:remove 调用：删掉某项目的全部会话记录 */

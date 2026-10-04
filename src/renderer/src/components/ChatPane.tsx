@@ -32,8 +32,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 }
 
 export function ChatPane() {
-  const { projects, activeProjectId, sessions, activeSessionId, messages, streaming, llmProfiles, activeLlmId } =
-    useApp()
+  const { projects, activeProjectId, activeSessionId, messages, streaming, llmProfiles, activeLlmId } = useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
@@ -87,28 +86,10 @@ export function ChatPane() {
 
   return (
     <main className="chat-pane">
-      <header className="chat-header">        <span className="chat-header-project" title={project.path}>
+      <header className="chat-header">
+        <span className="chat-header-project" title={project.path}>
           {project.name}
         </span>
-        <select
-          className="session-select"
-          value={activeSessionId ?? ''}
-          onChange={(e) => {
-            if (e.target.value) void actions.selectSession(e.target.value)
-          }}
-        >
-          <option value="" disabled>
-            选择会话
-          </option>
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
-            </option>
-          ))}
-        </select>
-        <button className="btn" onClick={() => actions.newSession()}>
-          ＋ 新会话
-        </button>
         <div className="spacer" />
         {activeSessionId && messages.length > 0 ? (
           <button
@@ -123,8 +104,11 @@ export function ChatPane() {
             🧹 清空上下文
           </button>
         ) : null}
-        {activeSessionId && (
-          <button className="btn btn-danger-ghost" onClick={() => void actions.deleteSession(activeSessionId)}>
+        {activeSessionId && activeProjectId && (
+          <button
+            className="btn btn-danger-ghost"
+            onClick={() => void actions.deleteSession(activeProjectId, activeSessionId)}
+          >
             删除会话
           </button>
         )}

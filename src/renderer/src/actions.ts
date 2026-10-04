@@ -9,6 +9,7 @@ import type {
   LLMConfig,
   MessageBlock,
   ModelPricing,
+  ProjectInfo,
   Session,
   SessionMeta,
   ToolUseBlock,
@@ -45,49 +46,35 @@ function toMeta(session: Session): SessionMeta {
 export async function boot(): Promise<void> {
   const cfg = await window.api.getConfig()
   applyConfig(cfg)
-  if (cfg.activeProjectId) {
-    await reloadSessions(cfg.activeProjectId, { restoreLatest: true })
+  const map = await reloadAllSessions(cfg.projects)
+  const ap = cfg.activeProjectId
+  if (ap) {
+    store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [ap]: true } }))
+    const first = map[ap]?.[0]
+    if (first) await loadSessionIntoView(ap, first.id)
   }
   store.setState({ booted: true })
 }
 
-async function reloadSessions(projectId: string, opts: { restoreLatest?: boolean } = {}): Promise<void> {
+/** 拉取所有项目的会话列表（项目数量少，一次全量刷新最简单） */
+async function reloadAllSessions(projects: ProjectInfo[]): Promise<Record<string, SessionMeta[]>> {
+  const entries = await Promise.all(
+    projects.map(async (p) => [p.id, await window.api.listSessions(p.id)] as const),
+  )
+  const map = Object.fromEntries(entries)
+  store.setState({ sessionsByProject: map })
+  return map
+}
+
+/** 刷新单个项目的会话列表 */
+async function refreshProjectSessions(projectId: string): Promise<void> {
   const sessions = await window.api.listSessions(projectId)
-  store.setState({ sessions })
-  if (opts.restoreLatest && sessions[0]) await selectSession(sessions[0].id)
+  store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject, [projectId]: sessions } }))
 }
 
-export async function addProject(): Promise<void> {
-  const cfg = await window.api.addProject()
-  if (!cfg) return // 用户取消了目录选择
-  applyConfig(cfg)
-  store.setState({ sessions: [], activeSessionId: null, messages: [] })
-  if (cfg.activeProjectId) await reloadSessions(cfg.activeProjectId)
-}
-
-export async function selectProject(id: string): Promise<void> {
-  const cfg = await window.api.setActiveProject(id)
-  applyConfig(cfg)
-  store.setState({ sessions: [], activeSessionId: null, messages: [] })
-  await reloadSessions(id)
-}
-
-export async function removeProject(id: string): Promise<void> {
-  const cfg = await window.api.removeProject(id)
-  applyConfig(cfg)
-  store.setState({ sessions: [], activeSessionId: null, messages: [] })
-  if (cfg.activeProjectId) await reloadSessions(cfg.activeProjectId)
-}
-
-/** 新会话：先不落盘，发出第一条消息时才真正创建，避免空会话文件堆积 */
-export function newSession(): void {
-  store.setState({ activeSessionId: null, messages: [] })
-}
-
-export async function selectSession(id: string): Promise<void> {
-  const { activeProjectId } = store.getState()
-  if (!activeProjectId) return
-  const session = await window.api.loadSession(activeProjectId, id)
+/** 把某个会话载入聊天视图（含中断状态清理）；必要时先切换激活项目 */
+async function loadSessionIntoView(projectId: string, sessionId: string): Promise<void> {
+  const session = await window.api.loadSession(projectId, sessionId)
   if (!session) {
     store.setState({ activeSessionId: null, messages: [] })
     return
@@ -104,17 +91,96 @@ export async function selectSession(id: string): Promise<void> {
           : b,
       ),
     }))
-  store.setState({ activeSessionId: session.id, messages })
+  store.setState({ activeProjectId: projectId, activeSessionId: session.id, messages })
 }
 
-export async function deleteSession(id: string): Promise<void> {
-  const { activeProjectId, activeSessionId, sessions } = store.getState()
-  if (!activeProjectId) return
-  await window.api.deleteSession(activeProjectId, id)
-  store.setState({
-    sessions: sessions.filter((s) => s.id !== id),
-    ...(activeSessionId === id ? { activeSessionId: null, messages: [] } : {}),
+export async function addProject(): Promise<void> {
+  const cfg = await window.api.addProject()
+  if (!cfg) return // 用户取消了目录选择
+  applyConfig(cfg)
+  store.setState({ activeSessionId: null, messages: [] })
+  await reloadAllSessions(cfg.projects)
+  if (cfg.activeProjectId) {
+    store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [cfg.activeProjectId as string]: true } }))
+  }
+}
+
+export async function selectProject(id: string): Promise<void> {
+  const cfg = await window.api.setActiveProject(id)
+  applyConfig(cfg)
+  store.setState({ activeSessionId: null, messages: [] })
+  store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [id]: true } }))
+  await refreshProjectSessions(id)
+}
+
+/** 展开/折叠项目节点；展开时顺手刷新该项目的会话列表 */
+export function toggleProjectExpanded(projectId: string): void {
+  const prev = store.getState().expandedProjects
+  const next = { ...prev, [projectId]: !prev[projectId] }
+  store.setState({ expandedProjects: next })
+  if (next[projectId]) void refreshProjectSessions(projectId)
+}
+
+export async function removeProject(id: string): Promise<void> {
+  const cfg = await window.api.removeProject(id)
+  applyConfig(cfg)
+  store.setState({ activeSessionId: null, messages: [] })
+  store.setState((prev) => {
+    const sessionsByProject = { ...prev.sessionsByProject }
+    delete sessionsByProject[id]
+    const expandedProjects = { ...prev.expandedProjects }
+    delete expandedProjects[id]
+    return { sessionsByProject, expandedProjects }
   })
+}
+
+/** 在指定项目下新建会话：切到该项目并清空视图；真正落盘发生在首条消息发出时 */
+export async function newSessionInProject(projectId: string): Promise<void> {
+  if (store.getState().activeProjectId !== projectId) {
+    const cfg = await window.api.setActiveProject(projectId)
+    applyConfig(cfg)
+  }
+  store.setState((prev) => ({
+    expandedProjects: { ...prev.expandedProjects, [projectId]: true },
+    activeSessionId: null,
+    messages: [],
+  }))
+}
+
+export async function selectSession(projectId: string, sessionId: string): Promise<void> {
+  if (store.getState().activeProjectId !== projectId) {
+    const cfg = await window.api.setActiveProject(projectId)
+    applyConfig(cfg)
+    store.setState({ activeSessionId: null, messages: [] })
+    store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [projectId]: true } }))
+  }
+  await loadSessionIntoView(projectId, sessionId)
+}
+
+export async function deleteSession(projectId: string, id: string): Promise<void> {
+  await window.api.deleteSession(projectId, id)
+  store.setState((prev) => ({
+    sessionsByProject: {
+      ...prev.sessionsByProject,
+      [projectId]: (prev.sessionsByProject[projectId] ?? []).filter((s) => s.id !== id),
+    },
+    ...(prev.activeSessionId === id ? { activeSessionId: null, messages: [] } : {}),
+  }))
+}
+
+/** 重命名会话（只改标题，不改变列表排序） */
+export async function renameSession(projectId: string, sessionId: string, title: string): Promise<void> {
+  const t = title.trim()
+  if (!t) return
+  await window.api.renameSession(projectId, sessionId, t)
+  store.setState((prev) => ({
+    sessionsByProject: {
+      ...prev.sessionsByProject,
+      [projectId]: (prev.sessionsByProject[projectId] ?? []).map((s) =>
+        s.id === sessionId ? { ...s, title: t } : s,
+      ),
+    },
+  }))
 }
 
 /** 清空当前会话的上下文（保留会话本身，消息历史清零，下一句从零开始） */
@@ -188,7 +254,7 @@ export async function saveFeatures(features: FeatureEntry[]): Promise<void> {
 async function persistCurrentSession(): Promise<void> {
   const s = store.getState()
   if (!s.activeProjectId || !s.activeSessionId) return
-  const meta = s.sessions.find((m) => m.id === s.activeSessionId)
+  const meta = (s.sessionsByProject[s.activeProjectId] ?? []).find((m) => m.id === s.activeSessionId)
   if (!meta) return
   const session: Session = {
     id: meta.id,
@@ -200,10 +266,14 @@ async function persistCurrentSession(): Promise<void> {
   }
   await window.api.saveSession(session)
   const newMeta = toMeta(session)
-  const sessions = [newMeta, ...s.sessions.filter((m) => m.id !== newMeta.id)].sort(
-    (a, b) => b.updatedAt - a.updatedAt,
-  )
-  store.setState({ sessions })
+  const ap = s.activeProjectId
+  store.setState((prev) => {
+    const list = prev.sessionsByProject[ap] ?? []
+    const updated = [newMeta, ...list.filter((m) => m.id !== newMeta.id)].sort(
+      (a, b) => b.updatedAt - a.updatedAt,
+    )
+    return { sessionsByProject: { ...prev.sessionsByProject, [ap]: updated } }
+  })
 }
 
 export async function sendChat(text: string): Promise<void> {
@@ -217,13 +287,22 @@ export async function sendChat(text: string): Promise<void> {
 
   // 无活动会话时先创建（标题取首条消息前 30 字）
   let sessionId = s.activeSessionId
-  if (!sessionId) {
-    const created = await window.api.createSession(s.activeProjectId, content.slice(0, 30))
+  const ap = s.activeProjectId
+  if (!sessionId && ap) {
+    const created = await window.api.createSession(ap, content.slice(0, 30))
     sessionId = created.id
     store.setState((prev) => ({
       activeSessionId: created.id,
-      sessions: [toMeta(created), ...prev.sessions],
+      sessionsByProject: {
+        ...prev.sessionsByProject,
+        [ap]: [toMeta(created), ...(prev.sessionsByProject[ap] ?? [])],
+      },
     }))
+  }
+
+  if (!sessionId) {
+    // ap 非空时上面必然已创建；这里只做类型收窄
+    return
   }
 
   const userMsg: ChatMessage = {
@@ -255,7 +334,7 @@ export async function sendChat(text: string): Promise<void> {
         : m.blocks,
     }))
 
-  const res = await window.api.sendChat({ sessionId, projectId: s.activeProjectId, messages: history })
+  const res = await window.api.sendChat({ sessionId, projectId: ap, messages: history })
   // 主进程在流开始前的失败（如未配置）会直接返回 ok:false，这里兜底标注
   if (!res.ok) markStreamingError(res.error ?? '发送失败')
 }

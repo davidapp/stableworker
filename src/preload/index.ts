@@ -62,6 +62,8 @@ const api = {
   saveSession: (session: Session): Promise<boolean> => ipcRenderer.invoke('sessions:save', session),
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
+  renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:rename', projectId, sessionId, title),
 
   // ---- 聊天 ----
   sendChat: (req: ChatRequest): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('chat:send', req),
