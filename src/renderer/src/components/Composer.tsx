@@ -3,6 +3,7 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 import { ApprovalModeMenu } from './ApprovalModeMenu'
 import { ThinkingEffortMenu } from './ThinkingEffortMenu'
+import { ContextMeter } from './ContextMeter'
 
 export function Composer({ disabled }: { disabled: boolean }) {
   const { llmProfiles, activeLlmId } = useApp()
@@ -33,6 +34,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
         />
         <div className="composer-row">
           <ApprovalModeMenu />
+          <ContextMeter />
           <div className="spacer" />
           <div className="model-select-wrap">
             <select

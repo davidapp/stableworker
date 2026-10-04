@@ -36,7 +36,8 @@ const APPROVAL_MODES: ApprovalMode[] = ['confirm', 'autoEdit', 'fullAccess']
 
 /** 各模型家族的上下文窗口默认值（tokens）；未匹配的模型用 fallback */
 const CONTEXT_LIMITS: { match: RegExp; limit: number }[] = [
-  { match: /deepseek/i, limit: 128_000 },
+  // DeepSeek V4 系列原生支持 1M 上下文（官方 API，无长上下文加价）
+  { match: /deepseek/i, limit: 1_000_000 },
   { match: /glm/i, limit: 128_000 },
   { match: /kimi|moonshot/i, limit: 256_000 },
   { match: /claude/i, limit: 200_000 },

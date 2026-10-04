@@ -6,7 +6,6 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
-import { ContextMeter } from './ContextMeter'
 import { copyText } from '../clipboard'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
@@ -85,7 +84,6 @@ export function ChatPane() {
         <button className="btn" onClick={() => actions.newSession()}>
           ＋ 新会话
         </button>
-        <ContextMeter />
         <div className="spacer" />
         {activeSessionId && messages.length > 0 ? (
           <button
