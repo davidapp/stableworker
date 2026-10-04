@@ -138,6 +138,8 @@ export interface ConfigView {
   holidays: string[]
   /** 功能入口的显隐状态 */
   features: FeatureEntry[]
+  /** 侧栏宽度（可拖拽调整，持久化） */
+  sidebarWidth: number
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */

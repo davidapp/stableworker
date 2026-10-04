@@ -91,7 +91,7 @@ body {
 
 /* ---------- 侧栏（项目管理） ---------- */
 .sidebar {
-  width: 240px;
+  width: var(--sidebar-width, 240px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -99,6 +99,18 @@ body {
   background: var(--panel);
   border-right: 1px solid var(--border);
   padding: 14px 12px;
+}
+
+.splitter {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.splitter:hover,
+.splitter:active {
+  background: rgba(91, 140, 255, 0.35);
 }
 
 .project-list {

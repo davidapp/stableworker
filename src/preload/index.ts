@@ -33,6 +33,8 @@ const api = {
   setApprovalMode: (mode: ApprovalMode): Promise<ConfigView> => ipcRenderer.invoke('config:setApprovalMode', mode),
   setThinkingEffort: (effort: string): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setThinkingEffort', effort),
+  setSidebarWidth: (width: number): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setSidebarWidth', width),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
   saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>

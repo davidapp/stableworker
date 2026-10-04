@@ -49,6 +49,7 @@ interface StoredConfig {
   modelPricing?: ModelPricing[]
   holidays?: string[]
   features?: FeatureEntry[]
+  sidebarWidth?: number
 }
 
 let cache: StoredConfig | null = null
@@ -86,6 +87,8 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.modelPricing === undefined) cache.modelPricing = DEFAULT_MODEL_PRICING
   if (cache.holidays === undefined) cache.holidays = DEFAULT_HOLIDAYS
   if (cache.features === undefined) cache.features = []
+  if (cache.sidebarWidth === undefined) cache.sidebarWidth = 240
+  cache.sidebarWidth = Math.min(480, Math.max(180, cache.sidebarWidth))
   return cache
 }
 
@@ -141,6 +144,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     modelPricing: cfg.modelPricing ?? [],
     holidays: cfg.holidays ?? [],
     features: cfg.features ?? [],
+    sidebarWidth: cfg.sidebarWidth ?? 240,
   }
 }
 
@@ -204,6 +208,15 @@ export function registerConfigHandlers(): void {
     const p = cfg.llmProfiles?.find((x) => x.id === cfg.activeLlmId)
     if (p && ['off', 'low', 'medium', 'high'].includes(effort)) {
       p.thinkingEffort = effort as LLMConfig['thinkingEffort']
+    }
+    return saveConfig(cfg)
+  })
+
+  // 保存侧栏宽度（拖拽结束时调用）
+  ipcMain.handle('config:setSidebarWidth', async (_e, width: number): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    if (typeof width === 'number' && Number.isFinite(width)) {
+      cfg.sidebarWidth = Math.min(480, Math.max(180, Math.round(width)))
     }
     return saveConfig(cfg)
   })

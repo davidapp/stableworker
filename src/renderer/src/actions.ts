@@ -32,6 +32,7 @@ function applyConfig(cfg: ConfigView): void {
     modelPricing: cfg.modelPricing,
     holidays: cfg.holidays,
     features: cfg.features,
+    sidebarWidth: cfg.sidebarWidth,
   })
 }
 
@@ -153,6 +154,11 @@ export async function setApprovalMode(mode: ApprovalMode): Promise<void> {
 
 export async function setThinkingEffort(effort: string): Promise<void> {
   const cfg = await window.api.setThinkingEffort(effort)
+  applyConfig(cfg)
+}
+
+export async function setSidebarWidth(width: number): Promise<void> {
+  const cfg = await window.api.setSidebarWidth(width)
   applyConfig(cfg)
 }
 
