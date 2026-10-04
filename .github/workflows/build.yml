@@ -1,0 +1,64 @@
+name: Build
+
+# 三平台矩阵各跑一次 npm run dist：
+# - push 到 main 或打 v* 标签时自动触发
+# - 也可在 Actions 页面手动触发（workflow_dispatch）
+# 构建产物以 Artifact 形式上传（Windows NSIS / macOS DMG / Linux AppImage）；
+# 打 v* 标签时额外创建 GitHub Release 并附上安装包。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build installers
+        run: npm run dist
+        env:
+          # 未配置签名证书时跳过 macOS 签名探测，避免 CI 报错
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stableworker-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

@@ -57,6 +57,12 @@
       ],
       "category": "public.app-category.developer-tools"
     },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
