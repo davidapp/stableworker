@@ -13,28 +13,33 @@ export function Composer({ disabled }: { disabled: boolean }) {
 
   return (
     <footer className="composer">
-      <textarea
-        value={text}
-        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-        rows={3}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          // isComposing：中文输入法选词时的 Enter 不应当作发送
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            submit()
-          }
-        }}
-      />
-      <div className="composer-actions">
-        <span className="hint">{disabled ? '回复生成中…' : ''}</span>
+      <div className="composer-box">
+        <textarea
+          value={text}
+          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+          rows={3}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // isComposing：中文输入法选词时的 Enter 不应当作发送
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              submit()
+            }
+          }}
+        />
+        {disabled ? <span className="composer-hint">回复生成中…</span> : null}
         {disabled ? (
-          <button className="btn btn-danger" onClick={() => void actions.stopChat()}>
-            ■ 停止
+          <button className="composer-send stop" title="停止生成" onClick={() => void actions.stopChat()}>
+            ■
           </button>
         ) : (
-          <button className="btn btn-primary" disabled={!text.trim()} onClick={submit}>
-            发送
+          <button
+            className="composer-send"
+            title="发送（Enter）"
+            disabled={!text.trim()}
+            onClick={submit}
+          >
+            ↑
           </button>
         )}
       </div>
