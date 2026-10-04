@@ -34,24 +34,27 @@ export function Composer({ disabled }: { disabled: boolean }) {
         <div className="composer-row">
           <ApprovalModeMenu />
           <div className="spacer" />
-          <select
-            className="model-select"
-            value={activeLlmId ?? ''}
-            title="切换模型配置档"
-            onChange={(e) => {
-              if (e.target.value) void actions.setActiveLlm(e.target.value)
-            }}
-          >
-            {llmProfiles.length === 0 ? (
-              <option value="">未配置模型</option>
-            ) : (
-              llmProfiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} · {p.model}
-                </option>
-              ))
-            )}
-          </select>
+          <div className="model-select-wrap">
+            <select
+              className="model-select"
+              value={activeLlmId ?? ''}
+              title="切换模型配置档"
+              onChange={(e) => {
+                if (e.target.value) void actions.setActiveLlm(e.target.value)
+              }}
+            >
+              {llmProfiles.length === 0 ? (
+                <option value="">未配置模型</option>
+              ) : (
+                llmProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {p.model}
+                  </option>
+                ))
+              )}
+            </select>
+            <span className="mode-caret">⌄</span>
+          </div>
           <ThinkingEffortMenu />
         {disabled ? (
           <button className="composer-send stop" title="停止生成" onClick={() => void actions.stopChat()}>

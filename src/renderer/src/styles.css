@@ -34,7 +34,15 @@ body,
 }
 
 body {
-  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-family:
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    system-ui,
+    'HarmonyOS Sans SC',
+    'MiSans',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    sans-serif;
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
@@ -351,19 +359,32 @@ body {
 }
 
 /* ---------- 输入框内的选择器（模型 / 批准模式 / 思考力度） ---------- */
+.model-select-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .model-select {
+  appearance: none;
   max-width: 220px;
   background: transparent;
   color: var(--text);
   border: none;
   border-radius: 6px;
-  padding: 4px 4px;
-  font-size: 12.5px;
+  padding: 4px 18px 4px 6px;
+  font-size: 13.5px;
   cursor: pointer;
 }
 
 .model-select:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.model-select-wrap .mode-caret {
+  position: absolute;
+  right: 4px;
+  pointer-events: none;
 }
 
 .mode-menu-wrap {
