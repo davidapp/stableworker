@@ -34,8 +34,8 @@ export function Composer({ disabled }: { disabled: boolean }) {
         />
         <div className="composer-row">
           <ApprovalModeMenu />
-          <ContextMeter />
           <div className="spacer" />
+          <ContextMeter />
           <div className="model-select-wrap">
             <select
               className="model-select"
