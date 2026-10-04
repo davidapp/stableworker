@@ -557,6 +557,9 @@ body {
 }
 
 .message.user .bubble {
+  /* 用户消息右对齐，左侧留白；助手消息占满整行 */
+  max-width: 76%;
+  width: auto;
   background: #2c4372;
   border-top-right-radius: 4px;
 }
