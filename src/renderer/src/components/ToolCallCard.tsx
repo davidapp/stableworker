@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { diffLines } from '../../../shared/diff'
 import type { ToolUseBlock } from '../../../shared/types'
 import { copyText } from '../clipboard'
 
@@ -28,6 +29,16 @@ export function ToolCallCard({ block }: { block: ToolUseBlock }) {
     const s = JSON.stringify(block.input, null, 2)
     return s.length > MAX_ARGS_DISPLAY ? s.slice(0, MAX_ARGS_DISPLAY) + '\n…（参数过长，已截断显示）' : s
   })()
+
+  // 编辑类工具（oldText/newText）：渲染红绿 diff 代替原始参数
+  const isEdit = typeof block.input.oldText === 'string' && typeof block.input.newText === 'string'
+  const diff = useMemo(
+    () =>
+      isEdit
+        ? diffLines(block.input.oldText as string, block.input.newText as string)
+        : null,
+    [isEdit, block.input],
+  )
 
   return (
     <div className={`tool-card ${block.status}`}>
@@ -65,7 +76,22 @@ export function ToolCallCard({ block }: { block: ToolUseBlock }) {
         </div>
       ) : null}
 
-      <pre className="tool-args">{argsText}</pre>
+      {diff ? (
+        <div className="tool-diff">
+          <div className="tool-diff-path">
+            {typeof block.input.path === 'string' ? block.input.path : '(未指定路径)'}
+          </div>
+          {diff.map((line, i) => (
+            <div key={i} className={`diff-line diff-${line.type}`}>
+              {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
+              {line.text}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <pre className="tool-args">{argsText}</pre>
+      )}
+
       {block.result != null ? (
         <details className="tool-result">
           <summary>{block.status === 'error' ? '错误详情' : '查看结果'}</summary>

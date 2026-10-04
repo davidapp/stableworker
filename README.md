@@ -47,8 +47,11 @@ npm run typecheck  # TypeScript 类型检查
   历史消息按"带结果的工具调用"切分成各协议要求的形状（OpenAI 的 `role:'tool'` / Anthropic 的
   `tool_result`）——切分逻辑见 `toApiTurns()`，是理解两种协议差异的最佳教材
 - **工具注册中心**（借鉴 Claude Code）：`tools/index.ts` 里每个工具 = 名称 + 描述 + JSON Schema + 执行函数；
-  当前有 `list_files`（列目录）、`read_file`（带行号读文件，支持 offset/limit 分段）和
-  `write_file`（创建/覆盖文件，**危险操作**）
+  当前有 `list_files`（列目录）、`read_file`（带行号读文件，支持 offset/limit 分段）、
+  `write_file`（创建/覆盖文件，**危险操作**）和 `edit_file`（oldText/newText 精准字符串替换，
+  多处匹配时要求扩大上下文或 replace_all，**危险操作**）
+- **diff 展示**：编辑类工具的卡片里渲染红绿 diff（`shared/diff.ts` 手写 LCS 行级算法），
+  批准前就能看到改动内容
 - **批准门**：带副作用的工具（`requiresApproval: true`）执行前循环挂起，聊天里弹出"允许/拒绝"卡片；
   拒绝/超时（120 秒）/停止都会作为错误结果喂回模型（它会自己调整方案）；
   实现在 `src/main/approvals.ts`——一个由 IPC 事件 resolve 的 Promise，即"主进程等待用户决策"的模式
@@ -153,8 +156,8 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 ## 下一步路线（建议顺序）
 
 1. ~~Markdown 渲染 + 代码高亮~~（已完成）
-2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file / write_file + 代理循环 + 批准门）
-3. edit_file 精准编辑 + diff 展示；工具开关（接入功能开关页）
+2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file / write_file / edit_file + 代理循环 + 批准门 + diff 展示）
+3. 工具开关（接入功能开关页）；执行命令类工具（kind: 'system'）
 4. 上下文管理：token 计量、历史裁剪、会话压缩
 5. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
 6. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发

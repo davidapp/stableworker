@@ -145,10 +145,58 @@ const writeFileTool: ToolDefinition = {
   },
 }
 
+const editFileTool: ToolDefinition = {
+  name: 'edit_file',
+  description:
+    '对项目内一个文本文件做精准的字符串替换编辑。oldText 必须与文件现有内容逐字符一致（含缩进与换行）；小改动用它，整文件重写用 write_file。该操作会修改用户磁盘，写入前需要用户批准；被拒绝时请向用户说明并调整方案。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '项目内相对路径' },
+      oldText: { type: 'string', description: '要被替换的原文（逐字符匹配；若出现多次请扩大上下文范围）' },
+      newText: { type: 'string', description: '替换后的新文本（删除内容时传空字符串）' },
+      replace_all: { type: 'boolean', description: 'oldText 出现多次时是否全部替换，默认只允许唯一匹配' },
+    },
+    required: ['path', 'oldText', 'newText'],
+  },
+  requiresApproval: true,
+  kind: 'edit',
+  async execute(input, ctx) {
+    const rel = typeof input.path === 'string' ? input.path : ''
+    const oldText = typeof input.oldText === 'string' ? input.oldText : ''
+    const newText = typeof input.newText === 'string' ? input.newText : ''
+    const replaceAll = input.replace_all === true
+    if (!rel) return { content: '缺少 path 参数', isError: true }
+    if (!oldText) return { content: '缺少 oldText 参数', isError: true }
+
+    const file = safeResolve(ctx.projectPath, rel)
+    const raw = await readFile(file, 'utf-8')
+    const count = raw.split(oldText).length - 1
+    if (count === 0) {
+      return {
+        content: `oldText 在 ${rel} 中未找到。请先用 read_file 确认实际内容——oldText 必须与文件逐字符一致（含缩进）`,
+        isError: true,
+      }
+    }
+    if (count > 1 && !replaceAll) {
+      return {
+        content: `oldText 在 ${rel} 中出现了 ${count} 次。请扩大 oldText 的上下文使其唯一，或设置 replace_all=true`,
+        isError: true,
+      }
+    }
+
+    const updated = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText)
+    await writeFile(file, updated, 'utf-8')
+    const replaced = replaceAll ? count : 1
+    return { content: `已编辑 ${rel}（替换 ${replaced} 处，-${oldText.length} +${newText.length} 字符）` }
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
   [writeFileTool.name, writeFileTool],
+  [editFileTool.name, editFileTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */
