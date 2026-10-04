@@ -42,6 +42,8 @@ interface Exchange {
   /** 收到的 data 行总数（与 sseEvents 分开记，因为 sseEvents 有条数上限） */
   eventCount: number
   assembledText: string
+  /** 推理模型的思考内容（reasoning_content / thinking）；按协议约定不回传给后续请求 */
+  reasoningText: string
   /** 响应中的原始 usage 对象（最后一次出现的） */
   usage: unknown
   inputTokens: number | null
@@ -164,6 +166,7 @@ export function beginExchange(input: {
     sseEvents: [],
     eventCount: 0,
     assembledText: '',
+    reasoningText: '',
     usage: null,
     inputTokens: null,
     outputTokens: null,
@@ -203,6 +206,12 @@ export function recordSSELine(ex: Exchange, rawLine: string): void {
 /** 记录本轮流式输出拼装出的最终文本（代理循环里每轮 API 调用各自一条记录） */
 export function recordAssembledText(ex: Exchange, text: string): void {
   ex.assembledText = text
+  scheduleSave(ex)
+}
+
+/** 记录推理模型的思考内容（reasoning_content / thinking，仅供观察，不回传给模型） */
+export function recordReasoningText(ex: Exchange, text: string): void {
+  ex.reasoningText = text
   scheduleSave(ex)
 }
 
@@ -326,6 +335,7 @@ function toDetail(ex: Exchange): DebugDetail {
     requestBody: prettyJSON(ex.requestBody),
     sseEvents: ex.sseEvents,
     assembledText: ex.assembledText,
+    reasoningText: ex.reasoningText ?? '',
     usage: ex.usage,
     responseBody: ex.responseBody,
   }

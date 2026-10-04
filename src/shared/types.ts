@@ -182,8 +182,10 @@ export interface DebugDetail extends DebugListItem {
   requestBody: string
   /** 逐条原始 SSE data 行（不含 "data: " 前缀，最后的 [DONE] 也记录） */
   sseEvents: string[]
-  /** 从流中拼装出的最终文本 */
+  /** 从流中拼装出的最终文本（正文） */
   assembledText: string
+  /** 推理模型的思考内容（reasoning_content / thinking），仅供观察 */
+  reasoningText: string
   /** 响应中出现的原始 usage 对象，无则 null */
   usage: unknown
   /** 非流式请求（测试连接）的原始响应体 */

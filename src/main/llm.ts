@@ -8,6 +8,7 @@ import {
   recordSSELine,
   recordUsageEvent,
   recordAssembledText,
+  recordReasoningText,
   endExchange,
   maskHeaders,
 } from './debug'
@@ -302,12 +303,15 @@ async function readSSE(
 function createStreamCollector(
   provider: LLMConfig['provider'],
   sessionId: string,
-): { onEvent: (json: Record<string, unknown>) => void; finish: () => MessageBlock[] } {
-  // OpenAI 兼容状态：文本一块 + tool_calls 按 index 累积
+): { onEvent: (json: Record<string, unknown>) => void; finish: () => { blocks: MessageBlock[]; reasoning: string } } {
+  // OpenAI 兼容状态：文本一块 + tool_calls 按 index 累积 + 思考内容（reasoning_content）
   let oaText = ''
+  let oaReasoning = ''
   const oaCalls = new Map<number, { id: string; name: string; args: string }>()
   // Anthropic 状态：content block 按 index 顺序排列
-  const aItems: Array<{ kind: 'text'; text: string } | { kind: 'tool'; id: string; name: string; args: string }> = []
+  const aItems: Array<
+    { kind: 'text'; text: string } | { kind: 'thinking'; text: string } | { kind: 'tool'; id: string; name: string; args: string }
+  > = []
 
   const onEvent = (json: Record<string, unknown>): void => {
     if (provider === 'anthropic') {
@@ -316,16 +320,25 @@ function createStreamCollector(
         const cb = json.content_block as { type?: string; id?: string; name?: string } | undefined
         if (cb?.type === 'tool_use' && cb.id && cb.name) {
           aItems[index] = { kind: 'tool', id: cb.id, name: cb.name, args: '' }
+        } else if (cb?.type === 'thinking') {
+          aItems[index] = { kind: 'thinking', text: '' }
         } else {
           aItems[index] = { kind: 'text', text: '' }
         }
       } else if (json.type === 'content_block_delta') {
         const item = aItems[index]
-        const delta = json.delta as { type?: string; text?: string; partial_json?: string } | undefined
+        const delta = json.delta as {
+          type?: string
+          text?: string
+          thinking?: string
+          partial_json?: string
+        } | undefined
         if (!item || !delta) return
         if (item.kind === 'text' && delta.type === 'text_delta' && delta.text) {
           item.text += delta.text
           emit({ type: 'delta', sessionId, delta: delta.text })
+        } else if (item.kind === 'thinking' && delta.type === 'thinking_delta' && delta.thinking) {
+          item.text += delta.thinking
         } else if (item.kind === 'tool' && delta.type === 'input_json_delta' && delta.partial_json) {
           item.args += delta.partial_json
         }
@@ -343,11 +356,16 @@ function createStreamCollector(
       | Array<{
           delta?: {
             content?: string
+            reasoning_content?: string
+            reasoning?: string
             tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>
           }
         }>
       | undefined
     const delta = choices?.[0]?.delta
+    // 推理模型（如 DeepSeek）的思考内容：只记录展示，不回传给后续请求
+    const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning
+    if (reasoningDelta) oaReasoning += reasoningDelta
     if (delta?.content) {
       oaText += delta.content
       emit({ type: 'delta', sessionId, delta: delta.content })
@@ -362,13 +380,20 @@ function createStreamCollector(
     }
   }
 
-  const finish = (): MessageBlock[] => {
+  const finish = (): { blocks: MessageBlock[]; reasoning: string } => {
     if (provider === 'anthropic') {
-      return aItems.map((item): MessageBlock =>
-        item.kind === 'text'
-          ? { type: 'text', text: item.text }
-          : { type: 'tool_use', id: item.id, name: item.name, input: parseLooseJson(item.args), status: 'running' },
-      )
+      const reasoning = aItems
+        .filter((i): i is { kind: 'thinking'; text: string } => i.kind === 'thinking')
+        .map((i) => i.text)
+        .join('\n')
+      const blocks: MessageBlock[] = aItems
+        .filter((i) => i.kind !== 'thinking')
+        .map((item): MessageBlock =>
+          item.kind === 'text'
+            ? { type: 'text', text: item.text }
+            : { type: 'tool_use', id: item.id, name: item.name, input: parseLooseJson(item.args), status: 'running' },
+        )
+      return { blocks, reasoning }
     }
     const callBlocks: MessageBlock[] = [...oaCalls.entries()]
       .sort((a, b) => a[0] - b[0])
@@ -381,7 +406,7 @@ function createStreamCollector(
     const blocks: MessageBlock[] = []
     if (oaText) blocks.push({ type: 'text', text: oaText })
     blocks.push(...callBlocks)
-    return blocks
+    return { blocks, reasoning: oaReasoning }
   }
 
   return { onEvent, finish }
@@ -453,7 +478,8 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         recordUsageEvent(exchange as NonNullable<typeof exchange>, json)
         collector.onEvent(json)
       })
-      const assistantBlocks = collector.finish()
+      const { blocks: assistantBlocks, reasoning } = collector.finish()
+      if (reasoning) recordReasoningText(exchange as NonNullable<typeof exchange>, reasoning)
       recordAssembledText(exchange as NonNullable<typeof exchange>, textOfBlocks(assistantBlocks))
       endExchange(exchange)
       exchange = null

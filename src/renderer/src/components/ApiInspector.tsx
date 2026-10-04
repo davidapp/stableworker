@@ -130,7 +130,19 @@ export function ApiInspector() {
                 <pre className="debug-pre">{detail.requestBody}</pre>
 
                 <h3>回复内容（从流式增量拼装）</h3>
-                <pre className="debug-pre">{detail.assembledText || '（空）'}</pre>
+                <pre className="debug-pre">
+                  {detail.assembledText ||
+                    (detail.reasoningText
+                      ? '（本轮无正文：模型只输出了思考内容和/或工具调用）'
+                      : '（空）')}
+                </pre>
+
+                {detail.reasoningText ? (
+                  <>
+                    <h3>思考过程（reasoning_content，按协议约定不回传给模型）</h3>
+                    <pre className="debug-pre">{detail.reasoningText}</pre>
+                  </>
+                ) : null}
 
                 <details className="sse-details">
                   <summary>
