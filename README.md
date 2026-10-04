@@ -9,6 +9,7 @@ npm install        # 首次安装；若 electron 二进制下载失败，见下�
 npm run dev        # 启动开发模式（带热更新）
 npm run build      # 产物构建到 out/
 npm run typecheck  # TypeScript 类型检查
+npm run dist       # 打包 Windows 安装器（NSIS）到 release/
 ```
 
 > 常见问题：如果 `npm run dev` 报 `Error: Electron uninstall`，是 Electron 二进制没下载成功（网络原因）。
@@ -148,6 +149,10 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
   - **治理**（4b）：发送前自动裁剪——估算历史超过上下文上限的 70% 时，从最旧的**整组**对话开始
     丢弃（绝不拆开 tool_calls 与 tool_result）；只影响请求体，会话文件与界面历史保持完整；
     裁剪条数显示在 API 调试面板的记录上（"已裁剪 N 条"）。实现：`src/main/contextTrim.ts`
+- **会话存储（v2，append-only JSONL）**：每个会话一个 `<sessionId>.jsonl`，每行一个操作
+  （`meta` 标题/`m` 按 index 设置消息/`clear` 清空），只追加、永不重写整文件——写入是 O(新内容)
+  的尾部追加，崩溃最多损失最后半行（解析失败的行跳过）。旧版单 JSON 会话在首次读取时自动
+  转换。实现：`src/main/sessions.ts`
 - **多配置档**：`llmProfiles` + `activeLlmId`，输入框下方工具条随时切换激活档；旧版单配置
   在加载时自动迁移为第一个配置档
 - **批准模式**：`✋ 变更前确认`（所有危险操作询问）/ `🛡️ 自动编辑`（`kind: 'edit'` 的文件编辑
@@ -163,11 +168,13 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 
 ## 下一步路线（建议顺序）
 
+## 下一步路线（建议顺序）
+
 1. ~~Markdown 渲染 + 代码高亮~~（已完成）
 2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file / write_file / edit_file / run_command + 代理循环 + 批准门 + diff 展示）
 3. ~~上下文管理~~（已完成 4a 可见化 + 4b 发送前自动裁剪；可选进阶：裁剪时用摘要替代被丢弃的历史）
-4. ~~工具开关~~（已完成，设置 → 工具开关）；run_command 实时输出流（5b）；JSONL 会话迁移
-5. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发
+4. ~~工具开关~~（已完成）；~~JSONL 会话迁移~~（已完成）；~~electron-builder 打包~~（已完成，`npm run dist`）
+5. 后续可选：应用图标与代码签名、自动更新（electron-updater）、run_command 实时输出增强、多会话搜索
 
 ## 已知简化（相对完整产品）
 

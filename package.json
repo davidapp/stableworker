@@ -1,14 +1,15 @@
 {
   "name": "stableworker",
-  "version": "0.1.0",
-  "description": "自研 AI 代理编程软件 —— 最小可运行骨架",
+  "version": "0.6.0",
+  "description": "自研 AI 代理编程软件 —— Electron 桌面应用",
   "main": "./out/main/index.js",
   "author": "david",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dist": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
     "highlight.js": "^11.12.0",
@@ -25,8 +26,33 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^5.9.0",
     "vite": "^7.3.6"
+  },
+  "build": {
+    "appId": "com.david.stableworker",
+    "productName": "StableWorker",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
