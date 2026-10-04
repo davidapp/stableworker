@@ -36,12 +36,29 @@ export function ChatPane() {
     useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
+  const [showJumpButton, setShowJumpButton] = useState(false)
 
-  // 消息变化时自动滚到底部
+  // 距底部超过一屏时显示"回到底部"按钮
+  const onScroll = (): void => {
+    const el = listRef.current
+    if (!el) return
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    setShowJumpButton(distance > el.clientHeight)
+  }
+
+  // 新消息到达时：贴底（80px 容差）则自动跟随；用户已上滚则不打扰
   useEffect(() => {
     const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distance <= 80) el.scrollTop = el.scrollHeight
+    setShowJumpButton(distance > el.clientHeight)
   }, [messages])
+
+  const jumpToBottom = (): void => {
+    const el = listRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }
 
   const project = projects.find((p) => p.id === activeProjectId)
 
@@ -61,8 +78,7 @@ export function ChatPane() {
 
   return (
     <main className="chat-pane">
-      <header className="chat-header">
-        <span className="chat-header-project" title={project.path}>
+      <header className="chat-header">        <span className="chat-header-project" title={project.path}>
           {project.name}
         </span>
         <select
@@ -117,49 +133,56 @@ export function ChatPane() {
           <p>开始你的第一轮对话。可以直接问项目相关的问题，助手会调用工具查看文件。</p>
         </div>
       ) : (
-        <div className="message-list" ref={listRef}>
-          {messages.map((m) => (
-            <div key={m.id} className={`message ${m.role}`}>
-              <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
-                {m.role === 'user' ? (
-                  // 用户消息只含文本块
-                  m.blocks
-                    .filter((b) => b.type === 'text')
-                    .map((b) => b.text)
-                    .join('\n')
-                ) : m.blocks.length === 0 ? (
-                  m.streaming ? <span className="thinking">思考中…</span> : null
-                ) : (
-                  m.blocks.map((b, i) => {
-                    if (b.type === 'reasoning') {
-                      return (
-                        <details key={i} className="reasoning-collapse">
-                          <summary>🤔 思考过程</summary>
-                          <div className="reasoning-text">{b.text}</div>
-                        </details>
-                      )
-                    }
-                    if (b.type === 'text') {
-                      return (
-                        <div key={i} className="block-text">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeHighlight]}
-                            components={{ pre: CodeBlock }}
-                          >
-                            {b.text}
-                          </ReactMarkdown>
-                        </div>
-                      )
-                    }
-                    return <ToolCallCard key={b.id} block={b} />
-                  })
-                )}
-                {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
-                {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
+        <div className="message-list-wrap">
+          <div className="message-list" ref={listRef} onScroll={onScroll}>
+            {messages.map((m) => (
+              <div key={m.id} className={`message ${m.role}`}>
+                <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
+                  {m.role === 'user' ? (
+                    // 用户消息只含文本块
+                    m.blocks
+                      .filter((b) => b.type === 'text')
+                      .map((b) => b.text)
+                      .join('\n')
+                  ) : m.blocks.length === 0 ? (
+                    m.streaming ? <span className="thinking">思考中…</span> : null
+                  ) : (
+                    m.blocks.map((b, i) => {
+                      if (b.type === 'reasoning') {
+                        return (
+                          <details key={i} className="reasoning-collapse">
+                            <summary>🤔 思考过程</summary>
+                            <div className="reasoning-text">{b.text}</div>
+                          </details>
+                        )
+                      }
+                      if (b.type === 'text') {
+                        return (
+                          <div key={i} className="block-text">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeHighlight]}
+                              components={{ pre: CodeBlock }}
+                            >
+                              {b.text}
+                            </ReactMarkdown>
+                          </div>
+                        )
+                      }
+                      return <ToolCallCard key={b.id} block={b} />
+                    })
+                  )}
+                  {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
+                  {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          {showJumpButton ? (
+            <button className="jump-bottom" title="滚到最下面" onClick={jumpToBottom}>
+              ↓
+            </button>
+          ) : null}
         </div>
       )}
 

@@ -292,6 +292,13 @@ body {
   color: var(--danger);
 }
 
+.message-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .message-list {
   flex: 1;
   overflow-y: auto;
@@ -299,6 +306,32 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* 底部中间的"回到底部"悬浮按钮 */
+.jump-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+.jump-bottom:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .message {
