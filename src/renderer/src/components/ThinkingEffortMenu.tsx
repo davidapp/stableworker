@@ -43,10 +43,6 @@ export function ThinkingEffortMenu() {
                 {l.id === current ? <span className="mode-check">✓</span> : null}
               </button>
             ))}
-            <div className="mode-foot-hint">
-              低/中/高分别映射到 reasoning_effort（OpenAI 系）或 thinking 预算（Anthropic）；
-              "默认"不传参数，服务端不支持时也不会报错。
-            </div>
           </div>
         </>
       ) : null}

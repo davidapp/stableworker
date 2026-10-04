@@ -19,6 +19,14 @@
   padding: 0;
 }
 
+/* 原生表单控件默认不继承页面字体，统一改为继承，保证全局字体一致 */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 html,
 body,
 #root {
@@ -317,13 +325,13 @@ body {
 
 .composer-send {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 50%;
+  border-radius: 9px;
   background: var(--accent);
   color: #fff;
   font-size: 15px;
@@ -387,15 +395,6 @@ body {
 .mode-caret {
   color: var(--text-dim);
   font-size: 10px;
-}
-
-.mode-foot-hint {
-  padding: 6px 10px 4px;
-  border-top: 1px solid var(--border);
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-dim);
-  line-height: 1.5;
 }
 
 .popover-backdrop {
