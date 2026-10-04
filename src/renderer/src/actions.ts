@@ -130,14 +130,6 @@ export function closeSettings(): void {
   store.setState({ settingsOpen: false })
 }
 
-export function openInspector(): void {
-  store.setState({ inspectorOpen: true })
-}
-
-export function closeInspector(): void {
-  store.setState({ inspectorOpen: false })
-}
-
 export async function saveProfile(profile: LLMConfig & { id?: string; apiKey?: string }): Promise<void> {
   const cfg = await window.api.saveProfile(profile)
   applyConfig(cfg)

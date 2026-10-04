@@ -849,13 +849,18 @@ body {
   overflow-y: auto;
 }
 
-/* ---------- API 调试面板 ---------- */
+/* ---------- API 调试（独立窗口内整页铺满） ---------- */
+.inspector-page {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  background: var(--bg);
+}
+
 .inspector {
-  width: min(1100px, calc(100vw - 64px));
-  height: min(760px, calc(100vh - 64px));
+  flex: 1;
+  min-width: 0;
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;

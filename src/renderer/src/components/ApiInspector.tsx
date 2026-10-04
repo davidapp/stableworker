@@ -4,7 +4,6 @@ import json from 'highlight.js/lib/languages/json'
 import { decimalToPico, picoToDecimalString } from '../../../shared/money'
 import type { Currency, DebugDetail, DebugListItem, Money } from '../../../shared/types'
 import { copyText } from '../clipboard'
-import * as actions from '../actions'
 
 hljs.registerLanguage('json', json)
 
@@ -102,8 +101,8 @@ export function ApiInspector() {
     })()
 
   return (
-    <div className="modal-overlay" onClick={() => actions.closeInspector()}>
-      <div className="inspector" onClick={(e) => e.stopPropagation()}>
+    <div className="inspector-page">
+      <div className="inspector">
         <header className="inspector-header">
           <h2>API 调试日志</h2>
           <span className="hint">记录永久保存在本地 · 密钥已脱敏 · 对话进行中可实时观察事件流</span>
@@ -117,9 +116,6 @@ export function ApiInspector() {
             }}
           >
             清空
-          </button>
-          <button className="btn" onClick={() => actions.closeInspector()}>
-            关闭
           </button>
         </header>
 

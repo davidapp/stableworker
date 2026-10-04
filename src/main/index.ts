@@ -6,6 +6,8 @@ import { registerSessionHandlers } from './sessions'
 import { registerChatHandlers } from './llm'
 import { registerDebugHandlers, initDebugLog } from './debug'
 import { registerApprovalHandlers } from './approvals'
+import { openInspectorWindow } from './inspectorWindow'
+import { createAppMenu } from './menu'
 
 /**
  * 主进程入口：创建窗口、注册所有 IPC 处理器。
@@ -66,6 +68,7 @@ app.whenReady().then(async () => {
   registerDebugHandlers()
   registerApprovalHandlers()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
+  createAppMenu(() => openInspectorWindow())
   createWindow()
 
   // macOS：点 Dock 图标时如果没有窗口则重新创建

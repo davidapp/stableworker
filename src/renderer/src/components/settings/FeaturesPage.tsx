@@ -27,22 +27,28 @@ export function FeaturesPage() {
       <h2>功能开关</h2>
       <p className="hint-line">这里控制各功能入口是否显示；隐藏后随时可以回来重新打开。</p>
 
-      {FEATURE_DEFS.map((d) => (
-        <div className="features-row" key={d.id}>
-          <label className="features-text">
-            <span className="features-label">{d.label}</span>
-            <small>{d.description}</small>
-          </label>
-          <label className="features-toggle">
-            <input
-              type="checkbox"
-              checked={draft[d.id] ?? true}
-              onChange={(e) => toggle(d.id, e.target.checked)}
-            />
-            显示
-          </label>
+      {FEATURE_DEFS.length === 0 ? (
+        <div className="profile-empty">
+          暂无可开关的功能入口。新功能在 src/renderer/src/features.ts 登记后会出现在这里。
         </div>
-      ))}
+      ) : (
+        FEATURE_DEFS.map((d) => (
+          <div className="features-row" key={d.id}>
+            <label className="features-text">
+              <span className="features-label">{d.label}</span>
+              <small>{d.description}</small>
+            </label>
+            <label className="features-toggle">
+              <input
+                type="checkbox"
+                checked={draft[d.id] ?? true}
+                onChange={(e) => toggle(d.id, e.target.checked)}
+              />
+              显示
+            </label>
+          </div>
+        ))
+      )}
 
       <div className="settings-page-actions">
         <div className="spacer" />

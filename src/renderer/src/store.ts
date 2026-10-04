@@ -37,7 +37,6 @@ export interface AppState {
   /** 设置对话框当前页 */
   settingsPage: string
   settingsOpen: boolean
-  inspectorOpen: boolean
   /** 是否正在流式生成回复 */
   streaming: boolean
 }
@@ -76,7 +75,6 @@ export const store = createStore<AppState>({
   features: [],
   settingsPage: 'llm',
   settingsOpen: false,
-  inspectorOpen: false,
   streaming: false,
 })
 
