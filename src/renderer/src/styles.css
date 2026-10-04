@@ -941,9 +941,11 @@ body {
   padding: 5px 10px;
   color: var(--text);
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  /* 不透明背景：sticky 悬浮时滚动内容不会从背后透出 */
+  background: #1b1d23;
   position: sticky;
   top: 0;
+  z-index: 1;
 }
 
 .diff-line {
