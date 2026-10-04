@@ -54,10 +54,30 @@ export interface ProjectInfo {
 
 export type MessageRole = 'user' | 'assistant'
 
+/** 消息内容块：对齐 LLM API 的原生形状（text / tool_use），工具结果挂在 tool_use 块上 */
+export interface TextBlock {
+  type: 'text'
+  text: string
+}
+
+export interface ToolUseBlock {
+  type: 'tool_use'
+  /** 与 API 的 tool_use id 对应（OpenAI tool_call_id / Anthropic tool_use_id） */
+  id: string
+  name: string
+  input: Record<string, unknown>
+  status: 'running' | 'done' | 'error'
+  /** 工具执行结果（文本） */
+  result?: string
+  durationMs?: number
+}
+
+export type MessageBlock = TextBlock | ToolUseBlock
+
 export interface ChatMessage {
   id: string
   role: MessageRole
-  content: string
+  blocks: MessageBlock[]
   createdAt: number
   /** 该条回复正在流式生成中 */
   streaming?: boolean
@@ -98,9 +118,17 @@ export interface ConfigView {
   features: FeatureEntry[]
 }
 
+/** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */
+export interface ChatHistoryMessage {
+  role: MessageRole
+  blocks: MessageBlock[]
+}
+
 export interface ChatRequest {
   sessionId: string
-  messages: { role: MessageRole; content: string }[]
+  /** 激活项目 id，主进程据此解析工具可访问的目录 */
+  projectId: string
+  messages: ChatHistoryMessage[]
 }
 
 /** 测试连接的入参：允许用尚未保存的表单值来测试 */
@@ -108,9 +136,11 @@ export interface LLMTestPayload extends LLMConfig {
   apiKey?: string
 }
 
-/** 主进程 → 渲染进程 的流式聊天事件 */
+/** 主进程 → 渲染进程 的流式聊天事件（含工具调用回合） */
 export type ChatEvent =
   | { type: 'delta'; sessionId: string; delta: string }
+  | { type: 'tool_use'; sessionId: string; toolUseId: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'done'; sessionId: string }
   | { type: 'error'; sessionId: string; message: string }
 
@@ -120,6 +150,8 @@ export type ChatEvent =
 export interface DebugListItem {
   id: string
   kind: 'chat' | 'test'
+  /** 工具调用回合序号（1 起）；0 = 非对话请求（如测试连接） */
+  round: number
   startedAt: number
   durationMs: number | null
   provider: string

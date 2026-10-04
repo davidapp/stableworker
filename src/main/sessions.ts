@@ -2,7 +2,7 @@ import { app, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import type { Session, SessionMeta } from '../shared/types'
+import type { ChatMessage, Session, SessionMeta } from '../shared/types'
 
 /**
  * 会话存储：每个会话一个 JSON 文件，位于 userData/sessions/<projectId>/<sessionId>.json
@@ -22,6 +22,20 @@ async function saveSessionFile(session: Session): Promise<void> {
   const dir = projectDir(session.projectId)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, `${session.id}.json`), JSON.stringify(session, null, 2), 'utf-8')
+}
+
+/** 旧版本会话里消息是 content: string，加载时统一迁移成 blocks 结构 */
+function normalizeMessage(m: ChatMessage): ChatMessage {
+  if (Array.isArray(m.blocks)) return m
+  const legacy = m as unknown as { content?: string }
+  return {
+    id: m.id,
+    role: m.role,
+    createdAt: m.createdAt,
+    streaming: m.streaming,
+    error: m.error,
+    blocks: [{ type: 'text', text: String(legacy.content ?? '') }],
+  }
 }
 
 export function registerSessionHandlers(): void {
@@ -62,7 +76,9 @@ export function registerSessionHandlers(): void {
 
   ipcMain.handle('sessions:load', async (_e, projectId: string, sessionId: string): Promise<Session | null> => {
     try {
-      return JSON.parse(await readFile(sessionPath(projectId, sessionId), 'utf-8')) as Session
+      const session = JSON.parse(await readFile(sessionPath(projectId, sessionId), 'utf-8')) as Session
+      session.messages = (session.messages ?? []).map(normalizeMessage)
+      return session
     } catch {
       return null
     }

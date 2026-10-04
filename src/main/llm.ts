@@ -6,44 +6,61 @@ import {
   beginExchange,
   recordStatus,
   recordSSELine,
-  recordDelta,
   recordUsageEvent,
-  recordResponseBody,
+  recordAssembledText,
   endExchange,
   maskHeaders,
 } from './debug'
 import { isPeakTime } from './pricing'
-import type { ChatEvent, ChatRequest, LLMConfig, LLMTestPayload, MessageRole } from '../shared/types'
+import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
+import type {
+  ChatEvent,
+  ChatRequest,
+  ChatHistoryMessage,
+  LLMConfig,
+  LLMTestPayload,
+  MessageBlock,
+  ToolUseBlock,
+} from '../shared/types'
 
 /**
- * LLM 调用层：全部在主进程完成（API key 不出主进程、渲染进程没有跨域限制问题），
- * 流式增量通过单一 'chat:event' 通道推给渲染进程。
+ * LLM 调用层 + 代理循环（Agent Loop）：
+ * 主进程流式请求模型 → 模型请求工具 → 主进程执行（tools 模块）→ 结果回传 → 模型继续，
+ * 直到模型给出纯文本回复或达到轮次上限。每一轮 API 调用单独记录到调试面板。
  *
- * 网络说明：Node 的全局 fetch 不读系统代理环境变量，所以代理走显式配置——
- * 配置了 proxyURL 时用 undici 的 ProxyAgent 挂 dispatcher，留空则直连。
+ * 协议支持：
+ * - openai-compatible：/chat/completions + tools（function calling），工具结果用 role:'tool'
+ * - anthropic：/v1/messages + tools，工具结果作为 user 消息里的 tool_result 块
  *
- * 当前支持两类协议：
- * - openai-compatible：POST {baseURL}/chat/completions（DeepSeek / GLM / Kimi / OpenRouter / vLLM…）
- * - anthropic：POST {baseURL}/v1/messages（Claude 官方 Messages API）
- *
- * 两者都是 SSE（server-sent events）流：一行行 "data: {json}"，
- * OpenAI 以 data: [DONE] 结束；Anthropic 用 type 字段区分事件。
- * 每次交换都会同步记录到 debug 模块，供"API 调试"面板观察协议细节。
+ * 流式工具调用解析：OpenAI 的 delta.tool_calls 按 index 分片累积 arguments；
+ * Anthropic 用 content_block_start / input_json_delta / content_block_stop 组装。
+ * 两种协议的线上格式都可以在"API 调试"面板里逐行观察。
  */
 
-const SYSTEM_PROMPT = '你是 StableWorker，一个运行在用户本地电脑上的 AI 编程助手。回答简洁准确，使用与用户相同的语言。'
+const SYSTEM_PROMPT_BASE = '你是 StableWorker，一个运行在用户本地电脑上的 AI 编程助手。回答简洁准确，使用与用户相同的语言。'
 const MAX_TOKENS = 8192
+const MAX_TOOL_ROUNDS = 8
 
-/** sessionId → 中止控制器，支持"停止生成" */
 const aborters = new Map<string, AbortController>()
-
-/** 同一代理地址复用同一个 agent，避免重复建连开销 */
 const proxyAgents = new Map<string, ProxyAgent>()
 
-/**
- * 根据配置构建请求的 dispatcher：配置了代理返回 ProxyAgent，留空返回 undefined（直连）。
- * 代理地址非法时抛错，由调用方把错误记入调试日志并告知用户。
- */
+type HistoryMessage = ChatHistoryMessage
+
+function emit(event: ChatEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('chat:event', event)
+  }
+}
+
+function defaultBaseURL(provider: LLMConfig['provider']): string {
+  return provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'
+}
+
+function joinURL(base: string, path: string): string {
+  return base.replace(/\/+$/, '') + path
+}
+
+/** 根据配置构建请求的 dispatcher：配置了代理返回 ProxyAgent，留空 undefined（直连） */
 function getProxyDispatcher(proxyURL: string): Dispatcher | undefined {
   const trimmed = proxyURL.trim()
   if (!trimmed) return undefined
@@ -64,32 +81,118 @@ function getProxyDispatcher(proxyURL: string): Dispatcher | undefined {
   return agent
 }
 
-type HistoryMessage = { role: MessageRole; content: string }
+// ---------- 系统提示词 ----------
 
-function emit(event: ChatEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('chat:event', event)
+function buildSystemPrompt(projectPath: string | null): string {
+  if (!projectPath) return SYSTEM_PROMPT_BASE
+  return `${SYSTEM_PROMPT_BASE}\n当前项目目录：${projectPath}\n你可以调用工具查看项目文件：了解目录结构用 list_files，查看文件内容用 read_file。涉及项目内容的问题先查再答，不要凭空猜测。`
+}
+
+// ---------- 消息块 → 各协议的消息序列 ----------
+
+interface ToolCallDraft {
+  id: string
+  name: string
+  argsJson: string
+}
+
+type ApiTurn =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string; toolCalls: ToolCallDraft[] }
+  | { kind: 'tool_results'; results: { toolUseId: string; content: string; isError: boolean }[] }
+
+function textOfBlocks(blocks: MessageBlock[]): string {
+  return blocks
+    .filter((b): b is Extract<MessageBlock, { type: 'text' }> => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n\n')
+}
+
+function parseLooseJson(raw: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(raw || '{}') as unknown
+    return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {}
+  } catch {
+    return {}
   }
 }
 
-function defaultBaseURL(provider: LLMConfig['provider']): string {
-  return provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'
-}
-
-/** baseURL 去掉尾斜杠再拼路径，用户填带不带 /v1 都能工作 */
-function joinURL(base: string, path: string): string {
-  return base.replace(/\/+$/, '') + path
+/**
+ * 把 UI 侧的消息历史转换成协议无关的 API 回合序列。
+ * 关键点：一个助手消息里的 blocks 是 [文本, 工具调用(带结果), 文本, …]，
+ * 每个"带结果的工具调用"之后都要切一刀——API 上工具结果必须紧跟在
+ * 发起调用的那条助手消息之后（Anthropic 是 user/tool_result，OpenAI 是 role:'tool'）。
+ */
+function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
+  const turns: ApiTurn[] = []
+  for (const msg of history) {
+    if (msg.role === 'user') {
+      turns.push({ kind: 'user', text: textOfBlocks(msg.blocks) })
+      continue
+    }
+    let texts: string[] = []
+    let calls: ToolCallDraft[] = []
+    const flush = (): void => {
+      if (texts.length || calls.length) {
+        turns.push({ kind: 'assistant', text: texts.join('\n\n'), toolCalls: calls })
+      }
+      texts = []
+      calls = []
+    }
+    for (const b of msg.blocks) {
+      if (b.type === 'text') {
+        texts.push(b.text)
+      } else if (b.status === 'running') {
+        continue // 中断留下的未完成调用不进历史
+      } else {
+        calls.push({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })
+        flush()
+        turns.push({
+          kind: 'tool_results',
+          results: [{ toolUseId: b.id, content: b.result ?? '', isError: b.status === 'error' }],
+        })
+      }
+    }
+    flush()
+  }
+  return turns
 }
 
 function buildRequest(
   llm: LLMConfig,
   apiKey: string,
-  messages: HistoryMessage[],
+  turns: ApiTurn[],
+  tools: ToolDefinition[],
   stream: boolean,
+  projectPath: string | null,
 ): { url: string; headers: Record<string, string>; body: string } {
   const baseURL = llm.baseURL.trim() || defaultBaseURL(llm.provider)
+  const system = buildSystemPrompt(projectPath)
 
   if (llm.provider === 'anthropic') {
+    const messages: Record<string, unknown>[] = []
+    for (const t of turns) {
+      if (t.kind === 'user') {
+        if (t.text) messages.push({ role: 'user', content: t.text })
+      } else if (t.kind === 'assistant') {
+        const content: Record<string, unknown>[] = []
+        if (t.text) content.push({ type: 'text', text: t.text })
+        for (const c of t.toolCalls) {
+          content.push({ type: 'tool_use', id: c.id, name: c.name, input: parseLooseJson(c.argsJson) })
+        }
+        if (content.length) messages.push({ role: 'assistant', content })
+      } else {
+        messages.push({
+          role: 'user',
+          content: t.results.map((r) => ({
+            type: 'tool_result',
+            tool_use_id: r.toolUseId,
+            content: r.content,
+            ...(r.isError ? { is_error: true } : {}),
+          })),
+        })
+      }
+    }
     return {
       url: joinURL(baseURL, '/v1/messages'),
       headers: {
@@ -99,14 +202,41 @@ function buildRequest(
       },
       body: JSON.stringify({
         model: llm.model,
-        max_tokens: MAX_TOKENS, // Anthropic 必填
-        system: SYSTEM_PROMPT, // Anthropic 的 system 是独立参数
+        max_tokens: MAX_TOKENS,
+        system,
         messages,
         stream,
+        ...(tools.length
+          ? { tools: tools.map((d) => ({ name: d.name, description: d.description, input_schema: d.inputSchema })) }
+          : {}),
       }),
     }
   }
 
+  const messages: Record<string, unknown>[] = []
+  for (const t of turns) {
+    if (t.kind === 'user') {
+      messages.push({ role: 'user', content: t.text })
+    } else if (t.kind === 'assistant') {
+      messages.push({
+        role: 'assistant',
+        content: t.text || null,
+        ...(t.toolCalls.length
+          ? {
+              tool_calls: t.toolCalls.map((c) => ({
+                id: c.id,
+                type: 'function',
+                function: { name: c.name, arguments: c.argsJson || '{}' },
+              })),
+            }
+          : {}),
+      })
+    } else {
+      for (const r of t.results) {
+        messages.push({ role: 'tool', tool_call_id: r.toolUseId, content: r.content })
+      }
+    }
+  }
   return {
     url: joinURL(baseURL, '/chat/completions'),
     headers: {
@@ -115,35 +245,26 @@ function buildRequest(
     },
     body: JSON.stringify({
       model: llm.model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      messages: [{ role: 'system', content: system }, ...messages],
       stream,
-      // 流式时让服务在最后一个 chunk 附带 usage（token 用量），这是计费依据
       ...(stream ? { stream_options: { include_usage: true } } : {}),
+      ...(tools.length
+        ? {
+            tools: tools.map((d) => ({
+              type: 'function',
+              function: { name: d.name, description: d.description, parameters: d.inputSchema },
+            })),
+          }
+        : {}),
     }),
   }
 }
 
-/** 从一条 SSE data JSON 中提取文本增量 */
-function extractDelta(provider: LLMConfig['provider'], json: Record<string, unknown>): string {
-  if (provider === 'anthropic') {
-    if (json.type === 'content_block_delta') {
-      const delta = json.delta as { text?: string } | undefined
-      return delta?.text ?? ''
-    }
-    return ''
-  }
-  const choices = json.choices as Array<{ delta?: { content?: string } }> | undefined
-  return choices?.[0]?.delta?.content ?? ''
-}
+// ---------- SSE 流式解析 ----------
 
 /** 用结构化类型而非 ReadableStream 具体类型，避免 DOM 与 Node 类型打架 */
 type SSEBody = { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }> } }
 
-/**
- * 逐行读取 SSE 流。每条 "data: xxx" 行回调一次：
- * json 为 null 表示 OpenAI 的结束标记 [DONE]，其余情况是解析好的 JSON，
- * rawData 是去掉 "data: " 前缀后的原始文本（原样记录到调试日志）。
- */
 async function readSSE(
   body: SSEBody,
   onEvent: (json: Record<string, unknown> | null, rawData: string) => void,
@@ -159,7 +280,7 @@ async function readSSE(
     while ((idx = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, idx).trim()
       buffer = buffer.slice(idx + 1)
-      if (!line.startsWith('data:')) continue // 忽略空行 / event: / 注释行
+      if (!line.startsWith('data:')) continue
       const data = line.slice(5).trim()
       if (data === '[DONE]') {
         onEvent(null, '[DONE]')
@@ -174,6 +295,100 @@ async function readSSE(
   }
 }
 
+/**
+ * 流式事件收集器：一边把文本增量/工具调用推给渲染进程，
+ * 一边把本轮回复组装成 MessageBlock[]。
+ */
+function createStreamCollector(
+  provider: LLMConfig['provider'],
+  sessionId: string,
+): { onEvent: (json: Record<string, unknown>) => void; finish: () => MessageBlock[] } {
+  // OpenAI 兼容状态：文本一块 + tool_calls 按 index 累积
+  let oaText = ''
+  const oaCalls = new Map<number, { id: string; name: string; args: string }>()
+  // Anthropic 状态：content block 按 index 顺序排列
+  const aItems: Array<{ kind: 'text'; text: string } | { kind: 'tool'; id: string; name: string; args: string }> = []
+
+  const onEvent = (json: Record<string, unknown>): void => {
+    if (provider === 'anthropic') {
+      const index = typeof json.index === 'number' ? json.index : -1
+      if (json.type === 'content_block_start') {
+        const cb = json.content_block as { type?: string; id?: string; name?: string } | undefined
+        if (cb?.type === 'tool_use' && cb.id && cb.name) {
+          aItems[index] = { kind: 'tool', id: cb.id, name: cb.name, args: '' }
+        } else {
+          aItems[index] = { kind: 'text', text: '' }
+        }
+      } else if (json.type === 'content_block_delta') {
+        const item = aItems[index]
+        const delta = json.delta as { type?: string; text?: string; partial_json?: string } | undefined
+        if (!item || !delta) return
+        if (item.kind === 'text' && delta.type === 'text_delta' && delta.text) {
+          item.text += delta.text
+          emit({ type: 'delta', sessionId, delta: delta.text })
+        } else if (item.kind === 'tool' && delta.type === 'input_json_delta' && delta.partial_json) {
+          item.args += delta.partial_json
+        }
+      } else if (json.type === 'content_block_stop') {
+        const item = aItems[index]
+        if (item && item.kind === 'tool') {
+          emit({ type: 'tool_use', sessionId, toolUseId: item.id, name: item.name, input: parseLooseJson(item.args) })
+        }
+      }
+      return
+    }
+
+    // OpenAI 兼容
+    const choices = json.choices as
+      | Array<{
+          delta?: {
+            content?: string
+            tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>
+          }
+        }>
+      | undefined
+    const delta = choices?.[0]?.delta
+    if (delta?.content) {
+      oaText += delta.content
+      emit({ type: 'delta', sessionId, delta: delta.content })
+    }
+    for (const tc of delta?.tool_calls ?? []) {
+      const idx = typeof tc.index === 'number' ? tc.index : oaCalls.size
+      const slot = oaCalls.get(idx) ?? { id: '', name: '', args: '' }
+      if (tc.id) slot.id = tc.id
+      if (tc.function?.name) slot.name += tc.function.name
+      if (tc.function?.arguments) slot.args += tc.function.arguments
+      oaCalls.set(idx, slot)
+    }
+  }
+
+  const finish = (): MessageBlock[] => {
+    if (provider === 'anthropic') {
+      return aItems.map((item): MessageBlock =>
+        item.kind === 'text'
+          ? { type: 'text', text: item.text }
+          : { type: 'tool_use', id: item.id, name: item.name, input: parseLooseJson(item.args), status: 'running' },
+      )
+    }
+    const callBlocks: MessageBlock[] = [...oaCalls.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([idx, c]): MessageBlock => {
+        const id = c.id || `call_${idx}`
+        const input = parseLooseJson(c.args)
+        emit({ type: 'tool_use', sessionId, toolUseId: id, name: c.name, input })
+        return { type: 'tool_use', id, name: c.name, input, status: 'running' }
+      })
+    const blocks: MessageBlock[] = []
+    if (oaText) blocks.push({ type: 'text', text: oaText })
+    blocks.push(...callBlocks)
+    return blocks
+  }
+
+  return { onEvent, finish }
+}
+
+// ---------- 代理循环 ----------
+
 async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string }> {
   const cfg = await loadConfig()
   if (!cfg.llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中填写' }
@@ -181,48 +396,99 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const apiKey = decryptApiKey(llm.apiKey)
   if (!apiKey) return { ok: false, error: 'API Key 为空，请在设置中填写' }
 
-  const controller = new AbortController()
-  aborters.set(req.sessionId, controller)
-  const { url, headers, body } = buildRequest(llm, apiKey, req.messages, true)
-  // 计费快照：价格表与高峰/空闲档位在请求发起时确定，之后改配置不影响这条记录
+  const projectPath = cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
+  const tools = getToolDefinitions()
   const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
   const peak = isPeakTime(new Date(), cfg.holidays ?? [])
-  const exchange = beginExchange({
-    kind: 'chat',
-    llm,
-    method: 'POST',
-    url,
-    proxyURL: llm.proxyURL?.trim() || null,
-    pricing,
-    peak,
-    headers: maskHeaders(headers),
-    body,
-  })
+  const proxyURL = llm.proxyURL?.trim() || null
+
+  const controller = new AbortController()
+  aborters.set(req.sessionId, controller)
+
+  const conversation: HistoryMessage[] = req.messages.map((m) => ({ role: m.role, blocks: m.blocks }))
+  let exchange: ReturnType<typeof beginExchange> | null = null
 
   try {
-    const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
-    const res = await undiciFetch(url, { method: 'POST', headers, body, signal: controller.signal, dispatcher })
-    recordStatus(exchange, res.status)
-    if (!res.ok || !res.body) {
-      const detail = (await res.text().catch(() => '')).slice(0, 300)
-      throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`)
-    }
-    await readSSE(res.body, (json, raw) => {
-      recordSSELine(exchange, raw)
-      if (!json) return // [DONE] 结束标记
-      recordUsageEvent(exchange, json)
-      const delta = extractDelta(llm.provider, json)
-      if (delta) {
-        recordDelta(exchange, delta)
-        emit({ type: 'delta', sessionId: req.sessionId, delta })
+    let round = 0
+    while (true) {
+      round++
+      const { url, headers, body } = buildRequest(
+        llm,
+        apiKey,
+        toApiTurns(conversation),
+        tools,
+        true,
+        projectPath,
+      )
+      exchange = beginExchange({
+        kind: 'chat',
+        round,
+        llm,
+        method: 'POST',
+        url,
+        proxyURL,
+        pricing,
+        peak,
+        headers: maskHeaders(headers),
+        body,
+      })
+      const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
+      const res = await undiciFetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+        dispatcher,
+      })
+      recordStatus(exchange, res.status)
+      if (!res.ok || !res.body) {
+        const detail = (await res.text().catch(() => '')).slice(0, 300)
+        throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`)
       }
-    })
-    endExchange(exchange)
-    emit({ type: 'done', sessionId: req.sessionId })
-    return { ok: true }
+
+      const collector = createStreamCollector(llm.provider, req.sessionId)
+      await readSSE(res.body, (json, raw) => {
+        recordSSELine(exchange as NonNullable<typeof exchange>, raw)
+        if (!json) return // [DONE] 结束标记
+        recordUsageEvent(exchange as NonNullable<typeof exchange>, json)
+        collector.onEvent(json)
+      })
+      const assistantBlocks = collector.finish()
+      recordAssembledText(exchange as NonNullable<typeof exchange>, textOfBlocks(assistantBlocks))
+      endExchange(exchange)
+      exchange = null
+
+      conversation.push({ role: 'assistant', blocks: assistantBlocks })
+
+      const toolUses = assistantBlocks.filter((b): b is ToolUseBlock => b.type === 'tool_use')
+      if (toolUses.length === 0) {
+        emit({ type: 'done', sessionId: req.sessionId })
+        return { ok: true }
+      }
+      if (round >= MAX_TOOL_ROUNDS) {
+        const message = `已达单次回复最大工具轮次（${MAX_TOOL_ROUNDS}），请继续对话`
+        emit({ type: 'error', sessionId: req.sessionId, message })
+        return { ok: false, error: message }
+      }
+
+      // 执行本轮的每个工具调用，结果回传给模型进入下一轮
+      for (const tu of toolUses) {
+        const result = await runToolUseBlock(tu, projectPath)
+        tu.status = result.isError ? 'error' : 'done'
+        tu.result = result.content
+        tu.durationMs = result.durationMs
+        emit({
+          type: 'tool_result',
+          sessionId: req.sessionId,
+          toolUseId: tu.id,
+          content: result.content,
+          isError: result.isError,
+        })
+      }
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    endExchange(exchange, message)
+    if (exchange) endExchange(exchange, controller.signal.aborted ? undefined : message)
     if (controller.signal.aborted) {
       emit({ type: 'done', sessionId: req.sessionId }) // 用户手动停止，按正常结束处理
       return { ok: true }
@@ -257,17 +523,16 @@ export function registerChatHandlers(): void {
       if (!apiKey) return { ok: false, message: 'API Key 为空' }
       if (!llm.model) return { ok: false, message: '模型名不能为空' }
 
-      const { url, headers, body } = buildRequest(llm, apiKey, [{ role: 'user', content: 'ping' }], false)
-      const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
-      const peak = isPeakTime(new Date(), cfg.holidays ?? [])
+      const { url, headers, body } = buildRequest(llm, apiKey, [{ kind: 'user', text: 'ping' }], [], false, null)
       const exchange = beginExchange({
         kind: 'test',
+        round: 0,
         llm,
         method: 'POST',
         url,
         proxyURL: llm.proxyURL?.trim() || null,
-        pricing,
-        peak,
+        pricing: cfg.modelPricing?.find((p) => p.model === llm.model) ?? null,
+        peak: isPeakTime(new Date(), cfg.holidays ?? []),
         headers: maskHeaders(headers),
         body,
       })
@@ -293,7 +558,6 @@ export function registerChatHandlers(): void {
       } catch {
         // 响应不是 JSON，忽略
       }
-      recordResponseBody(exchange, full.slice(0, 4000))
       endExchange(exchange)
       return { ok: true, message: `连接成功，模型 ${llm.model} 可用` }
     } catch (err) {

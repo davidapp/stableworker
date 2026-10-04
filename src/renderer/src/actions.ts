@@ -1,13 +1,16 @@
 import { store } from './store'
 import type {
   ChatEvent,
+  ChatHistoryMessage,
   ChatMessage,
   ConfigView,
   FeatureEntry,
   LLMConfig,
+  MessageBlock,
   ModelPricing,
   Session,
   SessionMeta,
+  ToolUseBlock,
 } from '../../shared/types'
 
 /**
@@ -83,10 +86,18 @@ export async function selectSession(id: string): Promise<void> {
     store.setState({ activeSessionId: null, messages: [] })
     return
   }
-  // 清理上次中断留下的流式标记和空占位消息
+  // 清理上次中断留下的流式/运行中状态
   const messages = session.messages
-    .filter((m) => !(m.role === 'assistant' && m.streaming && m.content === ''))
-    .map((m) => (m.streaming ? { ...m, streaming: false } : m))
+    .filter((m) => !(m.role === 'assistant' && m.blocks.length === 0))
+    .map((m) => ({
+      ...m,
+      streaming: false,
+      blocks: m.blocks.map((b) =>
+        b.type === 'tool_use' && b.status === 'running'
+          ? { ...b, status: 'error' as const, result: '（会话中断，未获得结果）' }
+          : b,
+      ),
+    }))
   store.setState({ activeSessionId: session.id, messages })
 }
 
@@ -179,18 +190,34 @@ export async function sendChat(text: string): Promise<void> {
     }))
   }
 
-  const userMsg: ChatMessage = { id: uid(), role: 'user', content, createdAt: Date.now() }
-  const assistantMsg: ChatMessage = { id: uid(), role: 'assistant', content: '', createdAt: Date.now(), streaming: true }
+  const userMsg: ChatMessage = {
+    id: uid(),
+    role: 'user',
+    blocks: [{ type: 'text', text: content }],
+    createdAt: Date.now(),
+  }
+  const assistantMsg: ChatMessage = {
+    id: uid(),
+    role: 'assistant',
+    blocks: [],
+    createdAt: Date.now(),
+    streaming: true,
+  }
   const messages = [...store.getState().messages, userMsg, assistantMsg]
   store.setState({ messages, streaming: true })
   await persistCurrentSession() // 先把用户消息落盘，防中途崩溃丢失
 
-  // 发给 LLM 的历史：去掉空占位回复与出错回复
-  const history = messages
-    .filter((m) => !m.error && !(m.streaming && m.content === ''))
-    .map((m) => ({ role: m.role, content: m.content }))
+  // 发给 LLM 的历史：去掉空占位回复；中断留下的未完成工具调用不进历史
+  const history: ChatHistoryMessage[] = messages
+    .filter((m) => !(m.role === 'assistant' && m.blocks.length === 0))
+    .map((m) => ({
+      role: m.role,
+      blocks: m.role === 'assistant'
+        ? m.blocks.filter((b) => b.type === 'text' || b.status !== 'running')
+        : m.blocks,
+    }))
 
-  const res = await window.api.sendChat({ sessionId, messages: history })
+  const res = await window.api.sendChat({ sessionId, projectId: s.activeProjectId, messages: history })
   // 主进程在流开始前的失败（如未配置）会直接返回 ok:false，这里兜底标注
   if (!res.ok) markStreamingError(res.error ?? '发送失败')
 }
@@ -217,13 +244,40 @@ function markStreamingError(message: string): void {
   void persistCurrentSession()
 }
 
+/** 文本增量追加到最后一个文本块；若刚执行完工具则另起新文本块 */
+function appendTextDelta(blocks: MessageBlock[], delta: string): MessageBlock[] {
+  const last = blocks[blocks.length - 1]
+  if (last && last.type === 'text') {
+    return [...blocks.slice(0, -1), { type: 'text', text: last.text + delta }]
+  }
+  return [...blocks, { type: 'text', text: delta }]
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {
     const s = store.getState()
     if (event.sessionId !== s.activeSessionId) return
     if (event.type === 'delta') {
-      updateStreamingAssistant((m) => ({ ...m, content: m.content + event.delta }))
+      updateStreamingAssistant((m) => ({ ...m, blocks: appendTextDelta(m.blocks, event.delta) }))
+    } else if (event.type === 'tool_use') {
+      const block: ToolUseBlock = {
+        type: 'tool_use',
+        id: event.toolUseId,
+        name: event.name,
+        input: event.input,
+        status: 'running',
+      }
+      updateStreamingAssistant((m) => ({ ...m, blocks: [...m.blocks, block] }))
+    } else if (event.type === 'tool_result') {
+      updateStreamingAssistant((m) => ({
+        ...m,
+        blocks: m.blocks.map((b) =>
+          b.type === 'tool_use' && b.id === event.toolUseId
+            ? { ...b, status: event.isError ? 'error' : 'done', result: event.content }
+            : b,
+        ),
+      }))
     } else if (event.type === 'done') {
       updateStreamingAssistant((m) => ({ ...m, streaming: false }))
       store.setState({ streaming: false })

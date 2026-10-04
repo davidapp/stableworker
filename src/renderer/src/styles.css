@@ -576,6 +576,94 @@ body {
   margin: 10px 0;
 }
 
+.bubble .block-text + .block-text,
+.bubble .block-text + .tool-card,
+.bubble .tool-card + .block-text {
+  margin-top: 8px;
+}
+
+.bubble .thinking {
+  color: var(--text-dim);
+}
+
+/* ---------- 工具调用卡片 ---------- */
+.tool-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #141519;
+  font-size: 12.5px;
+  overflow: hidden;
+}
+
+.tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tool-name {
+  font-family: Consolas, 'Courier New', monospace;
+  color: var(--accent-strong);
+}
+
+.tool-status {
+  margin-left: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.tool-status.running {
+  color: var(--warn);
+}
+
+.tool-status.done {
+  color: var(--ok);
+}
+
+.tool-status.error {
+  color: var(--danger);
+}
+
+.tool-args {
+  margin: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.tool-result summary {
+  cursor: pointer;
+  padding: 5px 10px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  user-select: none;
+}
+
+.tool-result summary:hover {
+  color: var(--text);
+}
+
+.tool-result pre {
+  margin: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 /* ---------- API 调试面板 ---------- */
 .inspector {
   width: min(1100px, calc(100vw - 64px));

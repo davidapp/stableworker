@@ -5,6 +5,7 @@ import rehypeHighlight from 'rehype-highlight'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
+import { ToolCallCard } from './ToolCallCard'
 
 export function ChatPane() {
   const { projects, activeProjectId, sessions, activeSessionId, messages, streaming, llm } = useApp()
@@ -74,22 +75,35 @@ export function ChatPane() {
         </div>
       ) : messages.length === 0 ? (
         <div className="empty-state">
-          <p>开始你的第一轮对话。</p>
+          <p>开始你的第一轮对话。可以直接问项目相关的问题，助手会调用工具查看文件。</p>
         </div>
       ) : (
         <div className="message-list" ref={listRef}>
           {messages.map((m) => (
             <div key={m.id} className={`message ${m.role}`}>
               <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
-                {m.role === 'assistant' ? (
-                  // 助手消息是 Markdown（模型输出通常带 **加粗**、代码块等语法）
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                    {m.content || (m.streaming ? '思考中…' : '')}
-                  </ReactMarkdown>
+                {m.role === 'user' ? (
+                  // 用户消息只含文本块
+                  m.blocks
+                    .filter((b) => b.type === 'text')
+                    .map((b) => b.text)
+                    .join('\n')
+                ) : m.blocks.length === 0 ? (
+                  m.streaming ? <span className="thinking">思考中…</span> : null
                 ) : (
-                  m.content
+                  m.blocks.map((b, i) =>
+                    b.type === 'text' ? (
+                      <div key={i} className="block-text">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                          {b.text}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <ToolCallCard key={b.id} block={b} />
+                    ),
+                  )
                 )}
-                {m.streaming && m.content ? <span className="cursor">▍</span> : null}
+                {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
                 {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
               </div>
             </div>

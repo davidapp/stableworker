@@ -20,9 +20,36 @@ npm run typecheck  # TypeScript 类型检查
 2. 左下角 **⚙ 设置** —— 统一设置对话框（左侧导航，未来功能都收在这里）：
    **LLM 配置**（预设 / BaseURL / API Key / 代理，附官方文档链接）、**模型价格**（每百万 tokens 单价表 +
    法定节假日表，供精确计费）、**功能开关**（每个功能入口可设为隐藏/显示）
-3. 底部输入框发消息 —— 助手回复以 **Markdown 渲染**（支持表格、代码高亮）；Enter 发送，Shift+Enter 换行
+3. 底部输入框发消息 —— 助手回复以 **Markdown 渲染**；涉及项目内容时助手会**调用工具**查看文件
+   （气泡里出现工具调用卡片：工具名/参数/状态/结果）；Enter 发送，Shift+Enter 换行
 4. 顶部可新建 / 切换 / 删除会话；会话自动持久化，重启应用后可恢复
-5. 左下角 **🔍 API 调试** —— 查看每次 LLM 调用的原始请求/响应（学习协议细节用，见下文）
+5. 左下角 **🔍 API 调试** —— 查看每次 LLM 调用的原始请求/响应（工具回合的每轮调用单独一条，见下文）
+
+## 工具调用（Agent Loop 的核心）
+
+这是 StableWorker 从"聊天机器人"变成"代理"的关键机制，代码在 `src/main/tools/` 与 `src/main/llm.ts`：
+
+```
+用户消息 ─▶ 主进程流式请求模型 ─▶ 模型返回 tool_use（如 read_file{path:"src/main/llm.ts"}）
+              ▲                                │
+              │                                ▼
+        结果回传给模型 ◀── 主进程执行工具（路径限制在项目目录内）
+              │
+              └─ 模型继续思考，可能再次调用工具 …… 直到给出纯文本回复（最多 8 轮）
+```
+
+- **消息模型**：对齐 LLM API 的 content blocks（`text` + `tool_use`），工具结果挂在 `tool_use` 块上；
+  历史消息按"带结果的工具调用"切分成各协议要求的形状（OpenAI 的 `role:'tool'` / Anthropic 的
+  `tool_result`）——切分逻辑见 `toApiTurns()`，是理解两种协议差异的最佳教材
+- **工具注册中心**（借鉴 Claude Code）：`tools/index.ts` 里每个工具 = 名称 + 描述 + JSON Schema + 执行函数；
+  当前有 `list_files`（列目录）和 `read_file`（带行号读文件，支持 offset/limit 分段）
+- **安全底线**：工具只在主进程执行、渲染进程无调用通道；路径越界直接报错；15 秒超时；
+  结果截断到 2 万字符；异常一律转成错误结果喂回模型（模型能看到失败原因并自行调整）
+- **流式工具调用解析**：OpenAI 的 `delta.tool_calls` 按 index 分片累积 `arguments`；
+  Anthropic 用 `content_block_start` / `input_json_delta` / `content_block_stop` 组装——
+  在 API 调试面板里可以看到这些原始事件
+- **调试面板**：工具回合的每一轮 API 调用单独一条记录（带 R1/R2 序号），对比 R1 和 R2 的
+  请求体就能看到"工具结果如何回到模型"
 
 ## API 调试面板（学习原理的入口）
 
@@ -113,10 +140,11 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 ## 下一步路线（建议顺序）
 
 1. ~~Markdown 渲染 + 代码高亮~~（已完成）
-2. 工具调用（Tool Use）：让代理能读文件 / 执行命令 —— 这是"AI 编程软件"的核心
-3. 上下文管理：token 计量、历史裁剪、会话压缩
-4. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
-5. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发
+2. ~~工具调用（Tool Use）~~（已完成：list_files / read_file + 代理循环）
+3. 更多工具与权限体系：写文件 / 执行命令（需确认机制）、工具开关
+4. 上下文管理：token 计量、历史裁剪、会话压缩
+5. 会话迁移到 append-only JSONL（对齐 Claude Code，支持大文件与崩溃恢复）
+6. 生产 CSP（Content-Security-Policy）与 electron-builder 打包分发
 
 ## 已知简化（相对完整产品）
 

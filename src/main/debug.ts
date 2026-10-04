@@ -25,6 +25,8 @@ const SAVE_DEBOUNCE_MS = 500
 interface Exchange {
   id: string
   kind: 'chat' | 'test'
+  /** 工具调用回合序号（1 起）；0 = 非对话请求 */
+  round: number
   startedAt: number
   endedAt: number | null
   provider: string
@@ -141,12 +143,14 @@ export function beginExchange(input: {
   proxyURL: string | null
   pricing: ModelPricing | null
   peak: boolean
+  round?: number
   headers: Record<string, string>
   body: string
 }): Exchange {
   const ex: Exchange = {
     id: randomUUID(),
     kind: input.kind,
+    round: input.round ?? 0,
     startedAt: Date.now(),
     endedAt: null,
     provider: input.llm.provider,
@@ -196,9 +200,10 @@ export function recordSSELine(ex: Exchange, rawLine: string): void {
   notifyUpdated()
 }
 
-/** 记录从该行提取出的文本增量（最终拼装结果） */
-export function recordDelta(ex: Exchange, delta: string): void {
-  ex.assembledText += delta
+/** 记录本轮流式输出拼装出的最终文本（代理循环里每轮 API 调用各自一条记录） */
+export function recordAssembledText(ex: Exchange, text: string): void {
+  ex.assembledText = text
+  scheduleSave(ex)
 }
 
 /**
@@ -294,6 +299,7 @@ function toListItem(ex: Exchange): DebugListItem {
   return {
     id: ex.id,
     kind: ex.kind,
+    round: ex.round ?? 0,
     startedAt: ex.startedAt,
     durationMs: ex.endedAt ? ex.endedAt - ex.startedAt : null,
     provider: ex.provider,
