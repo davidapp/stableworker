@@ -76,7 +76,8 @@ const api = {
     ipcRenderer.invoke('sessions:rename', projectId, sessionId, title),
 
   // ---- 聊天 ----
-  sendChat: (req: ChatRequest): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('chat:send', req),
+  sendChat: (req: ChatRequest): Promise<{ ok: boolean; error?: string; compacted?: number }> =>
+    ipcRenderer.invoke('chat:send', req),
   stopChat: (sessionId: string): Promise<boolean> => ipcRenderer.invoke('chat:stop', sessionId),
 
   /** 回传用户对危险操作的批准决定；ok=false 表示该批准已失效（超时/停止） */

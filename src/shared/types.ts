@@ -212,6 +212,7 @@ export type ChatEvent =
   | { type: 'tool_output'; sessionId: string; toolUseId: string; text: string }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string }
+  | { type: 'status'; sessionId: string; text: string }
   | {
       type: 'retry'
       sessionId: string

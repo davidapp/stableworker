@@ -32,6 +32,8 @@ export interface AppState {
   saveError: string | null
   /** 请求重试状态（流式气泡内显示，如"第 1/4 次重试…"） */
   statusText: string | null
+  /** 早期对话已折叠为摘要的提示（会话切换 / 清空上下文时清除） */
+  compactedNote: string | null
   llmProfiles: LLMProfileView[]
   activeLlmId: string | null
   /** 批准模式 */
@@ -85,6 +87,7 @@ export const store = createStore<AppState>({
   sessionWarning: null,
   saveError: null,
   statusText: null,
+  compactedNote: null,
   llmProfiles: [],
   activeLlmId: null,
   approvalMode: 'confirm',

@@ -18,6 +18,11 @@ import { requestApproval, resolveSessionApprovals } from './approvals'
 import { snapshotFilesBeforeChange, sessionCheckpointsRoot } from './fileHistory'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
 import { trimHistory } from './contextTrim'
+import {
+  mergeSummaryIntoFirstUser,
+  summarizeWithModel,
+  worthSummarizing,
+} from './compact'
 import { loadAgentsMd } from './agentsMd'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
@@ -57,6 +62,9 @@ const SYSTEM_PROMPT_BASE = [
 const MAX_TOKENS = 8192
 const MAX_TOOL_ROUNDS = 8
 
+/** 摘要压缩缓存：会话 id → 已生成摘要覆盖的前缀条数与摘要文本（进程内，重启失效） */
+const compactCache = new Map<string, { droppedCount: number; summaryText: string }>()
+
 const aborters = new Map<string, AbortController>()
 const proxyAgents = new Map<string, ProxyAgent>()
 
@@ -79,7 +87,7 @@ function joinURL(base: string, path: string): string {
 }
 
 /** 根据配置构建请求的 dispatcher：配置了代理返回 ProxyAgent，留空 undefined（直连） */
-function getProxyDispatcher(proxyURL: string): Dispatcher | undefined {
+export function getProxyDispatcher(proxyURL: string): Dispatcher | undefined {
   const trimmed = proxyURL.trim()
   if (!trimmed) return undefined
   let protocol: string
@@ -184,7 +192,7 @@ function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
   return turns
 }
 
-function buildRequest(
+export function buildRequest(
   llm: LLMConfig,
   apiKey: string,
   turns: ApiTurn[],
@@ -474,7 +482,7 @@ function createStreamCollector(
 
 // ---------- 代理循环 ----------
 
-async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string }> {
+async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string; compacted?: number }> {
   const cfg = await loadConfig()
   const llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
   if (!llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中添加配置档' }
@@ -507,10 +515,39 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const trim = trimHistory(conversation, historyBudget)
   const working = trim.kept
 
+  // 摘要压缩：被裁前缀值得摘要时，先用模型生成结构化摘要合并进保留部分，
+  // 而不是静默丢弃。同一会话缓存复用（前缀覆盖即可），失败回退为直接裁剪。
+  let requestMessages: ChatHistoryMessage[] = working
+  let compactedCount = 0
+  if (trim.trimmed && trim.trimmedCount > 0) {
+    const dropped = conversation.slice(0, trim.trimmedCount)
+    const cache = compactCache.get(req.sessionId)
+    if (cache && cache.droppedCount >= trim.trimmedCount) {
+      requestMessages = mergeSummaryIntoFirstUser(working, cache.summaryText)
+      compactedCount = cache.droppedCount
+    } else if (worthSummarizing(dropped)) {
+      emit({ type: 'status', sessionId: req.sessionId, text: `正在压缩早期 ${dropped.length} 条对话为摘要…` })
+      try {
+        const summary = await summarizeWithModel({
+          llm,
+          apiKey,
+          dispatcher: getProxyDispatcher(llm.proxyURL ?? ''),
+          dropped,
+          signal: controller.signal,
+        })
+        requestMessages = mergeSummaryIntoFirstUser(working, summary)
+        compactedCount = trim.trimmedCount
+        compactCache.set(req.sessionId, { droppedCount: trim.trimmedCount, summaryText: summary })
+      } catch {
+        // 摘要失败：静默回退为直接裁剪，不影响本轮对话
+      }
+    }
+  }
+
   // 单轮请求：构建请求 → 流式读取 → 落调试记录 → 返回本轮 blocks。
   // 失败时（含中途断流）endExchange 后抛出，交给 withRetry 决定是否整轮重试。
   const attemptRound = async (round: number): Promise<{ blocks: MessageBlock[]; reasoning: string }> => {
-      const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(working), tools, true, systemText)
+      const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(requestMessages), tools, true, systemText)
     const exchange = beginExchange({
       kind: 'chat',
       round,
@@ -609,16 +646,17 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
 
       conversation.push({ role: 'assistant', blocks: assistantBlocks })
       working.push({ role: 'assistant', blocks: assistantBlocks })
+      requestMessages.push({ role: 'assistant', blocks: assistantBlocks })
 
       const toolUses = assistantBlocks.filter((b): b is ToolUseBlock => b.type === 'tool_use')
       if (toolUses.length === 0) {
         emit({ type: 'done', sessionId: req.sessionId })
-        return { ok: true }
+        return { ok: true, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
       if (round >= MAX_TOOL_ROUNDS) {
         const message = `已达单次回复最大工具轮次（${MAX_TOOL_ROUNDS}），请继续对话`
         emit({ type: 'error', sessionId: req.sessionId, message })
-        return { ok: false, error: message }
+        return { ok: false, error: message, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
 
       // 执行本轮的每个工具调用：危险操作按批准模式决定是否先过批准门

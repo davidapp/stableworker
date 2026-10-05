@@ -76,7 +76,7 @@ async function refreshProjectSessions(projectId: string): Promise<void> {
 async function loadSessionIntoView(projectId: string, sessionId: string): Promise<void> {
   const res = await window.api.loadSession(projectId, sessionId)
   if (!res || !res.session) {
-    store.setState({ activeSessionId: null, messages: [], sessionWarning: null })
+    store.setState({ activeSessionId: null, messages: [], sessionWarning: null, compactedNote: null, statusText: null })
     return
   }
   // 清理上次中断留下的流式/运行中状态
@@ -102,7 +102,7 @@ export async function addProject(): Promise<void> {
   const cfg = await window.api.addProject()
   if (!cfg) return // 用户取消了目录选择
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, messages: [] })
+  store.setState({ activeSessionId: null, messages: [], compactedNote: null, statusText: null })
   await reloadAllSessions(cfg.projects)
   if (cfg.activeProjectId) {
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [cfg.activeProjectId as string]: true } }))
@@ -112,7 +112,7 @@ export async function addProject(): Promise<void> {
 export async function selectProject(id: string): Promise<void> {
   const cfg = await window.api.setActiveProject(id)
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, messages: [] })
+  store.setState({ activeSessionId: null, messages: [], compactedNote: null, statusText: null })
   store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [id]: true } }))
   await refreshProjectSessions(id)
 }
@@ -128,7 +128,7 @@ export function toggleProjectExpanded(projectId: string): void {
 export async function removeProject(id: string): Promise<void> {
   const cfg = await window.api.removeProject(id)
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, messages: [] })
+  store.setState({ activeSessionId: null, messages: [], compactedNote: null, statusText: null })
   store.setState((prev) => {
     const sessionsByProject = { ...prev.sessionsByProject }
     delete sessionsByProject[id]
@@ -156,7 +156,7 @@ export async function selectSession(projectId: string, sessionId: string): Promi
   if (store.getState().activeProjectId !== projectId) {
     const cfg = await window.api.setActiveProject(projectId)
     applyConfig(cfg)
-    store.setState({ activeSessionId: null, messages: [], sessionWarning: null })
+    store.setState({ activeSessionId: null, messages: [], sessionWarning: null, compactedNote: null, statusText: null })
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [projectId]: true } }))
   }
   await loadSessionIntoView(projectId, sessionId)
@@ -393,7 +393,7 @@ export async function sendChat(text: string): Promise<void> {
         : m.blocks,
     }))
 
-  let res: { ok: boolean; error?: string }
+  let res: { ok: boolean; error?: string; compacted?: number }
   try {
     res = await window.api.sendChat({ sessionId, projectId: ap, messages: history })
   } catch (err) {
@@ -408,6 +408,10 @@ export async function sendChat(text: string): Promise<void> {
     }))
     await persistCurrentSession()
   }
+  // 摘要压缩提示：早期对话被折叠为摘要（详见 API 调试面板请求体）
+  store.setState({
+    compactedNote: res.compacted ? `已折叠早期 ${res.compacted} 条对话为摘要，详情见 API 调试面板` : null,
+  })
   // 主进程在流开始前的失败（如未配置）会直接返回 ok:false，这里兜底标注
   if (!res.ok) markStreamingError(res.error ?? '发送失败')
 }
@@ -463,6 +467,9 @@ export function subscribeChatEvents(): () => void {
     } else if (event.type === 'reasoning_delta') {
       store.setState({ statusText: null })
       updateStreamingAssistant((m) => ({ ...m, blocks: appendReasoningDelta(m.blocks, event.delta) }))
+    } else if (event.type === 'status') {
+      // 主进程阶段性状态（如"正在压缩早期对话…"）
+      store.setState({ statusText: event.text })
     } else if (event.type === 'retry') {
       // 重试会重新生成整段回复：清掉已收到的半截内容，显示重试进度
       store.setState({
