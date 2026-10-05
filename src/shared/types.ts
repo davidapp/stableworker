@@ -199,6 +199,15 @@ export type ChatEvent =
   | { type: 'tool_output'; sessionId: string; toolUseId: string; text: string }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string }
+  | {
+      type: 'retry'
+      sessionId: string
+      /** 即将进行的重试序号（1 起） */
+      attempt: number
+      maxRetries: number
+      waitMs: number
+      reason: string
+    }
   | { type: 'done'; sessionId: string }
   | { type: 'error'; sessionId: string; message: string }
 

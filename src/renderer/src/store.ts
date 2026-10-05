@@ -30,6 +30,8 @@ export interface AppState {
   sessionWarning: string | null
   /** 会话保存失败的原因（非空 = 有新消息只存在内存里） */
   saveError: string | null
+  /** 请求重试状态（流式气泡内显示，如"第 1/4 次重试…"） */
+  statusText: string | null
   llmProfiles: LLMProfileView[]
   activeLlmId: string | null
   /** 批准模式 */
@@ -82,6 +84,7 @@ export const store = createStore<AppState>({
   messages: [],
   sessionWarning: null,
   saveError: null,
+  statusText: null,
   llmProfiles: [],
   activeLlmId: null,
   approvalMode: 'confirm',

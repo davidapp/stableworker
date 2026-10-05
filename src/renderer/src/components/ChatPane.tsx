@@ -32,8 +32,18 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 }
 
 export function ChatPane() {
-  const { projects, activeProjectId, activeSessionId, messages, streaming, llmProfiles, activeLlmId, sessionWarning, saveError } =
-    useApp()
+  const {
+    projects,
+    activeProjectId,
+    activeSessionId,
+    messages,
+    streaming,
+    llmProfiles,
+    activeLlmId,
+    sessionWarning,
+    saveError,
+    statusText,
+  } = useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
@@ -158,7 +168,7 @@ export function ChatPane() {
                       .map((b) => b.text)
                       .join('\n')
                   ) : m.blocks.length === 0 ? (
-                    m.streaming ? <span className="thinking">思考中…</span> : null
+                    m.streaming ? <span className="thinking">{statusText || '思考中…'}</span> : null
                   ) : (
                     m.blocks.map((b, i) => {
                       if (b.type === 'reasoning') {

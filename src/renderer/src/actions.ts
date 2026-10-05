@@ -429,9 +429,17 @@ export function subscribeChatEvents(): () => void {
     const s = store.getState()
     if (event.sessionId !== s.activeSessionId) return
     if (event.type === 'delta') {
+      store.setState({ statusText: null })
       updateStreamingAssistant((m) => ({ ...m, blocks: appendTextDelta(m.blocks, event.delta) }))
     } else if (event.type === 'reasoning_delta') {
+      store.setState({ statusText: null })
       updateStreamingAssistant((m) => ({ ...m, blocks: appendReasoningDelta(m.blocks, event.delta) }))
+    } else if (event.type === 'retry') {
+      // 重试会重新生成整段回复：清掉已收到的半截内容，显示重试进度
+      store.setState({
+        messages: s.messages.map((m) => (m.streaming ? { ...m, blocks: [] } : m)),
+        statusText: `请求失败（${event.reason.slice(0, 80)}），第 ${event.attempt}/${event.maxRetries} 次重试，${Math.ceil(event.waitMs / 1000)}s 后重试…`,
+      })
     } else if (event.type === 'tool_use') {
       const block: ToolUseBlock = {
         type: 'tool_use',
@@ -472,9 +480,10 @@ export function subscribeChatEvents(): () => void {
       }))
     } else if (event.type === 'done') {
       updateStreamingAssistant((m) => ({ ...m, streaming: false }))
-      store.setState({ streaming: false })
+      store.setState({ streaming: false, statusText: null })
       void persistCurrentSession()
     } else {
+      store.setState({ statusText: null })
       markStreamingError(event.message)
     }
   })

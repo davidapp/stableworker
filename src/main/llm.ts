@@ -17,6 +17,7 @@ import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals } from './approvals'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
 import { trimHistory } from './contextTrim'
+import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
 import type {
@@ -500,34 +501,26 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const conversation: HistoryMessage[] = req.messages.map((m) => ({ role: m.role, blocks: m.blocks }))
   const historyBudget = (cfg.contextLimit ?? 0) > 0 ? Math.floor((cfg.contextLimit ?? 0) * 0.7) : Number.POSITIVE_INFINITY
   const trim = trimHistory(conversation, historyBudget)
-  let working = trim.kept
-  let exchange: ReturnType<typeof beginExchange> | null = null
+  const working = trim.kept
 
-  try {
-    let round = 0
-    while (true) {
-      round++
-      const { url, headers, body } = buildRequest(
-        llm,
-        apiKey,
-        toApiTurns(working),
-        tools,
-        true,
-        projectPath,
-      )
-      exchange = beginExchange({
-        kind: 'chat',
-        round,
-        llm,
-        method: 'POST',
-        url,
-        proxyURL,
-        pricing,
-        peak,
-        trimmedCount: trim.trimmed ? trim.trimmedCount : undefined,
-        headers: maskHeaders(headers),
-        body,
-      })
+  // 单轮请求：构建请求 → 流式读取 → 落调试记录 → 返回本轮 blocks。
+  // 失败时（含中途断流）endExchange 后抛出，交给 withRetry 决定是否整轮重试。
+  const attemptRound = async (round: number): Promise<{ blocks: MessageBlock[]; reasoning: string }> => {
+    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(working), tools, true, projectPath)
+    const exchange = beginExchange({
+      kind: 'chat',
+      round,
+      llm,
+      method: 'POST',
+      url,
+      proxyURL,
+      pricing,
+      peak,
+      trimmedCount: trim.trimmed ? trim.trimmedCount : undefined,
+      headers: maskHeaders(headers),
+      body,
+    })
+    try {
       const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
       const res = await undiciFetch(url, {
         method: 'POST',
@@ -539,41 +532,76 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
       recordStatus(exchange, res.status)
       if (!res.ok || !res.body) {
         const detail = (await res.text().catch(() => '')).slice(0, 300)
-        throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`)
+        // Retry-After 头（秒）→ 毫秒，withRetry 会优先尊重它
+        const ra = parseFloat(res.headers.get('retry-after') ?? '')
+        throw new HttpError(
+          `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+          res.status,
+          Number.isFinite(ra) ? ra * 1000 : undefined,
+        )
       }
 
       const collector = createStreamCollector(llm.provider, req.sessionId)
       await readSSE(res.body, (json, raw) => {
-        recordSSELine(exchange as NonNullable<typeof exchange>, raw)
+        recordSSELine(exchange, raw)
         if (!json) return // [DONE] 结束标记
-        recordUsageEvent(exchange as NonNullable<typeof exchange>, json)
+        recordUsageEvent(exchange, json)
         collector.onEvent(json)
       })
-      const { blocks: assistantBlocks, reasoning } = collector.finish()
+      const fin = collector.finish()
       recordToolCalls(
-        exchange as NonNullable<typeof exchange>,
-        assistantBlocks
+        exchange,
+        fin.blocks
           .filter((b): b is ToolUseBlock => b.type === 'tool_use')
           .map((b) => ({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })),
       )
-      if (reasoning) recordReasoningText(exchange as NonNullable<typeof exchange>, reasoning)
-      recordAssembledText(exchange as NonNullable<typeof exchange>, textOfBlocks(assistantBlocks))
+      if (fin.reasoning) recordReasoningText(exchange, fin.reasoning)
+      recordAssembledText(exchange, textOfBlocks(fin.blocks))
       // 上下文构成：总量用服务端 usage，系统/工具用本地估算，余量记为消息
-      const ex = exchange as NonNullable<typeof exchange>
-      if (ex.inputTokens != null) {
+      if (exchange.inputTokens != null) {
         const systemTokens = estimateTokens(systemText)
         const toolsTokens = estimateTokens(toolsText)
-        recordContextBreakdown(ex, {
-          totalTokens: ex.inputTokens,
+        recordContextBreakdown(exchange, {
+          totalTokens: exchange.inputTokens,
           systemTokens,
           toolsTokens,
-          messagesTokens: Math.max(0, ex.inputTokens - systemTokens - toolsTokens),
-          cacheHitTokens: ex.cacheHitTokens,
-          cacheHitRate: ex.inputTokens > 0 ? (ex.cacheHitTokens ?? 0) / ex.inputTokens : null,
+          messagesTokens: Math.max(0, exchange.inputTokens - systemTokens - toolsTokens),
+          cacheHitTokens: exchange.cacheHitTokens,
+          cacheHitRate: exchange.inputTokens > 0 ? (exchange.cacheHitTokens ?? 0) / exchange.inputTokens : null,
         })
       }
       endExchange(exchange)
-      exchange = null
+      return fin
+    } catch (err) {
+      endExchange(exchange, isAbortError(err) ? undefined : err instanceof Error ? err.message : String(err))
+      throw err
+    }
+  }
+
+  try {
+    let round = 0
+    while (true) {
+      round++
+      // 请求韧性：网络错误 / 429 / 5xx / 529 指数退避重试；4xx 与用户中止不重试。
+      // 每次重试前发 retry 事件，渲染端清掉已收到的半截回复并显示重试进度。
+      const { blocks: assistantBlocks } = await withRetry({
+        maxRetries: 4,
+        signal: controller.signal,
+        fn: () => attemptRound(round),
+        shouldRetry: (err) =>
+          !isAbortError(err) &&
+          (err instanceof HttpError ? RETRYABLE_STATUS.has(err.status) : true),
+        onRetry: async (info) => {
+          emit({
+            type: 'retry',
+            sessionId: req.sessionId,
+            attempt: info.attempt,
+            maxRetries: info.maxRetries,
+            waitMs: info.waitMs,
+            reason: info.reason,
+          })
+        },
+      })
 
       conversation.push({ role: 'assistant', blocks: assistantBlocks })
       working.push({ role: 'assistant', blocks: assistantBlocks })
@@ -635,7 +663,6 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    if (exchange) endExchange(exchange, controller.signal.aborted ? undefined : message)
     if (controller.signal.aborted) {
       emit({ type: 'done', sessionId: req.sessionId }) // 用户手动停止，按正常结束处理
       return { ok: true }
