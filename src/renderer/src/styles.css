@@ -558,7 +558,7 @@ body {
 
 .ctx-list-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   padding: 6px 8px;
   border-radius: var(--radius);
@@ -595,6 +595,30 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- 上下文管理窗口：左列表 + 右详情 ---------- */
+.ctx-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.ctx-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+
+.ctx-edit {
+  flex: 1;
+  min-height: 220px;
+  width: 100%;
+  resize: vertical;
 }
 
 .ctx-detail-title {
