@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { dirname, resolve, sep } from 'node:path'
+import { dirname } from 'node:path'
 import { ipcMain } from 'electron'
+import { safeResolve } from './paths'
+import { grepTool, globTool } from './search'
 import type { ToolUseBlock } from '../../shared/types'
 
 /**
@@ -49,16 +51,6 @@ const MAX_READ_LINES = 2000
 const MAX_OUTPUT_CHARS = 20_000
 const MAX_WRITE_CHARS = 500_000
 const TOOL_TIMEOUT_MS = 15_000
-
-/** 把项目内相对路径解析为绝对路径；越出项目目录立即抛错 */
-function safeResolve(projectPath: string, relative: string): string {
-  const root = resolve(projectPath)
-  const target = resolve(root, relative || '.')
-  if (target !== root && !target.startsWith(root + sep)) {
-    throw new Error(`路径越界：${relative} 不在项目目录内`)
-  }
-  return target
-}
 
 function truncate(text: string): string {
   return text.length > MAX_OUTPUT_CHARS
@@ -286,6 +278,8 @@ const runCommandTool: ToolDefinition = {
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
+  [grepTool.name, grepTool],
+  [globTool.name, globTool],
   [writeFileTool.name, writeFileTool],
   [editFileTool.name, editFileTool],
   [runCommandTool.name, runCommandTool],
