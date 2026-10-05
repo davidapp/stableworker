@@ -17,6 +17,7 @@ import type {
   SessionLoadResult,
   SessionMeta,
   SessionSaveResult,
+  CheckpointRestoreResult,
 } from '../shared/types'
 
 /**
@@ -66,6 +67,9 @@ const api = {
   /** 在资源管理器中显示会话文件（损坏恢复引导用） */
   revealSessionFile: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:reveal', projectId, sessionId),
+  /** 回滚检查点：把文件恢复到该次工具调用之前的状态 */
+  restoreCheckpoint: (projectId: string, sessionId: string, toolUseId: string): Promise<CheckpointRestoreResult | { error: string } | null> =>
+    ipcRenderer.invoke('fileHistory:restore', projectId, sessionId, toolUseId),
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>

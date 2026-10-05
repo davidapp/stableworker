@@ -15,6 +15,7 @@ import {
 } from './debug'
 import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals } from './approvals'
+import { snapshotFilesBeforeChange, sessionCheckpointsRoot } from './fileHistory'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
 import { trimHistory } from './contextTrim'
 import { loadAgentsMd } from './agentsMd'
@@ -623,6 +624,15 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
       // 执行本轮的每个工具调用：危险操作按批准模式决定是否先过批准门
       for (const tu of toolUses) {
         const def = tools.find((d) => d.name === tu.name)
+        // 文件编辑类工具：执行前把目标文件快照进检查点（回滚用）
+        if (def?.kind === 'edit' && projectPath && typeof tu.input.path === 'string') {
+          await snapshotFilesBeforeChange(
+            sessionCheckpointsRoot(req.projectId, req.sessionId),
+            tu.id,
+            projectPath,
+            [tu.input.path],
+          )
+        }
         // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问
         const autoApprove =
           approvalMode === 'fullAccess' || (approvalMode === 'autoEdit' && def?.kind === 'edit')

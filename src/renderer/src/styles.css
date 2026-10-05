@@ -1139,6 +1139,10 @@ body {
   white-space: nowrap;
 }
 
+.tool-status.rolled {
+  color: var(--warn);
+}
+
 .tool-status.running {
   color: var(--warn);
 }

@@ -2,6 +2,7 @@ import { app, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, appendFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { deleteSessionCheckpoints, deleteProjectCheckpoints } from './fileHistory'
 import type { ChatMessage, Session, SessionMeta } from '../shared/types'
 
 /**
@@ -266,6 +267,7 @@ export function registerSessionHandlers(): void {
   ipcMain.handle('sessions:delete', async (_e, projectId: string, sessionId: string): Promise<boolean> => {
     await rm(sessionFile(projectId, sessionId), { force: true })
     await rm(legacyFile(projectId, sessionId), { force: true })
+    await deleteSessionCheckpoints(projectId, sessionId) // 检查点连带清理
     knownMessages.delete(cacheKey(projectId, sessionId))
     return true
   })
@@ -283,4 +285,5 @@ export function registerSessionHandlers(): void {
 /** 供 projects:remove 调用：删掉某项目的全部会话记录 */
 export async function deleteProjectSessions(projectId: string): Promise<void> {
   await rm(projectDir(projectId), { recursive: true, force: true })
+  await deleteProjectCheckpoints(projectId) // 检查点连带清理
 }

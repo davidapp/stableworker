@@ -24,7 +24,7 @@ function LiveOutput({ text }: { text: string }) {
 }
 
 /** 工具调用卡片：显示工具名、参数、执行状态；危险操作显示批准按钮；结果默认折叠 */
-export function ToolCallCard({ block }: { block: ToolUseBlock }) {
+export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRestore?: () => void }) {
   const [answered, setAnswered] = useState(false)
   const [invalid, setInvalid] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -71,6 +71,15 @@ export function ToolCallCard({ block }: { block: ToolUseBlock }) {
         <button className="tool-copy-btn" title="复制参数 JSON" onClick={() => void copyArgs()}>
           {copied ? '✓' : '复制'}
         </button>
+        {(block.name === 'write_file' || block.name === 'edit_file') && block.status === 'done' ? (
+          block.rolledBack ? (
+            <span className="tool-status rolled">⏪ 已回滚</span>
+          ) : onRestore ? (
+            <button className="tool-copy-btn" title="回滚到本次修改之前的状态" onClick={onRestore}>
+              ⏪ 回滚
+            </button>
+          ) : null
+        ) : null}
       </div>
 
       {block.status === 'pending_approval' ? (

@@ -192,7 +192,23 @@ export function ChatPane() {
                           </div>
                         )
                       }
-                      return <ToolCallCard key={b.id} block={b} />
+                      return (
+                        <ToolCallCard
+                          key={b.id}
+                          block={b}
+                          onRestore={() => {
+                            const p = typeof b.input.path === 'string' ? b.input.path : '(未知文件)'
+                            if (
+                              window.confirm(
+                                `确定把「${p}」回滚到本次修改之前的状态？\n` +
+                                  '· write_file 新建的文件将被删除\n· 当前内容也会先被快照，可再次回滚撤销本次操作',
+                              )
+                            ) {
+                              void actions.restoreCheckpoint(b.id)
+                            }
+                          }}
+                        />
+                      )
                     })
                   )}
                   {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}

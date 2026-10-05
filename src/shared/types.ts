@@ -97,6 +97,8 @@ export interface ToolUseBlock {
   result?: string
   /** 执行期间的实时输出（如 run_command 的 stdout 流，逐块追加） */
   output?: string
+  /** 已通过检查点回滚到本次修改之前 */
+  rolledBack?: boolean
   durationMs?: number
 }
 
@@ -133,6 +135,17 @@ export interface SessionLoadResult {
 /** 会话保存结果：ok=false 时 error 带原因（磁盘满 / 文件被占用等） */
 export interface SessionSaveResult {
   ok: boolean
+  error?: string
+}
+
+/** 检查点回滚结果 */
+export interface CheckpointRestoreResult {
+  /** 恢复内容的文件（相对路径） */
+  restored: string[]
+  /** 被删除的新建文件（相对路径） */
+  deleted: string[]
+  /** 回滚前当前状态的快照 id（撤销本次回滚用） */
+  undoSnapshotId: string | null
   error?: string
 }
 

@@ -306,6 +306,35 @@ export function dismissSessionWarning(): void {
   store.setState({ sessionWarning: null })
 }
 
+/** 回滚检查点：把文件恢复到该次工具调用之前（当前状态会先被快照，可撤销） */
+export async function restoreCheckpoint(toolUseId: string): Promise<void> {
+  const s = store.getState()
+  if (!s.activeProjectId || !s.activeSessionId) return
+  const res = await window.api.restoreCheckpoint(s.activeProjectId, s.activeSessionId, toolUseId)
+  if (!res) {
+    window.alert('回滚失败：该次调用没有检查点（可能未启用快照或已被清理）')
+    return
+  }
+  if ('error' in res) {
+    window.alert(`回滚失败：${res.error}`)
+    return
+  }
+  const note =
+    `⏪ 已回滚到本次修改之前：恢复 ${res.restored.length} 个文件` +
+    (res.deleted.length ? `，删除 ${res.deleted.length} 个新建文件` : '') +
+    `（当前状态已另行快照，可再次回滚撤销本次操作）`
+  store.setState((prev) => ({
+    messages: prev.messages.map((m) => ({
+      ...m,
+      blocks: m.blocks.map((b) =>
+        b.type === 'tool_use' && b.id === toolUseId
+          ? { ...b, rolledBack: true, result: (b.result ? `${b.result}\n` : '') + note }
+          : b,
+      ),
+    })),
+  }))
+}
+
 export async function sendChat(text: string): Promise<void> {
   const s = store.getState()
   const content = text.trim()
