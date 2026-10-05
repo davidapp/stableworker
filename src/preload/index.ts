@@ -18,6 +18,8 @@ import type {
   SessionMeta,
   SessionSaveResult,
   CheckpointRestoreResult,
+  ContextInfo,
+  ContextOpResult,
 } from '../shared/types'
 
 /**
@@ -70,6 +72,16 @@ const api = {
   /** 回滚检查点：把文件恢复到该次工具调用之前的状态 */
   restoreCheckpoint: (projectId: string, sessionId: string, toolUseId: string): Promise<CheckpointRestoreResult | { error: string } | null> =>
     ipcRenderer.invoke('fileHistory:restore', projectId, sessionId, toolUseId),
+
+  // ---- 上下文管理 ----
+  getContextInfo: (projectId: string, sessionId: string): Promise<ContextInfo> =>
+    ipcRenderer.invoke('context:getInfo', projectId, sessionId),
+  saveContextSummary: (projectId: string, sessionId: string, text: string): Promise<ContextOpResult> =>
+    ipcRenderer.invoke('context:saveSummary', projectId, sessionId, text),
+  deleteContextSummary: (projectId: string, sessionId: string): Promise<ContextOpResult> =>
+    ipcRenderer.invoke('context:deleteSummary', projectId, sessionId),
+  compactNow: (projectId: string, sessionId: string): Promise<ContextOpResult> =>
+    ipcRenderer.invoke('context:compactNow', projectId, sessionId),
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>

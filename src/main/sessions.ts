@@ -150,7 +150,7 @@ async function migrateLegacy(projectId: string, sessionId: string): Promise<Sess
   }
 }
 
-async function loadSessionAny(
+export async function loadSessionAny(
   projectId: string,
   sessionId: string,
 ): Promise<{ session: Session | null; damaged: boolean; corruptLines: number; totalLines: number }> {

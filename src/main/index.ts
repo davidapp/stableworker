@@ -8,6 +8,7 @@ import { registerDebugHandlers, initDebugLog } from './debug'
 import { registerApprovalHandlers } from './approvals'
 import { registerToolHandlers } from './tools'
 import { registerFileHistoryHandlers } from './fileHistory'
+import { registerContextHandlers } from './contextManage'
 import { openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
 
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
   registerInspectorHandlers()
   registerToolHandlers()
   registerFileHistoryHandlers()
+  registerContextHandlers()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createAppMenu(() => openInspectorWindow())
   createWindow()

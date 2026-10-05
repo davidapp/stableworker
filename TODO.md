@@ -20,6 +20,7 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [ ] **Todo 工具**：模型对复杂任务自主列任务清单、勾进度，聊天侧渲染任务面板
 - [x] **Git checkpoints**：文件检查点（不依赖 git）——write_file / edit_file 执行前把目标文件快照到 `userData/checkpoints/<项目>/<会话>/<toolUseId>/`（滚动 100 份，删除会话/项目连带清理）；工具卡片提供 ⏪ 回滚（新建文件回滚时删除；回滚前当前状态也先快照，可撤销回滚）；越界路径不快照；测试 tests/fileHistory.test.ts。"任意消息时间点选择"与 run_command 副作用覆盖为后续增强
 - [ ] **斜杠命令 / Skills**：自定义 prompt 模板（markdown + 参数替换）
+- [x] **上下文管理面板**：聊天右上角"📚 上下文"弹出面板——浏览消息数/token 估算、浏览/编辑/删除摘要（追加 summary 行覆盖）、手动压缩全部对话（软清空：界面保留，请求只发摘要）、清空上下文（原 🧹 按钮并入）；后端 src/main/contextManage.ts（getInfo / saveSummary / deleteSummary / compactNow）
 - [ ] **多会话搜索**：跨会话搜索消息内容（JSONL 逐文件扫描即可起步）
 - [ ] **会话导出**：导出为 Markdown / JSON，方便归档与分享
 - [ ] **自动更新**：electron-updater + GitHub Releases（三平台工作流已就绪，缺更新源与差量）

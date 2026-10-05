@@ -149,6 +149,23 @@ export interface CheckpointRestoreResult {
   error?: string
 }
 
+/** 上下文管理面板的状态信息 */
+export interface ContextInfo {
+  messageCount: number
+  tokensEstimate: number
+  /** 当前生效的摘要（null = 无） */
+  summary: { droppedCount: number; text: string; ts: number } | null
+}
+
+/** 上下文操作（保存 / 删除摘要、手动压缩）的通用返回 */
+export interface ContextOpResult {
+  ok: boolean
+  error?: string
+  /** 手动压缩时返回折叠的消息条数与摘要文本 */
+  droppedCount?: number
+  summaryText?: string
+}
+
 /** 一个聊天会话（聊天上下文的持久化单位） */
 export interface Session extends SessionMeta {
   projectId: string

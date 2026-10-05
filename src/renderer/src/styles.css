@@ -528,6 +528,43 @@ body {
   margin: 4px 0;
 }
 
+/* ---------- 上下文管理面板（右上角弹出） ---------- */
+.ctx-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 200;
+  width: 420px;
+  max-height: min(560px, calc(100vh - 160px));
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.ctx-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ctx-btn-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ctx-panel-notice {
+  font-size: 12px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
 .message-list-wrap {
   position: relative;
   flex: 1;
