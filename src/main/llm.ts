@@ -17,6 +17,7 @@ import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals } from './approvals'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
 import { trimHistory } from './contextTrim'
+import { loadAgentsMd } from './agentsMd'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
@@ -99,9 +100,10 @@ function getProxyDispatcher(proxyURL: string): Dispatcher | undefined {
 
 // ---------- 系统提示词 ----------
 
-function buildSystemPrompt(projectPath: string | null): string {
+function buildSystemPrompt(projectPath: string | null, agentsMd: string): string {
   if (!projectPath) return SYSTEM_PROMPT_BASE
-  return `${SYSTEM_PROMPT_BASE}\n当前项目目录：${projectPath}\n你可以调用工具查看项目文件：了解目录结构用 list_files，查看文件内容用 read_file。涉及项目内容的问题先查再答，不要凭空猜测。`
+  const agentsBlock = agentsMd ? `\n\n以下是本项目的约定（项目根 AGENTS.md），请严格遵守：\n${agentsMd}` : ''
+  return `${SYSTEM_PROMPT_BASE}\n当前项目目录：${projectPath}\n你可以调用工具查看项目文件：了解目录结构用 list_files，查看文件内容用 read_file。涉及项目内容的问题先查再答，不要凭空猜测。${agentsBlock}`
 }
 
 // ---------- 消息块 → 各协议的消息序列 ----------
@@ -187,10 +189,9 @@ function buildRequest(
   turns: ApiTurn[],
   tools: ToolDefinition[],
   stream: boolean,
-  projectPath: string | null,
+  system: string,
 ): { url: string; headers: Record<string, string>; body: string } {
   const baseURL = llm.baseURL.trim() || defaultBaseURL(llm.provider)
-  const system = buildSystemPrompt(projectPath)
 
   if (llm.provider === 'anthropic') {
     const messages: Record<string, unknown>[] = []
@@ -487,8 +488,10 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   const proxyURL = llm.proxyURL?.trim() || null
   const approvalMode = cfg.approvalMode ?? 'confirm'
   // 上下文构成明细用：系统提示词与工具定义是我们自己的固定文本，可本地估算；
-  // messages 部分用服务端总量减去这两项得出余量
-  const systemText = buildSystemPrompt(projectPath)
+  // messages 部分用服务端总量减去这两项得出余量。
+  // AGENTS.md（项目约定）在每轮对话开始时读取，存在则注入系统提示词。
+  const agentsMd = projectPath ? await loadAgentsMd(projectPath) : ''
+  const systemText = buildSystemPrompt(projectPath, agentsMd)
   const toolsText = JSON.stringify(
     tools.map((d) => ({ name: d.name, description: d.description, input_schema: d.inputSchema })),
   )
@@ -506,7 +509,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   // 单轮请求：构建请求 → 流式读取 → 落调试记录 → 返回本轮 blocks。
   // 失败时（含中途断流）endExchange 后抛出，交给 withRetry 决定是否整轮重试。
   const attemptRound = async (round: number): Promise<{ blocks: MessageBlock[]; reasoning: string }> => {
-    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(working), tools, true, projectPath)
+      const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(working), tools, true, systemText)
     const exchange = beginExchange({
       kind: 'chat',
       round,
@@ -702,7 +705,7 @@ export function registerChatHandlers(): void {
       if (!apiKey) return { ok: false, message: 'API Key 为空' }
       if (!llm.model) return { ok: false, message: '模型名不能为空' }
 
-      const { url, headers, body } = buildRequest(llm, apiKey, [{ kind: 'user', text: 'ping' }], [], false, null)
+      const { url, headers, body } = buildRequest(llm, apiKey, [{ kind: 'user', text: 'ping' }], [], false, SYSTEM_PROMPT_BASE)
       const exchange = beginExchange({
         kind: 'test',
         round: 0,
