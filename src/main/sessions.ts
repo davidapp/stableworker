@@ -1,4 +1,4 @@
-import { app, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, appendFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -211,9 +211,16 @@ export async function listSessionMetas(projectId: string): Promise<SessionMeta[]
   }
 }
 
+/** 外部修改会话后广播给所有窗口（主窗口据此重载，防止旧内存状态覆盖磁盘） */
+export function emitSessionsChanged(projectId: string, sessionId: string): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('sessions:changed', { projectId, sessionId })
+  }
+}
+
 export function registerSessionHandlers(): void {
-  // 最近使用的会话（主窗口激活项目 + 会话树里 updatedAt 最新的那一个）；
-  // 供上下文管理窗口启动时定位。activeSessionId 不持久化，故取列表最新。
+  // 外部（上下文管理窗口等）修改会话后广播：主窗口据此从磁盘重载，
+  // 避免主窗口的旧内存状态在下一次保存时覆盖外部修改
   ipcMain.handle('sessions:current', async (): Promise<{ projectId: string; sessionId: string; title: string } | null> => {
     const cfg = await loadConfig()
     const projectId = cfg.activeProjectId
@@ -386,6 +393,7 @@ function registerSaveAndEditHandlers(): void {
       session.messages[idx] = { ...m, blocks }
       invalidateCompactCache(sessionId) // 内容变了，旧摘要可能过时
       const r = await saveSessionInternal(session)
+      if (r.ok) emitSessionsChanged(projectId, sessionId)
       return r.ok
     },
   )
@@ -401,6 +409,7 @@ function registerSaveAndEditHandlers(): void {
       session.messages.splice(idx, 1)
       invalidateCompactCache(sessionId)
       const r = await saveSessionInternal(session)
+      if (r.ok) emitSessionsChanged(projectId, sessionId)
       return r.ok
     },
   )
@@ -415,6 +424,7 @@ function registerSaveAndEditHandlers(): void {
       session.summary = undefined
       invalidateCompactCache(sessionId)
       const r = await saveSessionInternal(session)
+      if (r.ok) emitSessionsChanged(projectId, sessionId)
       return r.ok
     },
   )

@@ -456,6 +456,23 @@ function appendReasoningDelta(blocks: MessageBlock[], delta: string): MessageBlo
   return [...blocks, { type: 'reasoning', text: delta }]
 }
 
+/** 订阅外部会话修改（上下文管理窗口的编辑/删除/压缩/清空）：
+ * 主窗口自动从磁盘重载对应会话与列表，防止旧内存状态覆盖外部修改 */
+export function subscribeSessionsChanged(): () => void {
+  return window.api.onSessionsChanged(async ({ projectId, sessionId }) => {
+    const s = store.getState()
+    if (s.streaming) return // 生成中不打断，下次操作前会重载
+    const meta = (s.sessionsByProject[projectId] ?? []).find((m) => m.id === sessionId)
+    if (meta) await selectSession(projectId, sessionId)
+    else if (s.activeProjectId === projectId) await reloadSessionsOf(projectId)
+  })
+}
+
+async function reloadSessionsOf(projectId: string): Promise<void> {
+  const sessions = await window.api.listSessions(projectId)
+  store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject, [projectId]: sessions } }))
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {

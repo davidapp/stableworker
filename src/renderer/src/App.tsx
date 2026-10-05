@@ -15,7 +15,12 @@ export default function App() {
 
   useEffect(() => {
     void actions.boot()
-    return actions.subscribeChatEvents()
+    const offChat = actions.subscribeChatEvents()
+    const offSessions = actions.subscribeSessionsChanged()
+    return () => {
+      offChat()
+      offSessions()
+    }
   }, [])
 
   if (!booted) {

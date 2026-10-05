@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { loadConfig, decryptApiKey } from './config'
 import { getProxyDispatcher } from './llm'
-import { appendSummaryLine, loadSessionAny, saveSessionInternal } from './sessions'
+import { appendSummaryLine, loadSessionAny, saveSessionInternal, emitSessionsChanged } from './sessions'
 import { summarizeWithModel, invalidateCompactCache, setCachedCompact } from './compact'
 import { estimateTokens } from '../shared/tokens'
 import type { ChatMessage, ContextInfo, ContextOpResult, LLMConfig } from '../shared/types'
@@ -56,6 +56,7 @@ export function registerContextHandlers(): void {
       const droppedCount = r.session?.summary?.droppedCount ?? messageCount
       await appendSummaryLine(projectId, sessionId, droppedCount, trimmed)
       setCachedCompact(sessionId, droppedCount, trimmed)
+      emitSessionsChanged(projectId, sessionId)
       return { ok: true }
     },
   )
@@ -66,6 +67,7 @@ export function registerContextHandlers(): void {
     async (_e, projectId: string, sessionId: string): Promise<ContextOpResult> => {
       await appendSummaryLine(projectId, sessionId, 0, '')
       setCachedCompact(sessionId, 0, '')
+      emitSessionsChanged(projectId, sessionId)
       return { ok: true }
     },
   )
@@ -89,6 +91,7 @@ export function registerContextHandlers(): void {
         const droppedCount = r.session.messages.length
         await appendSummaryLine(projectId, sessionId, droppedCount, summary)
         setCachedCompact(sessionId, droppedCount, summary)
+        emitSessionsChanged(projectId, sessionId)
         return { ok: true, droppedCount, summaryText: summary }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -137,6 +140,7 @@ export function registerContextHandlers(): void {
         invalidateCompactCache(sessionId) // 历史形状变了，旧摘要缓存作废
         const r2 = await saveSessionInternal(r.session)
         if (!r2.ok) return { ok: false, error: r2.error ?? '保存失败' }
+        emitSessionsChanged(projectId, sessionId)
         return { ok: true, droppedCount: range.length, summaryText: summary }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

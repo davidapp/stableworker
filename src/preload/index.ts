@@ -82,6 +82,15 @@ const api = {
     ipcRenderer.invoke('context:deleteSummary', projectId, sessionId),
   compactNow: (projectId: string, sessionId: string): Promise<ContextOpResult> =>
     ipcRenderer.invoke('context:compactNow', projectId, sessionId),
+  /** 会话被外部（上下文管理窗口）修改时触发，主窗口据此从磁盘重载 */
+  onSessionsChanged: (
+    callback: (e: { projectId: string; sessionId: string }) => void,
+  ): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { projectId: string; sessionId: string }): void =>
+      callback(payload)
+    ipcRenderer.on('sessions:changed', listener)
+    return () => ipcRenderer.removeListener('sessions:changed', listener)
+  },
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>
