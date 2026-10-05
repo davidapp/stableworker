@@ -189,7 +189,27 @@ function toApiTurns(history: HistoryMessage[]): ApiTurn[] {
       turns.push({ kind: 'tool_results', results })
     }
   }
-  return turns
+  // 删除消息后可能出现相邻的同角色回合（如 user 接 user）：合并以维持
+  // "user/assistant 严格交替"的协议要求
+  const merged: ApiTurn[] = []
+  for (const t of turns) {
+    const prev = merged[merged.length - 1]
+    if (t.kind === 'user' && prev?.kind === 'user') {
+      prev.text = prev.text ? `${prev.text}\n\n${t.text}` : t.text
+      continue
+    }
+    if (t.kind === 'assistant' && prev?.kind === 'assistant' && prev.toolCalls.length === 0 && t.toolCalls.length === 0) {
+      prev.text = [prev.text, t.text].filter(Boolean).join('\n\n')
+      prev.reasoning = [...prev.reasoning, ...t.reasoning]
+      continue
+    }
+    merged.push(t)
+  }
+  // 首回合必须是 user（OpenAI/Anthropic 惯例）；被裁后以助手开头的情况补空用户回合
+  if (merged[0]?.kind === 'assistant') {
+    merged.unshift({ kind: 'user', text: '（继续）' })
+  }
+  return merged
 }
 
 export function buildRequest(

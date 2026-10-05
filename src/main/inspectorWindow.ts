@@ -8,6 +8,7 @@ import { join } from 'node:path'
  */
 
 let inspectorWin: BrowserWindow | null = null
+let contextWin: BrowserWindow | null = null
 
 export function openInspectorWindow(): void {
   if (inspectorWin && !inspectorWin.isDestroyed()) {
@@ -39,7 +40,40 @@ export function openInspectorWindow(): void {
   }
 }
 
+/** 上下文管理独立悬浮窗口（?page=context 只渲染会话内容管理页） */
+export function openContextWindow(): void {
+  if (contextWin && !contextWin.isDestroyed()) {
+    contextWin.focus()
+    return
+  }
+  contextWin = new BrowserWindow({
+    width: 760,
+    height: 720,
+    title: '上下文管理',
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  contextWin.setAlwaysOnTop(true, 'floating')
+  contextWin.on('closed', () => {
+    contextWin = null
+  })
+
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+    void contextWin.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/?page=context`)
+  } else {
+    void contextWin.loadFile(join(__dirname, '../renderer/index.html'), { query: { page: 'context' } })
+  }
+}
+
 export function registerInspectorHandlers(): void {
   // 渲染进程（如侧栏小图标）请求打开调试窗口
   ipcMain.handle('inspector:open', () => openInspectorWindow())
+  // 渲染进程请求打开上下文管理窗口
+  ipcMain.handle('context:open', () => openContextWindow())
 }

@@ -98,6 +98,20 @@ const api = {
 
   /** 打开独立的 API 调试悬浮窗口 */
   openInspector: (): Promise<void> => ipcRenderer.invoke('inspector:open'),
+  /** 打开独立的上下文管理悬浮窗口 */
+  openContextWindow: (): Promise<void> => ipcRenderer.invoke('context:open'),
+  /** 上下文管理窗口：最近使用的会话（主窗口激活项目 + 最新一条） */
+  getCurrentSession: (): Promise<{ projectId: string; sessionId: string; title: string } | null> =>
+    ipcRenderer.invoke('sessions:current'),
+  /** 编辑一条历史消息的文本 */
+  editMessage: (projectId: string, sessionId: string, messageId: string, text: string): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:editMessage', projectId, sessionId, messageId, text),
+  /** 删除一条历史消息 */
+  deleteMessage: (projectId: string, sessionId: string, messageId: string): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:deleteMessage', projectId, sessionId, messageId),
+  /** 按 id 清空某个会话的上下文 */
+  clearSessionContextById: (projectId: string, sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:clearById', projectId, sessionId),
 
   /** 订阅批准请求（危险工具执行前触发） */
   onApprovalRequest: (callback: (event: { sessionId: string; toolUseId: string; approvalId: string }) => void): (() => void) => {

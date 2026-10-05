@@ -5,7 +5,6 @@ import rehypeHighlight from 'rehype-highlight'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
-import { ContextManagePanel } from './ContextManagePanel'
 import { ToolCallCard } from './ToolCallCard'
 import { copyText } from '../clipboard'
 
@@ -104,7 +103,13 @@ export function ChatPane() {
         </span>
         <div className="spacer" />
         {activeSessionId && messages.length > 0 ? (
-          <ContextManagePanel />
+          <button
+            className="btn"
+            title="上下文管理：浏览 / 编辑 / 删除消息，管理摘要与压缩（独立窗口）"
+            onClick={() => void window.api.openContextWindow()}
+          >
+            📚 上下文
+          </button>
         ) : null}
       </header>
 
