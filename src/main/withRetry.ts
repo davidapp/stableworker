@@ -28,6 +28,13 @@ export function isAbortError(err: unknown): boolean {
   return err instanceof Error && (err.name === 'AbortError' || /abort/i.test(err.message))
 }
 
+/** 默认重试判定：网络层错误与 429/5xx/529 可重试，4xx 客户端错误与中止不重试 */
+export function defaultShouldRetry(err: unknown): boolean {
+  if (isAbortError(err)) return false
+  if (err instanceof HttpError) return RETRYABLE_STATUS.has(err.status)
+  return true // 非.HTTP 错误视为网络层瞬时故障
+}
+
 export interface RetryInfo {
   /** 即将进行的重试序号（1 起） */
   attempt: number
@@ -39,7 +46,7 @@ export interface RetryInfo {
 export interface RetryOptions<T> {
   maxRetries?: number
   signal?: AbortSignal
-  /** 判定一个错误是否值得重试；不设则全部重试 */
+  /** 判定一个错误是否值得重试；不设用默认判定（网络错误与 429/5xx/529） */
   shouldRetry?: (err: unknown) => boolean
   /** 每次决定重试时回调（用于界面提示） */
   onRetry?: (info: RetryInfo) => Promise<void> | void
@@ -74,7 +81,7 @@ export async function withRetry<T>(opts: RetryOptions<T>): Promise<T> {
       return await opts.fn(attempt)
     } catch (err) {
       if (opts.signal?.aborted) throw err
-      const retryable = opts.shouldRetry ? opts.shouldRetry(err) : !isAbortError(err)
+      const retryable = opts.shouldRetry ? opts.shouldRetry(err) : defaultShouldRetry(err)
       if (!retryable || attempt > maxRetries) throw err
 
       let waitMs = Math.min(800 * 2 ** (attempt - 1), 12_000) * (0.9 + Math.random() * 0.2)

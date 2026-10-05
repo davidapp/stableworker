@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["electron.vite.config.ts", "src"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "src", "tests"]
 }

@@ -6,11 +6,12 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 ## 高优先级
 
 - [x] **Grep / Glob 搜索工具**：内容搜索（正则 + 文件过滤，上限 150 处）与文件模式匹配（** 跨目录 / * / ?，上限 300 个）——JS 实现，忽略 node_modules/.git/二进制/大文件；回归测试 scripts/test-glob.ts
-- [ ] **请求韧性 withRetry**：指数退避重试（429/529/网络抖动一次就失败）、尊重 retry-after、流中断降级非流式
+- [x] **请求韧性 withRetry**：src/main/withRetry.ts——网络错误与 429/5xx/529 指数退避（800ms×2ⁿ 封顶 12s + 抖动，最多重试 4 次），尊重 Retry-After（≤30s），4xx 与用户中止不重试；每轮请求在 chatSend 中经 attemptRound 跑在 withRetry 下（中途断流也整轮重试）；重试时发 retry 事件清空半截回复并在"思考中"位置显示进度；六场景断言验证
 - [ ] **AGENTS.md 加载**：项目根的 AGENTS.md（项目约定 / 技术栈说明）自动加载进系统提示词
 - [ ] **应用图标**：设计 / 制作 Windows `.ico` 与 macOS `.icns`，配置进 electron-builder
 - [ ] **代码签名与公证**：Windows 证书签名（消除 SmartScreen 提示）；macOS Developer ID 签名 + 公证（消除 Gatekeeper 提示）
 - [x] **JSONL 会话文件安全**：写入失败重试一次并在界面持续告警（红条 + 重试按钮）；损坏行自动跳过 + 打开会话时显示恢复引导（黄条：恢复统计 / 在文件夹中显示 / 删除重建）；侧栏叶子 ⚠ 标记
+- [x] **测试基建**：vitest 5 + v8 覆盖率（`npm run test` / `test:coverage`）；23 个用例覆盖纯逻辑层（shared 96%、contextTrim 95%、withRetry 76%）；CI 新增 check 工作流（push main / PR 时 typecheck + 覆盖率）。渲染层与依赖 Electron 的主进程模块尚未覆盖
 
 ## 中优先级
 
