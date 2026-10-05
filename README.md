@@ -148,8 +148,8 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
   估算）；估算超上下文上限 70% 时发送前自动裁剪——从最旧**整组**丢弃，绝不拆开
   tool_calls 与 tool_result；只影响请求体，会话与界面历史保持完整（`src/main/contextTrim.ts`）
 - **会话存储（append-only JSONL）**：每会话一个 `.jsonl`，每行一个操作（meta / 按 index 设
-  消息 / clear），只追加不重写——写入 O(新内容)，崩溃最多损失最后半行（解析失败跳过）；
-  旧版单 JSON 自动转换（`src/main/sessions.ts`）
+  消息 / clear / summary 摘要压缩记录），只追加不重写——写入 O(新内容)，崩溃最多损失最后半行
+  （解析失败跳过）；旧版单 JSON 自动转换（`src/main/sessions.ts`）
 - **多配置档**：`llmProfiles` + `activeLlmId`，输入框下方随时切换；旧版单配置加载时自动迁移
 - **批准模式**：✋ 变更前确认（所有危险操作询问）/ 🛡️ 自动编辑（`kind: 'edit'` 自动放行）/
   ⚠️ 完全访问（全部自动）；模式持久化，主进程批准门据此决定是否挂起
