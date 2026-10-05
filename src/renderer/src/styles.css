@@ -528,41 +528,83 @@ body {
   margin: 4px 0;
 }
 
-/* ---------- 上下文管理面板（右上角弹出） ---------- */
-.ctx-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 200;
-  width: 420px;
-  max-height: min(560px, calc(100vh - 160px));
+/* ---------- 上下文管理窗口：左列表 + 右详情 ---------- */
+.ctx-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.ctx-list {
+  width: 320px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
   overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  gap: 3px;
 }
 
-.ctx-panel-section {
+.ctx-list-head {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ctx-btn-row {
-  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  padding: 2px 4px 6px;
 }
 
-.ctx-panel-notice {
-  font-size: 12px;
+.ctx-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.ctx-list-item:hover {
+  background: var(--elevated);
+}
+
+.ctx-list-item.selected {
+  background: var(--elevated);
+  border-color: var(--accent);
+}
+
+.ctx-list-item.editing {
+  border-color: var(--warn);
+}
+
+.ctx-list-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.ctx-list-role {
+  font-size: 11.5px;
   color: var(--text-dim);
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+}
+
+.ctx-list-preview {
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-detail-title {
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.ctx-edit {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
 }
 
 .message-list-wrap {

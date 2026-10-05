@@ -112,6 +112,9 @@ const api = {
   /** 按 id 清空某个会话的上下文 */
   clearSessionContextById: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:clearById', projectId, sessionId),
+  /** 选段压缩：把 [startId..endId] 范围替换为一条摘要消息 */
+  compressRange: (projectId: string, sessionId: string, startId: string, endId: string): Promise<ContextOpResult> =>
+    ipcRenderer.invoke('sessions:compressRange', projectId, sessionId, startId, endId),
 
   /** 订阅批准请求（危险工具执行前触发） */
   onApprovalRequest: (callback: (event: { sessionId: string; toolUseId: string; approvalId: string }) => void): (() => void) => {
