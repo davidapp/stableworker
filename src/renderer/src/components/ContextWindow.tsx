@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { ChatMessage, ContextInfo } from '../../../shared/types'
 import { copyText } from '../clipboard'
 
@@ -31,6 +32,8 @@ function preview(m: ChatMessage): string {
 
 export function ContextWindow() {
   const [target, setTarget] = useState<{ projectId: string; sessionId: string; title: string } | null>(null)
+  const [listWidth, setListWidth] = useState(340)
+  const draggingRef = useRef(false)
   const [missing, setMissing] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [info, setInfo] = useState<ContextInfo | null>(null)
@@ -41,6 +44,24 @@ export function ContextWindow() {
   const [sumText, setSumText] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+
+  // 左栏宽度拖拽（240–560px），仅本窗口内存态
+  const onSplitterDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    draggingRef.current = true
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+  }
+  const onSplitterMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!draggingRef.current) return
+    setListWidth(Math.min(560, Math.max(240, e.clientX)))
+  }
+  const onSplitterUp = (): void => {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+  }
 
   const refresh = useCallback(async () => {
     if (!target) return
@@ -204,7 +225,7 @@ export function ContextWindow() {
 
       <div className="ctx-split">
         {/* 左侧：滚动消息列表（可勾选做范围压缩） */}
-        <aside className="ctx-list">
+        <aside className="ctx-list" style={{ width: listWidth }}>
           <div className="ctx-list-head">
             <span>消息列表（{messages.length} 条）</span>
             <button
@@ -244,6 +265,15 @@ export function ContextWindow() {
           })}
           {messages.length === 0 ? <div className="inspector-empty">会话没有消息。</div> : null}
         </aside>
+
+        {/* 中间分隔条：拖拽调整左栏宽度 */}
+        <div
+          className="ctx-vsplit"
+          title="拖拽调整列表宽度"
+          onPointerDown={onSplitterDown}
+          onPointerMove={onSplitterMove}
+          onPointerUp={onSplitterUp}
+        />
 
         {/* 右侧：详情 / 编辑 */}
         <section className="ctx-detail">

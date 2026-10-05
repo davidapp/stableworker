@@ -528,17 +528,42 @@ body {
   margin: 4px 0;
 }
 
-/* ---------- 上下文管理窗口：左列表 + 右详情 ---------- */
+/* ---------- 上下文管理窗口：整窗内边距与高度约束 ---------- */
+.ctx-window {
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 14px;
+  gap: 10px;
+}
+
+.ctx-window .inspector-header {
+  padding: 4px 6px 10px;
+}
+
+/* ---------- 左列表 + 右详情（中间分隔条可拖拽） ---------- */
 .ctx-split {
   flex: 1;
   min-height: 0;
   display: flex;
 }
 
-.ctx-list {
-  width: 320px;
+/* 中间分隔条：拖拽调整左栏宽度 */
+.ctx-vsplit {
+  width: 5px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  cursor: col-resize;
+  background: transparent;
+}
+
+.ctx-vsplit:hover,
+.ctx-vsplit:active {
+  background: rgba(91, 140, 255, 0.35);
+}
+
+.ctx-list {
+  flex-shrink: 0;
   overflow-y: auto;
   padding: 8px;
   display: flex;
@@ -595,13 +620,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* ---------- 上下文管理窗口：左列表 + 右详情 ---------- */
-.ctx-split {
-  flex: 1;
-  min-height: 0;
-  display: flex;
 }
 
 .ctx-detail {
