@@ -22,7 +22,10 @@ import {
   mergeSummaryIntoFirstUser,
   summarizeWithModel,
   worthSummarizing,
+  getCachedCompact,
+  setCachedCompact,
 } from './compact'
+import { appendSummaryLine } from './sessions'
 import { loadAgentsMd } from './agentsMd'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
@@ -61,9 +64,6 @@ const SYSTEM_PROMPT_BASE = [
 ].join('\n')
 const MAX_TOKENS = 8192
 const MAX_TOOL_ROUNDS = 8
-
-/** 摘要压缩缓存：会话 id → 已生成摘要覆盖的前缀条数与摘要文本（进程内，重启失效） */
-const compactCache = new Map<string, { droppedCount: number; summaryText: string }>()
 
 const aborters = new Map<string, AbortController>()
 const proxyAgents = new Map<string, ProxyAgent>()
@@ -521,7 +521,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   let compactedCount = 0
   if (trim.trimmed && trim.trimmedCount > 0) {
     const dropped = conversation.slice(0, trim.trimmedCount)
-    const cache = compactCache.get(req.sessionId)
+    const cache = getCachedCompact(req.sessionId)
     if (cache && cache.droppedCount >= trim.trimmedCount) {
       requestMessages = mergeSummaryIntoFirstUser(working, cache.summaryText)
       compactedCount = cache.droppedCount
@@ -537,7 +537,11 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         })
         requestMessages = mergeSummaryIntoFirstUser(working, summary)
         compactedCount = trim.trimmedCount
-        compactCache.set(req.sessionId, { droppedCount: trim.trimmedCount, summaryText: summary })
+        setCachedCompact(req.sessionId, trim.trimmedCount, summary)
+        // 摘要落盘：随会话文件持久化，重启后无需重新花一次摘要 API 调用
+        void appendSummaryLine(req.projectId, req.sessionId, trim.trimmedCount, summary).catch((e) => {
+          console.error('[compact] 摘要落盘失败（内存缓存仍有效）:', e)
+        })
       } catch {
         // 摘要失败：静默回退为直接裁剪，不影响本轮对话
       }

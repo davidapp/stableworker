@@ -153,6 +153,8 @@ export interface CheckpointRestoreResult {
 export interface Session extends SessionMeta {
   projectId: string
   messages: ChatMessage[]
+  /** 最近的摘要压缩记录（会话文件持久化，重启后预填压缩缓存） */
+  summary?: { droppedCount: number; text: string; ts: number }
 }
 
 /** 功能入口的显示/隐藏状态（配置里没有该条目时默认显示） */

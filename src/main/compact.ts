@@ -57,6 +57,24 @@ export function serializeTranscript(messages: ChatHistoryMessage[]): string {
 
 const MAX_TRANSCRIPT_CHARS = 100_000
 
+/** 摘要缓存（进程内）：会话 id → 已生成摘要覆盖的前缀条数与摘要文本 */
+const compactCache = new Map<string, { droppedCount: number; summaryText: string }>()
+
+export function getCachedCompact(
+  sessionId: string,
+): { droppedCount: number; summaryText: string } | undefined {
+  return compactCache.get(sessionId)
+}
+
+export function setCachedCompact(sessionId: string, droppedCount: number, summaryText: string): void {
+  compactCache.set(sessionId, { droppedCount, summaryText })
+}
+
+/** 清空上下文 / 删除会话后，旧摘要不再适用 */
+export function invalidateCompactCache(sessionId: string): void {
+  compactCache.delete(sessionId)
+}
+
 /** 把摘要合并进保留部分的第一条用户消息（协议要求角色交替，摘要以用户身份进入） */
 export function mergeSummaryIntoFirstUser<T extends ChatHistoryMessage>(
   messages: T[],

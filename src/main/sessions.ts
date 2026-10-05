@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, appendFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { deleteSessionCheckpoints, deleteProjectCheckpoints } from './fileHistory'
+import { invalidateCompactCache, setCachedCompact } from './compact'
 import type { ChatMessage, Session, SessionMeta } from '../shared/types'
 
 /**
@@ -72,6 +73,8 @@ interface ReplayResult {
   corruptLines: number
   /** 文件总行数 */
   totalLines: number
+  /** 最近的摘要压缩记录（clear 之后作废） */
+  summary?: { droppedCount: number; text: string; ts: number }
 }
 
 /** 逐行回放一个 JSONL 文件；解析失败的行（崩溃残尾）跳过但计数，供损坏告警 */
@@ -90,7 +93,16 @@ async function replay(projectId: string, sessionId: string): Promise<ReplayResul
   result.exists = true
   result.totalLines = lines.length
   for (const line of lines) {
-    let o: { t?: string; ts?: number; title?: string; createdAt?: number; i?: number; m?: ChatMessage }
+    let o: {
+      t?: string
+      ts?: number
+      title?: string
+      createdAt?: number
+      i?: number
+      m?: ChatMessage
+      droppedCount?: number
+      text?: string
+    }
     try {
       o = JSON.parse(line)
     } catch {
@@ -106,6 +118,9 @@ async function replay(projectId: string, sessionId: string): Promise<ReplayResul
       result.messages[o.i] = normalizeMessage(o.m)
     } else if (o.t === 'clear') {
       result.messages.length = 0
+      result.summary = undefined // 清空后旧摘要不再适用
+    } else if (o.t === 'summary' && typeof o.droppedCount === 'number' && typeof o.text === 'string') {
+      result.summary = { droppedCount: o.droppedCount, text: o.text, ts }
     }
   }
   return result
@@ -149,8 +164,11 @@ async function loadSessionAny(
       createdAt: r.createdAt || r.updatedAt,
       updatedAt: r.updatedAt,
       messages: r.messages,
+      summary: r.summary,
     }
     knownMessages.set(cacheKey(projectId, sessionId), r.messages)
+    // 恢复摘要缓存：重启后同会话继续压缩时直接复用，不再花摘要 API 调用
+    if (r.summary) setCachedCompact(sessionId, r.summary.droppedCount, r.summary.text)
     return { session, damaged, corruptLines: r.corruptLines, totalLines: r.totalLines }
   }
   const legacy = await migrateLegacy(projectId, sessionId)
@@ -231,6 +249,7 @@ export function registerSessionHandlers(): void {
         ]
       } else if (session.messages.length === 0) {
         lines = known.length > 0 ? [{ t: 'clear', ts: Date.now() }] : []
+        if (lines.length > 0) invalidateCompactCache(session.id) // 清空后旧摘要作废
       } else {
         lines = []
         for (let i = 0; i < session.messages.length; i++) {
@@ -269,6 +288,7 @@ export function registerSessionHandlers(): void {
     await rm(legacyFile(projectId, sessionId), { force: true })
     await deleteSessionCheckpoints(projectId, sessionId) // 检查点连带清理
     knownMessages.delete(cacheKey(projectId, sessionId))
+    invalidateCompactCache(sessionId) // 摘要缓存一并失效
     return true
   })
 
@@ -280,6 +300,19 @@ export function registerSessionHandlers(): void {
       return true
     },
   )
+}
+
+/** 追加摘要压缩记录（llm.ts 摘要生成成功后调用，随会话文件持久化） */
+export async function appendSummaryLine(
+  projectId: string,
+  sessionId: string,
+  droppedCount: number,
+  text: string,
+): Promise<void> {
+  await mkdir(projectDir(projectId), { recursive: true })
+  await appendLines(sessionFile(projectId, sessionId), [
+    { t: 'summary', ts: Date.now(), droppedCount, text },
+  ])
 }
 
 /** 供 projects:remove 调用：删掉某项目的全部会话记录 */
