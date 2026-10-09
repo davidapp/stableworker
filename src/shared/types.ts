@@ -8,6 +8,13 @@ export type ProviderType = 'openai-compatible' | 'anthropic'
 /** 批准模式：决定危险工具执行前是否需要用户确认 */
 export type ApprovalMode = 'confirm' | 'autoEdit' | 'fullAccess'
 
+/** 任务清单条目（todo_write 工具维护，随 chat 事件实时推给界面） */
+export interface TodoItem {
+  id: string
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
 /** 权限规则（Tool(内容) 语法，deny > ask > allow） */
 export interface PermissionRules {
   allow: string[]
@@ -242,6 +249,7 @@ export type ChatEvent =
   | { type: 'tool_output'; sessionId: string; toolUseId: string; text: string }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string; suggestRule?: string }
+  | { type: 'todos'; sessionId: string; todos: TodoItem[] }
   | { type: 'status'; sessionId: string; text: string }
   | {
       type: 'retry'

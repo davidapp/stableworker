@@ -7,6 +7,7 @@ import type {
   ModelPricing,
   ProjectInfo,
   SessionMeta,
+  TodoItem,
 } from '../../shared/types'
 
 /**
@@ -32,6 +33,8 @@ export interface AppState {
   saveError: string | null
   /** 请求重试状态（流式气泡内显示，如"第 1/4 次重试…"） */
   statusText: string | null
+  /** 当前会话的任务清单（todo_write 工具维护，仅当前会话） */
+  todos: TodoItem[]
   /** 早期对话已折叠为摘要的提示（会话切换 / 清空上下文时清除） */
   compactedNote: string | null
   llmProfiles: LLMProfileView[]
@@ -89,6 +92,7 @@ export const store = createStore<AppState>({
   sessionWarning: null,
   saveError: null,
   statusText: null,
+  todos: [],
   compactedNote: null,
   llmProfiles: [],
   activeLlmId: null,

@@ -6,6 +6,7 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
+import { TodoPanel } from './TodoPanel'
 import { copyText } from '../clipboard'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
@@ -152,9 +153,10 @@ export function ChatPane() {
           <p>开始你的第一轮对话。可以直接问项目相关的问题，助手会调用工具查看文件。</p>
         </div>
       ) : (
-        <div className="message-list-wrap">
-          <div className="message-list" ref={listRef} onScroll={onScroll}>
-            {messages.map((m) => (
+      <div className="message-list-wrap">
+        <div className="message-list" ref={listRef} onScroll={onScroll}>
+          <TodoPanel />
+          {messages.map((m) => (
               <div key={m.id} className={`message ${m.role}`}>
                 <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
                   {m.role === 'user' ? (

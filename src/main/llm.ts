@@ -38,6 +38,7 @@ import type {
   LLMConfig,
   LLMTestPayload,
   MessageBlock,
+  TodoItem,
   ToolUseBlock,
 } from '../shared/types'
 
@@ -65,6 +66,9 @@ const SYSTEM_PROMPT_BASE = [
 ].join('\n')
 const MAX_TOKENS = 8192
 const MAX_TOOL_ROUNDS = 8
+
+/** 任务清单缓存：会话 id → 当前任务清单（todo_write 工具维护，进程内） */
+const sessionTodos = new Map<string, TodoItem[]>()
 
 const aborters = new Map<string, AbortController>()
 const proxyAgents = new Map<string, ProxyAgent>()
@@ -734,6 +738,10 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         const result = await runToolUseBlock(tu, projectPath, {
           signal: controller.signal,
           onOutput: (text) => emit({ type: 'tool_output', sessionId: req.sessionId, toolUseId: tu.id, text }),
+          onTodos: (todos) => {
+            sessionTodos.set(req.sessionId, todos)
+            emit({ type: 'todos', sessionId: req.sessionId, todos })
+          },
         })
         tu.status = result.isError ? 'error' : 'done'
         tu.result = result.content

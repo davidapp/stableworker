@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import { ipcMain } from 'electron'
 import { safeResolve } from './paths'
 import { grepTool, globTool } from './search'
-import type { ToolUseBlock } from '../../shared/types'
+import type { TodoItem, ToolUseBlock } from '../../shared/types'
 
 /**
  * 工具注册中心（借鉴 Claude Code 的 tools.ts 模式）：
@@ -22,6 +22,8 @@ export interface ToolContext {
   projectPath: string
   /** 可选：把执行过程的实时输出（如命令的 stdout 流）推给聊天界面 */
   onOutput?: (text: string) => void
+  /** 可选：更新当前会话的任务清单（todo_write 用） */
+  onTodos?: (todos: TodoItem[]) => void
 }
 
 export interface ToolOutput {
@@ -275,6 +277,51 @@ const runCommandTool: ToolDefinition = {
   },
 }
 
+const todoWriteTool: ToolDefinition = {
+  name: 'todo_write',
+  description:
+    '维护当前会话的任务清单，用于复杂任务（≥3 步）的进度跟踪。每次调用传入完整清单（全量替换）；开始一项时置 in_progress，完成后立即置 completed。简单任务不要使用。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      todos: {
+        type: 'array',
+        description: '完整任务清单（全量替换）',
+        items: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '任务内容（一句话）' },
+            status: {
+              type: 'string',
+              enum: ['pending', 'in_progress', 'completed'],
+              description: '任务状态',
+            },
+          },
+          required: ['content', 'status'],
+        },
+      },
+    },
+    required: ['todos'],
+  },
+  async execute(input, ctx) {
+    const todos = Array.isArray(input.todos) ? input.todos : null
+    if (!todos) return { content: '缺少 todos 参数', isError: true }
+    const list: TodoItem[] = todos
+      .filter((t) => t && typeof (t as { content?: unknown }).content === 'string')
+      .map((t, i) => {
+        const o = t as { content?: string; status?: string; id?: string }
+        return {
+          id: typeof o.id === 'string' && o.id ? o.id : `todo-${i + 1}`,
+          content: String(o.content).slice(0, 200),
+          status: o.status === 'in_progress' || o.status === 'completed' ? o.status : ('pending' as const),
+        }
+      })
+    ctx.onTodos?.(list)
+    const done = list.filter((t) => t.status === 'completed').length
+    return { content: `任务清单已更新（共 ${list.length} 项，已完成 ${done} 项）` }
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
@@ -283,6 +330,7 @@ const registry = new Map<string, ToolDefinition>([
   [writeFileTool.name, writeFileTool],
   [editFileTool.name, editFileTool],
   [runCommandTool.name, runCommandTool],
+  [todoWriteTool.name, todoWriteTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */
@@ -303,7 +351,7 @@ export async function executeToolCall(
   name: string,
   input: Record<string, unknown>,
   projectPath: string | null,
-  opts: { signal?: AbortSignal; onOutput?: (text: string) => void } = {},
+  opts: { signal?: AbortSignal; onOutput?: (text: string) => void; onTodos?: (todos: TodoItem[]) => void } = {},
 ): Promise<ToolRunResult> {
   const started = Date.now()
   const tool = registry.get(name)
@@ -311,7 +359,7 @@ export async function executeToolCall(
   const run = async (): Promise<ToolOutput> => {
     if (!projectPath) return { content: '当前没有激活的项目目录，无法使用文件工具', isError: true }
     if (!tool) return { content: `未知工具：${name}`, isError: true }
-    return tool.execute(input, { projectPath, onOutput: opts.onOutput })
+    return tool.execute(input, { projectPath, onOutput: opts.onOutput, onTodos: opts.onTodos })
   }
 
   let out: ToolOutput
@@ -349,9 +397,13 @@ export async function executeToolCall(
 export async function runToolUseBlock(
   block: ToolUseBlock,
   projectPath: string | null,
-  opts: { signal?: AbortSignal; onOutput?: (text: string) => void } = {},
+  opts: { signal?: AbortSignal; onOutput?: (text: string) => void; onTodos?: (todos: TodoItem[]) => void } = {},
 ): Promise<ToolRunResult> {
-  return executeToolCall(block.name, block.input, projectPath, opts)
+  return executeToolCall(block.name, block.input, projectPath, {
+    signal: opts.signal,
+    onOutput: opts.onOutput,
+    onTodos: opts.onTodos,
+  })
 }
 
 // ---------- 工具元数据（供"工具开关"设置页展示） ----------
