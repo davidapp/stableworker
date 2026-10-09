@@ -125,6 +125,16 @@ const api = {
   /** 按 id 清空某个会话的上下文 */
   clearSessionContextById: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:clearById', projectId, sessionId),
+
+  // ---- 斜杠命令（skills） ----
+  listSkills: (): Promise<{ name: string; content: string }[]> => ipcRenderer.invoke('skills:list'),
+  saveSkill: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('skills:save', name, content),
+  deleteSkill: (name: string): Promise<boolean> => ipcRenderer.invoke('skills:delete', name),
+  /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
+  /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
+  resolveSkill: (text: string): Promise<{ found: boolean; content?: string }> =>
+    ipcRenderer.invoke('skills:resolve', text),
   /** 选段压缩：把 [startId..endId] 范围替换为一条摘要消息 */
   compressRange: (projectId: string, sessionId: string, startId: string, endId: string): Promise<ContextOpResult> =>
     ipcRenderer.invoke('sessions:compressRange', projectId, sessionId, startId, endId),

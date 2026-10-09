@@ -343,8 +343,19 @@ export async function restoreCheckpoint(toolUseId: string): Promise<void> {
 
 export async function sendChat(text: string): Promise<void> {
   const s = store.getState()
-  const content = text.trim()
+  let content = text.trim()
   if (!content || s.streaming || !s.activeProjectId) return
+  // 斜杠命令：/name args → 展开 skills/<name>.md 模板后作为普通消息发送
+  if (content.startsWith('/')) {
+    const sp = content.indexOf(' ')
+    const args = sp < 0 ? '' : content.slice(sp + 1).trim()
+    const r = await window.api.resolveSkill(content)
+    if (r.found && r.content) {
+      content = r.content
+        .replaceAll('$ARGUMENTS', args)
+        .replaceAll(/\$(\d+)/g, (_, n: string) => args.split(/\s+/)[Number(n) - 1] ?? '')
+    }
+  }
   if (!s.activeLlmId) {
     openSettings() // 没有可用配置档时直接带用户去设置
     return

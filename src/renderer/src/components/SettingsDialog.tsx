@@ -6,6 +6,7 @@ import { PricingPage } from './settings/PricingPage'
 import { FeaturesPage } from './settings/FeaturesPage'
 import { ToolSwitchesPage } from './settings/ToolSwitchesPage'
 import { RulesPage } from './settings/RulesPage'
+import { SkillsPage } from './settings/SkillsPage'
 
 /**
  * 统一设置对话框：左侧导航 + 右侧页面。
@@ -17,6 +18,7 @@ const PAGES = [
   { id: 'pricing', label: '模型价格' },
   { id: 'tools', label: '工具开关' },
   { id: 'rules', label: '权限规则' },
+  { id: 'skills', label: '斜杠命令' },
   { id: 'features', label: '功能开关' },
 ] as const
 
@@ -57,6 +59,9 @@ export function SettingsDialog() {
           </div>
           <div style={{ display: active === 'rules' ? 'block' : 'none' }}>
             <RulesPage />
+          </div>
+          <div style={{ display: active === 'skills' ? 'block' : 'none' }}>
+            <SkillsPage />
           </div>
           <div style={{ display: active === 'features' ? 'block' : 'none' }}>
             <FeaturesPage />

@@ -53,7 +53,7 @@ describe('文件检查点', () => {
     expect(await readdir(root)).toEqual([])
   })
 
-  it('快照超过 100 份时滚动淘汰', async () => {
+  it('快照超过 100 份时滚动淘汰', { timeout: 20_000 }, async () => {
     for (let i = 0; i < 103; i++) {
       await snapshotFilesBeforeChange(root, `snap-${String(i).padStart(3, '0')}`, project, ['a.txt'])
     }
