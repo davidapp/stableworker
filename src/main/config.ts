@@ -286,14 +286,6 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
-  // 设置工具开关（禁用的工具不会随请求发给模型）
-  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean): Promise<ConfigView> => {
-    const cfg = await loadConfig()
-    cfg.toolSwitches ??= {}
-    cfg.toolSwitches[name] = enabled
-    return saveConfig(cfg)
-  })
-
   // 保存模型价格表（全局，按模型名；供调试面板精确计费）
   ipcMain.handle('config:savePricing', async (_e, pricing: ModelPricing[]): Promise<ConfigView> => {
     const cfg = await loadConfig()
