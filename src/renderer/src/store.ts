@@ -50,6 +50,8 @@ export interface AppState {
   contextLimit: number
   /** 工具开关：工具名 → 是否启用；未记录的默认启用 */
   toolSwitches: Record<string, boolean>
+  /** 权限规则（deny > ask > allow） */
+  permissionRules: { allow: string[]; ask: string[]; deny: string[] }
   /** 设置对话框当前页 */
   settingsPage: string
   settingsOpen: boolean
@@ -97,6 +99,7 @@ export const store = createStore<AppState>({
   sidebarWidth: 240,
   contextLimit: 0,
   toolSwitches: {},
+  permissionRules: { allow: [], ask: [], deny: [] },
   settingsPage: 'llm',
   settingsOpen: false,
   streaming: false,

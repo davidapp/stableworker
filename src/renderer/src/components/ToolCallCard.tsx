@@ -29,9 +29,12 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
   const [invalid, setInvalid] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const respond = async (approved: boolean): Promise<void> => {
+  const respond = async (approved: boolean, alwaysAllow?: boolean): Promise<void> => {
     if (answered || !block.approvalId) return
     setAnswered(true)
+    if (approved && alwaysAllow && block.approvalSuggest) {
+      await window.api.addPermissionRule(block.approvalSuggest)
+    }
     const res = await window.api.respondApproval(block.approvalId, approved)
     if (!res.ok) setInvalid(true)
   }
@@ -94,6 +97,11 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
               <button className="btn btn-primary" onClick={() => void respond(true)}>
                 允许
               </button>
+              {block.approvalSuggest ? (
+                <button className="btn" title={`添加规则：${block.approvalSuggest}`} onClick={() => void respond(true, true)}>
+                  允许并不再询问
+                </button>
+              ) : null}
               <button className="btn" onClick={() => void respond(false)}>
                 拒绝
               </button>

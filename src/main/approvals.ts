@@ -28,6 +28,7 @@ export function requestApproval(
   sessionId: string,
   toolUseId: string,
   emit: (event: ChatEvent) => void,
+  suggestRule?: string,
 ): Promise<ApprovalOutcome> {
   return new Promise((resolve) => {
     const approvalId = randomUUID()
@@ -40,7 +41,7 @@ export function requestApproval(
       },
     }
     pending.set(approvalId, entry)
-    emit({ type: 'approval_request', sessionId, toolUseId, approvalId })
+    emit({ type: 'approval_request', sessionId, toolUseId, approvalId, suggestRule })
     const t = setTimeout(() => entry.resolve('timeout'), APPROVAL_TIMEOUT_MS)
     t.unref()
   })

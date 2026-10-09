@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
-import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, ModelPricing, ProjectInfo } from '../shared/types'
+import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, ModelPricing, PermissionRules, ProjectInfo } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -67,6 +67,7 @@ interface StoredConfig {
   sidebarWidth?: number
   contextLimit?: number
   toolSwitches?: Record<string, boolean>
+  permissionRules?: PermissionRules
 }
 
 let cache: StoredConfig | null = null
@@ -112,6 +113,7 @@ export async function loadConfig(): Promise<StoredConfig> {
     cache.contextLimit = defaultContextLimit(model)
   }
   if (cache.toolSwitches === undefined) cache.toolSwitches = {}
+  if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
   return cache
 }
 
@@ -170,6 +172,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     sidebarWidth: cfg.sidebarWidth ?? 240,
     contextLimit: cfg.contextLimit ?? 0,
     toolSwitches: cfg.toolSwitches ?? {},
+    permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
   }
 }
 
@@ -246,12 +249,40 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
+  // 设置工具开关（禁用的工具不会随请求发给模型）
+  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.toolSwitches ??= {}
+    cfg.toolSwitches[name] = enabled
+    return saveConfig(cfg)
+  })
+
   // 保存上下文窗口上限（tokens；0 = 未知）
   ipcMain.handle('config:setContextLimit', async (_e, limit: number): Promise<ConfigView> => {
     const cfg = await loadConfig()
     if (typeof limit === 'number' && Number.isFinite(limit) && limit >= 0) {
       cfg.contextLimit = Math.round(limit)
     }
+    return saveConfig(cfg)
+  })
+
+  // 保存权限规则（deny > ask > allow 整体替换）
+  ipcMain.handle('config:setPermissionRules', async (_e, rules: PermissionRules): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.permissionRules = {
+      allow: (rules.allow ?? []).map((s) => s.trim()).filter(Boolean),
+      ask: (rules.ask ?? []).map((s) => s.trim()).filter(Boolean),
+      deny: (rules.deny ?? []).map((s) => s.trim()).filter(Boolean),
+    }
+    return saveConfig(cfg)
+  })
+
+  // 追加一条 allow 规则（批准卡片"不再询问"用），去重
+  ipcMain.handle('config:addPermissionRule', async (_e, rule: string): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.permissionRules ??= { allow: [], ask: [], deny: [] }
+    const r = rule.trim()
+    if (r && !cfg.permissionRules.allow.includes(r)) cfg.permissionRules.allow.push(r)
     return saveConfig(cfg)
   })
 

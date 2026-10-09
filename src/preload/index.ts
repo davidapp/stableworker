@@ -13,6 +13,7 @@ import type {
   LLMTestPayload,
   ModelPricing,
   ProjectInfo,
+  PermissionRules,
   Session,
   SessionLoadResult,
   SessionMeta,
@@ -44,6 +45,9 @@ const api = {
     ipcRenderer.invoke('config:setContextLimit', limit),
   setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setToolSwitch', name, enabled),
+  setPermissionRules: (rules: PermissionRules): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setPermissionRules', rules),
+  addPermissionRule: (rule: string): Promise<ConfigView> => ipcRenderer.invoke('config:addPermissionRule', rule),
   listTools: (): Promise<{ name: string; description: string; requiresApproval: boolean; kind: string | undefined }[]> =>
     ipcRenderer.invoke('tools:list'),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),

@@ -26,6 +26,7 @@ import {
   setCachedCompact,
 } from './compact'
 import { appendSummaryLine } from './sessions'
+import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
@@ -683,7 +684,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         return { ok: false, error: message, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
 
-      // 执行本轮的每个工具调用：危险操作按批准模式决定是否先过批准门
+      // 执行本轮的每个工具调用：权限规则（deny>ask>allow）优先于批准模式
       for (const tu of toolUses) {
         const def = tools.find((d) => d.name === tu.name)
         // 文件编辑类工具：执行前把目标文件快照进检查点（回滚用）
@@ -695,12 +696,22 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
             [tu.input.path],
           )
         }
-        // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问
+        const verdict = evaluateRules(cfg.permissionRules, tu.name, tu.input)
+        if (verdict === 'deny') {
+          const note = '权限规则（deny）拒绝了此操作'
+          tu.status = 'error'
+          tu.result = note
+          emit({ type: 'tool_result', sessionId: req.sessionId, toolUseId: tu.id, content: note, isError: true })
+          continue
+        }
+        // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问；
+        // allow 规则强制放行，ask 规则强制询问（优先于模式）
         const autoApprove =
-          approvalMode === 'fullAccess' || (approvalMode === 'autoEdit' && def?.kind === 'edit')
+          verdict === 'allow' ? true : verdict === 'ask' ? false : approvalMode === 'fullAccess' || (approvalMode === 'autoEdit' && def?.kind === 'edit')
         if (def?.requiresApproval && !autoApprove) {
           // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
-          const outcome = await requestApproval(req.sessionId, tu.id, emit)
+          const suggest = def.requiresApproval ? suggestRule(tu.name, tu.input) : undefined
+          const outcome = await requestApproval(req.sessionId, tu.id, emit, suggest)
           if (outcome !== 'approved') {
             const note =
               outcome === 'timeout'

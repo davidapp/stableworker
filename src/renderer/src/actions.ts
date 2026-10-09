@@ -36,6 +36,7 @@ function applyConfig(cfg: ConfigView): void {
     sidebarWidth: cfg.sidebarWidth,
     contextLimit: cfg.contextLimit,
     toolSwitches: cfg.toolSwitches,
+    permissionRules: cfg.permissionRules,
   })
 }
 
@@ -239,6 +240,11 @@ export async function setSidebarWidth(width: number): Promise<void> {
 
 export async function setToolSwitch(name: string, enabled: boolean): Promise<void> {
   const cfg = await window.api.setToolSwitch(name, enabled)
+  applyConfig(cfg)
+}
+
+export async function setPermissionRules(rules: { allow: string[]; ask: string[]; deny: string[] }): Promise<void> {
+  const cfg = await window.api.setPermissionRules(rules)
   applyConfig(cfg)
 }
 
@@ -527,7 +533,12 @@ export function subscribeChatEvents(): () => void {
         ...m,
         blocks: m.blocks.map((b) =>
           b.type === 'tool_use' && b.id === event.toolUseId
-            ? { ...b, status: 'pending_approval' as const, approvalId: event.approvalId }
+            ? {
+                ...b,
+                status: 'pending_approval' as const,
+                approvalId: event.approvalId,
+                approvalSuggest: event.suggestRule,
+              }
             : b,
         ),
       }))

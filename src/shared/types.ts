@@ -8,6 +8,13 @@ export type ProviderType = 'openai-compatible' | 'anthropic'
 /** 批准模式：决定危险工具执行前是否需要用户确认 */
 export type ApprovalMode = 'confirm' | 'autoEdit' | 'fullAccess'
 
+/** 权限规则（Tool(内容) 语法，deny > ask > allow） */
+export interface PermissionRules {
+  allow: string[]
+  ask: string[]
+  deny: string[]
+}
+
 export type Currency = 'CNY' | 'USD'
 
 /** 金额：amount 是精确的十进制字符串（不做浮点舍入），source 标明金额来源 */
@@ -99,6 +106,8 @@ export interface ToolUseBlock {
   output?: string
   /** 已通过检查点回滚到本次修改之前 */
   rolledBack?: boolean
+  /** 批准请求附带的建议规则（"允许并不再询问"用） */
+  approvalSuggest?: string
   durationMs?: number
 }
 
@@ -202,6 +211,8 @@ export interface ConfigView {
   contextLimit: number
   /** 工具开关：工具名 → 是否启用；未记录的工具默认启用 */
   toolSwitches: Record<string, boolean>
+  /** 权限规则（deny > ask > allow） */
+  permissionRules: PermissionRules
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */
@@ -230,7 +241,7 @@ export type ChatEvent =
   | { type: 'tool_use'; sessionId: string; toolUseId: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_output'; sessionId: string; toolUseId: string; text: string }
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
-  | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string }
+  | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string; suggestRule?: string }
   | { type: 'status'; sessionId: string; text: string }
   | {
       type: 'retry'

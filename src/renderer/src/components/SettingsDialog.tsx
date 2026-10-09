@@ -5,6 +5,7 @@ import { LlmConfigPage } from './settings/LlmConfigPage'
 import { PricingPage } from './settings/PricingPage'
 import { FeaturesPage } from './settings/FeaturesPage'
 import { ToolSwitchesPage } from './settings/ToolSwitchesPage'
+import { RulesPage } from './settings/RulesPage'
 
 /**
  * 统一设置对话框：左侧导航 + 右侧页面。
@@ -15,6 +16,7 @@ const PAGES = [
   { id: 'llm', label: 'LLM 配置' },
   { id: 'pricing', label: '模型价格' },
   { id: 'tools', label: '工具开关' },
+  { id: 'rules', label: '权限规则' },
   { id: 'features', label: '功能开关' },
 ] as const
 
@@ -52,6 +54,9 @@ export function SettingsDialog() {
           </div>
           <div style={{ display: active === 'tools' ? 'block' : 'none' }}>
             <ToolSwitchesPage />
+          </div>
+          <div style={{ display: active === 'rules' ? 'block' : 'none' }}>
+            <RulesPage />
           </div>
           <div style={{ display: active === 'features' ? 'block' : 'none' }}>
             <FeaturesPage />
