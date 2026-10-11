@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import type { ChatMessage, ContextInfo } from '../../../shared/types'
+import type { BalanceResult, ChatMessage, ContextInfo } from '../../../shared/types'
 import { copyText } from '../clipboard'
 
 /**
@@ -37,12 +37,13 @@ export function ContextWindow() {
   const [missing, setMissing] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [info, setInfo] = useState<ContextInfo | null>(null)
+  const [balance, setBalance] = useState<BalanceResult | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [editText, setEditText] = useState('')
   const [dirty, setDirty] = useState(false)
   const [sumText, setSumText] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
 
   // 左栏宽度拖拽（240–560px），仅本窗口内存态
@@ -101,7 +102,7 @@ export function ContextWindow() {
   }
 
   const run = async (name: string, fn: () => Promise<void>): Promise<void> => {
-    setBusy(true)
+    setBusy(name)
     try {
       await fn()
       await refresh()
@@ -109,7 +110,7 @@ export function ContextWindow() {
     } catch (err) {
       setNotice(`❌ ${err instanceof Error ? err.message : String(err)}`)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -202,6 +203,12 @@ export function ContextWindow() {
     })
   }
 
+  const queryBalance = async (): Promise<void> => {
+    await run('查询余额', async () => {
+      setBalance(await window.api.queryBalance())
+    })
+  }
+
   if (missing) {
     return (
       <div className="ctx-window">
@@ -230,7 +237,7 @@ export function ContextWindow() {
             <span>消息列表（{messages.length} 条）</span>
             <button
               className="btn"
-              disabled={checked.size === 0 || busy}
+              disabled={checked.size === 0 || busy !== null}
               title={checked.size < 2 ? '勾选两条以上可压缩该范围' : '把勾选范围压缩为一条摘要'}
               onClick={compressChecked}
             >
@@ -310,6 +317,20 @@ export function ContextWindow() {
               <div className="hint-line">
                 提示：在左侧勾选两条以上消息，可把该范围压缩成一条摘要消息（整段替换，保持工具调用配对）。
               </div>
+
+              <div className="ctx-title-row" style={{ marginTop: 14 }}>
+                <span>API Key 余额</span>
+                <button className="btn" disabled={busy !== null} onClick={() => void queryBalance()}>
+                  {busy === '查询余额' ? '查询中…' : '查询'}
+                </button>
+              </div>
+              {balance ? (
+                <div className="ctx-value">
+                  {balance.ok
+                    ? `✅ 可用：${balance.currency === 'USD' ? '$' : balance.currency === 'CNY' ? '¥' : ''}${balance.totalBalance ?? '?'}${balance.currency === 'CNY' ? '（人民币）' : ''}${balance.grantedBalance && balance.grantedBalance !== '0' ? ` · 赠送 ${balance.grantedBalance}` : ''}${balance.isAvailable === false ? ' · ⚠ 账户不可用' : ''}`
+                    : `❌ ${balance.error ?? '查询失败'}`}
+                </div>
+              ) : null}
             </>
           ) : (
             <>

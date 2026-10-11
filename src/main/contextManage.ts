@@ -1,11 +1,18 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { fetch as undiciFetch } from 'undici'
 import { loadConfig, decryptApiKey } from './config'
 import { getProxyDispatcher } from './llm'
 import { appendSummaryLine, loadSessionAny, saveSessionInternal, emitSessionsChanged } from './sessions'
 import { summarizeWithModel, invalidateCompactCache, setCachedCompact } from './compact'
 import { estimateTokens } from '../shared/tokens'
-import type { ChatMessage, ContextInfo, ContextOpResult, LLMConfig } from '../shared/types'
+import type {
+  BalanceResult,
+  ChatMessage,
+  ContextInfo,
+  ContextOpResult,
+  LLMConfig,
+} from '../shared/types'
 
 /**
  * 上下文管理（聊天右上角面板的后端）：
@@ -147,4 +154,60 @@ export function registerContextHandlers(): void {
       }
     },
   )
+
+  // 查询 API Key 余额：按服务商自动适配端点与响应格式
+  ipcMain.handle('balance:query', async (): Promise<BalanceResult> => {
+    const llmOf = await activeLlmOf()
+    if ('error' in llmOf) return { ok: false, error: llmOf.error }
+    const { llm, apiKey } = llmOf
+    const base = llm.baseURL.replace(/\/+$/, '')
+
+    let url: string
+    let shape: 'deepseek' | 'openrouter'
+    if (/deepseek/i.test(base)) {
+      url = 'https://api.deepseek.com/user/balance'
+      shape = 'deepseek'
+    } else if (/openrouter/i.test(base)) {
+      url = 'https://openrouter.ai/api/v1/credits'
+      shape = 'openrouter'
+    } else {
+      return { ok: false, error: '该服务商暂不支持余额查询（当前支持 DeepSeek / OpenRouter 官方 API）' }
+    }
+
+    try {
+      const res = await undiciFetch(url, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) {
+        return { ok: false, error: `HTTP ${res.status} ${res.statusText}` }
+      }
+      const json = (await res.json()) as Record<string, unknown>
+      if (shape === 'deepseek') {
+        const infos = json.balance_infos as Array<{ currency?: string; total_balance?: string; granted_balance?: string }> | undefined
+        const info = infos?.[0]
+        if (!info) return { ok: false, error: '响应中没有 balance_infos' }
+        return {
+          ok: true,
+          isAvailable: json.is_available === true,
+          currency: info.currency ?? '',
+          totalBalance: info.total_balance ?? '0',
+          grantedBalance: info.granted_balance ?? '0',
+        }
+      }
+      // openrouter: data.total_credits - data.total_usage = 剩余
+      const data = json.data as { total_credits?: number; total_usage?: number } | undefined
+      if (!data) return { ok: false, error: '响应中没有 credits 数据' }
+      const remaining = (data.total_credits ?? 0) - (data.total_usage ?? 0)
+      return {
+        ok: true,
+        isAvailable: remaining > 0,
+        currency: 'USD',
+        totalBalance: remaining.toFixed(2),
+        usedBalance: (data.total_usage ?? 0).toFixed(2),
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 }

@@ -21,6 +21,7 @@ import type {
   CheckpointRestoreResult,
   ContextInfo,
   ContextOpResult,
+  BalanceResult,
 } from '../shared/types'
 
 /**
@@ -86,6 +87,8 @@ const api = {
     ipcRenderer.invoke('context:deleteSummary', projectId, sessionId),
   compactNow: (projectId: string, sessionId: string): Promise<ContextOpResult> =>
     ipcRenderer.invoke('context:compactNow', projectId, sessionId),
+  /** 查询当前配置档的 API Key 余额（按服务商自动适配） */
+  queryBalance: (): Promise<BalanceResult> => ipcRenderer.invoke('balance:query'),
   /** 会话被外部（上下文管理窗口）修改时触发，主窗口据此从磁盘重载 */
   onSessionsChanged: (
     callback: (e: { projectId: string; sessionId: string }) => void,

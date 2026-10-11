@@ -184,6 +184,22 @@ export interface ContextOpResult {
   summaryText?: string
 }
 
+/** API Key 余额查询结果 */
+export interface BalanceResult {
+  ok: boolean
+  error?: string
+  /** 账户是否可用（服务商返回） */
+  isAvailable?: boolean
+  /** 币种（如 CNY / USD） */
+  currency?: string
+  /** 总余额（精确字符串，服务商原样返回） */
+  totalBalance?: string
+  /** 赠送余额（若有） */
+  grantedBalance?: string
+  /** 已使用金额（OpenRouter 形态） */
+  usedBalance?: string
+}
+
 /** 一个聊天会话（聊天上下文的持久化单位） */
 export interface Session extends SessionMeta {
   projectId: string
