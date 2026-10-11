@@ -45,6 +45,8 @@ jobs:
             release/*.exe
             release/*.dmg
             release/*.AppImage
+            release/*.blockmap
+            release/*.yml
           if-no-files-found: error
 
   # 滚动 Release：main 的每次推送都覆盖更新「latest」，始终提供最新构建

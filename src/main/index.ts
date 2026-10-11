@@ -10,6 +10,7 @@ import { registerToolHandlers } from './tools'
 import { registerFileHistoryHandlers } from './fileHistory'
 import { registerContextHandlers } from './contextManage'
 import { registerSkillHandlers } from './skills'
+import { setupUpdater } from './updater'
 import { openContextWindow, openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
 
@@ -77,6 +78,7 @@ app.whenReady().then(async () => {
   registerFileHistoryHandlers()
   registerContextHandlers()
   registerSkillHandlers()
+  setupUpdater()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createAppMenu(() => openInspectorWindow())
   void openContextWindow // 暂未在菜单暴露；上下文管理从主窗口按钮打开

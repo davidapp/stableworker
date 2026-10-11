@@ -1,4 +1,5 @@
 import { Menu, type MenuItemConstructorOptions } from 'electron'
+import { checkForUpdatesDialog } from './updater'
 
 /**
  * 应用菜单：自建中文菜单替代 Electron 默认菜单。
@@ -26,7 +27,13 @@ export function createAppMenu(onOpenInspector: () => void): void {
   template.push(
     {
       label: '文件',
-      submenu: [{ role: 'close', label: '关闭窗口' }],
+      submenu: [
+        ...(process.platform === 'win32' || process.platform === 'darwin'
+          ? [{ label: '检查更新…', click: () => void checkForUpdatesDialog() }]
+          : []),
+        { type: 'separator' },
+        { role: 'close', label: '关闭窗口' },
+      ],
     },
     {
       label: '编辑',
