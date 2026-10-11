@@ -65,3 +65,15 @@ Windows 可配置 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`；有证书时强制�
 
 发布资产检查命令：`npm run verify:release -- <包含安装包和元数据的目录> all`。
 此检查会拒绝缺 ZIP、文件改名、大小或哈希不匹配等缺陷，但不会执行安装器，也不会验证 UI 启动或数据迁移。
+
+## 本次修复的验证结果
+
+代码与配置提交 `3050461` 已完成以下验证：
+
+- 本机版本检查、TypeScript 检查、76 项单元测试全部通过，其中 15 项为本次新增回归测试。
+- 本机 Windows NSIS 构建完成，使用本机已有的同版本 Electron 44.5.1 二进制以避开网络下载限制；生成文件名与 latest.yml 一致，完整 SHA-512、大小及 blockmap 存在性检查通过。Authenticode 状态为 `NotSigned`。
+- [三平台 Build](https://github.com/davidapp/stableworker/actions/runs/38151665304) 成功：Windows NSIS x64、Linux AppImage x64、macOS x64/arm64 的 DMG+ZIP 均完成构建，清单逐文件引用、大小和完整 SHA-512 验证通过，Artifact 上传成功。
+- [PR Check](https://github.com/davidapp/stableworker/actions/runs/38151668264) 的版本检查、类型检查及测试通过。
+- 此次为分支上的手动测试构建：macOS 无签名身份，签名/公证验收步骤按设计跳过；创建 Release 的步骤也跳过。不能将成功结果解读为已签名、已公证、已安装、已完成真实升级，或已修复线上 v0.9.0。
+
+这些是修复分支新生成的测试产物，与前面审计的 v0.9.0 已发布资产不同。正式发布应使用递增的新版本，配置 macOS 凭据并完成设备验收。
