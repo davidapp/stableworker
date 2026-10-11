@@ -97,27 +97,33 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
       {block.userQuestion && !answer ? (
         <div className="tool-question">
           <div className="tool-question-text">{block.userQuestion.question}</div>
-          <div className="ctx-btn-row">
-            {block.userQuestion.options.map((o) => (
-              <button key={o} className="btn" onClick={() => void answerQuestion(o)}>
-                {o}
-              </button>
-            ))}
-          </div>
-          <div className="ctx-btn-row">
-            <input
-              className="rename-input"
-              placeholder="或输入自定义回答…"
-              value={customAnswer}
-              onChange={(e) => setCustomAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && customAnswer.trim()) void answerQuestion(customAnswer.trim())
-              }}
-            />
-            <button className="btn" disabled={!customAnswer.trim()} onClick={() => void answerQuestion(customAnswer.trim())}>
-              提交
-            </button>
-          </div>
+          {block.status === 'pending_approval' || block.status === 'running' ? (
+            <>
+              <div className="ctx-btn-row">
+                {block.userQuestion.options.map((o) => (
+                  <button key={o} className="btn" onClick={() => void answerQuestion(o)}>
+                    {o}
+                  </button>
+                ))}
+              </div>
+              <div className="ctx-btn-row">
+                <input
+                  className="rename-input"
+                  placeholder="或输入自定义回答…"
+                  value={customAnswer}
+                  onChange={(e) => setCustomAnswer(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && customAnswer.trim()) void answerQuestion(customAnswer.trim())
+                  }}
+                />
+                <button className="btn" disabled={!customAnswer.trim()} onClick={() => void answerQuestion(customAnswer.trim())}>
+                  提交
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="tool-question-answered">该提问已失效（超时或已停止），可让模型重新提问。</div>
+          )}
         </div>
       ) : null}
       {answer !== null ? (

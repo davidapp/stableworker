@@ -66,7 +66,7 @@ export function resolveSessionApprovals(sessionId: string): void {
 
 // ---------- 通用用户输入挂起（AskUserQuestion 工具） ----------
 
-/** 发出问题卡片并挂起等待用户作答；超时自动以"（超时未回答）"收尾 */
+/** 发出问题卡片并挂起等待用户作答；不设超时（工具层 10 分钟兜底），停止可打断 */
 export function requestUserInput(
   sessionId: string,
   toolUseId: string,
@@ -78,10 +78,6 @@ export function requestUserInput(
   return new Promise((resolve) => {
     pendingInputs.set(questionId, { resolve })
     emit({ type: 'ask_user', sessionId, toolUseId, questionId, question, options })
-    const t = setTimeout(() => {
-      if (pendingInputs.delete(questionId)) resolve('（超时未回答）')
-    }, APPROVAL_TIMEOUT_MS)
-    t.unref()
   })
 }
 

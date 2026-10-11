@@ -452,6 +452,8 @@ const askUserQuestionTool: ToolDefinition = {
     },
     required: ['question', 'options'],
   },
+  // 给用户 10 分钟思考窗口；超时后以错误结果收尾（模型可自行收场）
+  timeoutMs: 600_000,
   async execute(input, ctx) {
     const question = typeof input.question === 'string' ? input.question : ''
     const options = Array.isArray(input.options)
