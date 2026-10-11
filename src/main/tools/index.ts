@@ -452,8 +452,8 @@ const askUserQuestionTool: ToolDefinition = {
     },
     required: ['question', 'options'],
   },
-  // 给用户 10 分钟思考窗口；超时后以错误结果收尾（模型可自行收场）
-  timeoutMs: 600_000,
+  // 无超时：一直等用户作答（对齐 Claude Code）；用户点停止可随时打断
+  timeoutMs: Number.POSITIVE_INFINITY,
   async execute(input, ctx) {
     const question = typeof input.question === 'string' ? input.question : ''
     const options = Array.isArray(input.options)
@@ -565,33 +565,38 @@ export async function executeToolCall(
   }
 
   let out: ToolOutput
-  try {
-    out = await Promise.race([
-      run().catch((err: unknown) => ({
-        content: err instanceof Error ? err.message : String(err),
-        isError: true,
-      })),
+  const race: Promise<ToolOutput | never>[] = [
+    run().catch((err: unknown) => ({
+      content: err instanceof Error ? err.message : String(err),
+      isError: true,
+    })),
+  ]
+  // timeoutMs 为有限值时才设超时；Infinity（如 ask_user_question）表示无限等待
+  if (Number.isFinite(timeoutMs)) {
+    race.push(
       new Promise<never>((_, reject) => {
         const t = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
         t.unref()
       }),
-      ...(opts.signal
-        ? [
-            new Promise<never>((_, reject) => {
-              const signal = opts.signal as AbortSignal
-              if (signal.aborted) {
-                reject(new Error('用户已停止，操作中断'))
-                return
-              }
-              const onAbort = (): void => reject(new Error('用户已停止，操作中断'))
-              signal.addEventListener('abort', onAbort, { once: true })
-            }),
-          ]
-        : []),
-    ])
-  } catch (err) {
-    out = { content: err instanceof Error ? err.message : String(err), isError: true }
+    )
   }
+  if (opts.signal) {
+    race.push(
+      new Promise<never>((_, reject) => {
+        const signal = opts.signal as AbortSignal
+        if (signal.aborted) {
+          reject(new Error('用户已停止，操作中断'))
+          return
+        }
+        const onAbort = (): void => reject(new Error('用户已停止，操作中断'))
+        signal.addEventListener('abort', onAbort, { once: true })
+      }),
+    )
+  }
+  out = await Promise.race(race).catch((err: unknown) => ({
+    content: err instanceof Error ? err.message : String(err),
+    isError: true,
+  }))
   return { content: truncate(out.content), isError: Boolean(out.isError), durationMs: Date.now() - started }
 }
 
