@@ -6,6 +6,7 @@ import { CaretIcon } from './CaretIcon'
 
 /** 批准模式选项（对齐 Claude Code 的权限模式） */
 const MODES: { id: ApprovalMode; icon: string; label: string; description: string }[] = [
+  { id: 'plan', icon: '📋', label: '规划模式', description: '只读研究和制定计划。' },
   { id: 'confirm', icon: '✋', label: '变更前确认', description: '改文件前先问我。' },
   { id: 'autoEdit', icon: '🛡️', label: '自动编辑', description: '自动编辑文件。' },
   { id: 'fullAccess', icon: '⚠️', label: '完全访问', description: '减少确认次数。' },

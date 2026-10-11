@@ -6,7 +6,7 @@
 export type ProviderType = 'openai-compatible' | 'anthropic'
 
 /** 批准模式：决定危险工具执行前是否需要用户确认 */
-export type ApprovalMode = 'confirm' | 'autoEdit' | 'fullAccess'
+export type ApprovalMode = 'plan' | 'confirm' | 'autoEdit' | 'fullAccess'
 
 /** 任务清单条目（todo_write 工具维护，随 chat 事件实时推给界面） */
 export interface TodoItem {

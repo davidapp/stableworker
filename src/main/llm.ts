@@ -516,16 +516,26 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
 
   const projectPath = cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
   // 工具开关：被禁用的工具不随请求发给模型（模型不知道 = 不会调用）
-  const tools = getToolDefinitions().filter((d) => cfg.toolSwitches?.[d.name] !== false)
+  // 规划模式：所有需要批准的工具（写/改/命令）都从工具池移除，只保留只读研究
+  let tools = getToolDefinitions().filter((d) => cfg.toolSwitches?.[d.name] !== false)
+  const approvalMode = cfg.approvalMode ?? 'confirm'
+  if (approvalMode === 'plan') {
+    tools = tools.filter((d) => !d.requiresApproval)
+  }
   const pricing = cfg.modelPricing?.find((p) => p.model === llm.model) ?? null
   const peak = isPeakTime(new Date(), cfg.holidays ?? [])
   const proxyURL = llm.proxyURL?.trim() || null
-  const approvalMode = cfg.approvalMode ?? 'confirm'
   // 上下文构成明细用：系统提示词与工具定义是我们自己的固定文本，可本地估算；
   // messages 部分用服务端总量减去这两项得出余量。
   // AGENTS.md（项目约定）在每轮对话开始时读取，存在则注入系统提示词。
   const agentsMd = projectPath ? await loadAgentsMd(projectPath) : ''
-  const systemText = buildSystemPrompt(projectPath, agentsMd)
+  let systemText = buildSystemPrompt(projectPath, agentsMd)
+  // 规划模式的系统提示：告知模型当前只读约束
+  if (approvalMode === 'plan') {
+    systemText +=
+      '\n\n当前处于【规划模式】：所有修改类工具（写文件 / 编辑 / 执行命令）均不可用。请只做研究和制定计划：' +
+      '阅读相关代码、理解现状，然后在回复中输出一份完整、可执行的改造计划（含要修改的文件与步骤），等待用户批准。用户批准并切换批准模式后，再按计划执行。'
+  }
   const toolsText = JSON.stringify(
     tools.map((d) => ({ name: d.name, description: d.description, input_schema: d.inputSchema })),
   )

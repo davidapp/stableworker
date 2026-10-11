@@ -25,6 +25,26 @@ async function readSkill(name: string): Promise<string | null> {
   }
 }
 
+/** 列出所有 skill 名称（供 Skill 工具在未指定 name 时提示可用命令） */
+export async function listSkillNames(): Promise<string[]> {
+  try {
+    return (await readdir(skillsDir()).catch(() => [] as string[]))
+      .filter((f) => f.endsWith('.md'))
+      .map((f) => f.slice(0, -3))
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+/** 读取 skill 模板并展开参数（斜杠命令与 Skill 工具共用） */
+export async function loadSkillContent(name: string, args: string): Promise<string | null> {
+  const tpl = await readSkill(name)
+  if (tpl == null) return null
+  const positional = args ? args.split(/\s+/) : []
+  return tpl.replaceAll('$ARGUMENTS', args).replaceAll(/\$(\d+)/g, (_, n) => positional[Number(n) - 1] ?? '')
+}
+
 /** 解析 /name args → 展开后的 prompt；未命中返回 null */
 export async function resolveSlashCommand(text: string): Promise<string | null> {
   if (!text.startsWith('/')) return null
@@ -33,10 +53,7 @@ export async function resolveSlashCommand(text: string): Promise<string | null> 
   const name = sp < 0 ? trimmed : trimmed.slice(0, sp)
   const args = sp < 0 ? '' : trimmed.slice(sp + 1).trim()
   if (!name) return null
-  const tpl = await readSkill(name)
-  if (tpl == null) return null
-  const positional = args ? args.split(/\s+/) : []
-  return tpl.replaceAll('$ARGUMENTS', args).replaceAll(/\$(\d+)/g, (_, n) => positional[Number(n) - 1] ?? '')
+  return loadSkillContent(name, args)
 }
 
 export function registerSkillHandlers(): void {

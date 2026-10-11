@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { ipcMain } from 'electron'
 import { safeResolve } from './paths'
 import { startShellTask, getShellTask, stopShellTask } from './shellTasks'
+import { loadSkillContent, listSkillNames } from '../skills'
 import { grepTool, globTool } from './search'
 import type { TodoItem, ToolUseBlock } from '../../shared/types'
 
@@ -509,6 +510,35 @@ const taskStopTool: ToolDefinition = {
   },
 }
 
+const skillTool: ToolDefinition = {
+  name: 'skill',
+  description:
+    '调用一个用户自定义的斜杠命令（skill）：加载其 markdown 模板作为工作指令并照做。适合执行用户预定义的工作流（如代码审查、提交规范）。不确定有哪些命令时，可先不带参数调用，会返回可用命令列表。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: '命令名称（不含 / 前缀）' },
+      args: { type: 'string', description: '传给模板的参数（替换 $ARGUMENTS）' },
+    },
+    required: ['name'],
+  },
+  kind: 'read',
+  async execute(input, ctx) {
+    void ctx
+    const name = typeof input.name === 'string' ? input.name.trim() : ''
+    const args = typeof input.args === 'string' ? input.args : ''
+    if (!name) {
+      const all = await listSkillNames()
+      return { content: all.length ? `可用的 skill：${all.join('、')}` : '当前没有任何自定义 skill（可在设置 → 斜杠命令中创建）' }
+    }
+    const content = await loadSkillContent(name, args)
+    if (content == null) {
+      return { content: `skill「${name}」不存在。请确认名称，或在设置 → 斜杠命令中创建。`, isError: true }
+    }
+    return { content }
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
@@ -521,6 +551,7 @@ const registry = new Map<string, ToolDefinition>([
   [taskOutputTool.name, taskOutputTool],
   [taskStopTool.name, taskStopTool],
   [todoWriteTool.name, todoWriteTool],
+  [skillTool.name, skillTool],
   [askUserQuestionTool.name, askUserQuestionTool],
 ])
 

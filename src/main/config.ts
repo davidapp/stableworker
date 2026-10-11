@@ -32,7 +32,7 @@ const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
 ]
 
-const APPROVAL_MODES: ApprovalMode[] = ['confirm', 'autoEdit', 'fullAccess']
+const APPROVAL_MODES: ApprovalMode[] = ['plan', 'confirm', 'autoEdit', 'fullAccess']
 
 /** 各模型家族的上下文窗口默认值（tokens）；未匹配的模型用 fallback */
 const CONTEXT_LIMITS: { match: RegExp; limit: number }[] = [
