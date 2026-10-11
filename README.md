@@ -1,8 +1,13 @@
 # StableWorker
 
-自研 AI 代理编程软件（Electron 桌面应用，Windows / macOS / Linux）。当前版本 **v0.6.0**：
+自研 AI 代理编程软件（Electron 桌面应用，Windows / macOS / Linux）。当前版本 **v0.9.0**：
 多项目管理、会话树、流式对话（Markdown 渲染）、工具调用代理循环（读 / 写 / 改 / 跑命令）、
-多模型配置档、批准模式、精确计费、上下文管理与水位条、API 调试悬浮窗。
+多模型配置档、批准模式、精确计费、上下文管理与水位条、API 调试悬浮窗及更新检查。
+
+安装包见 [GitHub Releases](https://github.com/davidapp/stableworker/releases)。
+**已发布的 v0.9.0 有已知更新缺陷**：Windows 更新元数据与资产名不一致；macOS 缺少 ZIP 且未签名，
+不能依赖自动更新。手动下载安装包仍需留意系统信任提示；三平台安装和升级尚未完成设备验收。
+本分支的修复须随新版本发布才会进入客户端，详见 [发布检查与升级说明](docs/releasing.md)。
 
 ## 快速开始
 
@@ -11,7 +16,8 @@ npm install        # 首次安装；若 electron 二进制下载失败，见下�
 npm run dev        # 启动开发模式（带热更新）
 npm run build      # 产物构建到 out/
 npm run typecheck  # TypeScript 类型检查
-npm run dist       # 打包当前平台的安装器（Windows NSIS / macOS DMG / Linux AppImage）到 release/
+npm run dist       # 打包当前平台（Windows NSIS / macOS DMG+ZIP / Linux AppImage）到 release/
+npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等同于安装测试
 ```
 
 > 常见问题：如果 `npm run dev` 报 `Error: Electron uninstall`，是 Electron 二进制没下载成功（网络原因）。
@@ -90,7 +96,7 @@ npm run dist       # 打包当前平台的安装器（Windows NSIS / macOS DMG /
 | React | 19.3.0 | 界面 |
 | TypeScript | 5.9 | 全量类型覆盖（含 IPC 两端） |
 | undici | 8.x | 代理支持（ProxyAgent） |
-| electron-builder | 26 | 三平台打包（NSIS / DMG / AppImage） |
+| electron-builder | 26 | 三平台打包（NSIS / DMG+ZIP / AppImage） |
 
 ## 目录结构
 
@@ -158,5 +164,6 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 
 - 流式期间每条增量都会重渲染整段 Markdown，长回复下可优化为增量渲染
 - `run_command` 在 Windows 上的中文输出可能是 GBK 乱码（代码页问题）；无法运行交互式命令
-- 应用未做代码签名（首次运行 SmartScreen / Gatekeeper 会有提示）；应用图标为默认图标
+- v0.9.0 未配置发行签名：Windows 可能出现 SmartScreen / 未知发布者提示；macOS 的 Gatekeeper 与自动更新受限。
+  后续正式 macOS 构建必须配置 Developer ID 签名和公证；Windows 签名仍取决于证书配置（见发布说明）。
 - 上下文构成拆分（消息 / 系统工具 / 系统提示词）是本地估算，非 tokenizer 精确值
