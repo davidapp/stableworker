@@ -50,6 +50,8 @@ jobs:
           WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
         run: |
+          # An empty CSC_LINK is treated as a certificate path by the macOS packager.
+          if [[ -z "$CSC_LINK" ]]; then unset CSC_LINK; fi
           if [[ "$RUNNER_OS" == "macOS" && "$GITHUB_REF" == refs/tags/v* ]]; then
             for key in CSC_LINK APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
               if [[ -z "${!key}" ]]; then
