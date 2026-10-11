@@ -7,7 +7,7 @@ import { copyText } from '../clipboard'
 const MAX_ARGS_DISPLAY = 800
 
 /** 执行中的实时输出：内容更新时自动滚到底部 */
-function LiveOutput({ text }: { text: string }) {
+function LiveOutput({ text, label }: { text: string; label: string }) {
   const ref = useRef<HTMLPreElement>(null)
 
   useEffect(() => {
@@ -17,7 +17,7 @@ function LiveOutput({ text }: { text: string }) {
 
   return (
     <div className="tool-live">
-      <div className="tool-live-label">实时输出</div>
+      <div className="tool-live-label">{label}</div>
       <pre ref={ref}>{text}</pre>
     </div>
   )
@@ -72,8 +72,8 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
   return (
     <div className={`tool-card ${block.status}`}>
       <div className="tool-card-head">
-        <span>🛠</span>
-        <span className="tool-name">{block.name}</span>
+        <span>{block.name === 'task' ? '🤖' : '🛠'}</span>
+        <span className="tool-name">{block.name === 'task' ? '子代理（task）' : block.name}</span>
         {block.status === 'pending_approval' ? <span className="tool-status pending">等待批准</span> : null}
         {block.status === 'running' ? <span className="tool-status running">运行中…</span> : null}
         {block.status === 'done' ? (
@@ -155,7 +155,9 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
         </div>
       ) : null}
 
-      {block.status === 'running' && block.output ? <LiveOutput text={block.output} /> : null}
+      {block.status === 'running' && block.output ? (
+        <LiveOutput text={block.output} label={block.name === 'task' ? '子代理实时输出' : '实时输出'} />
+      ) : null}
 
       {diff ? (
         <div className="tool-diff">

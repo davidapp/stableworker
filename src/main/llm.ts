@@ -29,16 +29,19 @@ import { appendSummaryLine } from './sessions'
 import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
 import { ensureMcpConnections, getMcpToolDefs } from './mcp'
+import { createTaskTool, buildSubagentSystemPrompt } from './subagent'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
 import type {
+  ApprovalMode,
   ChatEvent,
   ChatRequest,
   ChatHistoryMessage,
   LLMConfig,
   LLMTestPayload,
   MessageBlock,
+  PermissionRules,
   TodoItem,
   ToolUseBlock,
 } from '../shared/types'
@@ -370,10 +373,12 @@ async function readSSE(
 /**
  * 流式事件收集器：一边把文本增量/工具调用推给渲染进程，
  * 一边把本轮回复组装成 MessageBlock[]。
+ * sink 参数：事件出口，默认主进程 emit；子代理传入空函数（增量不进主对话）。
  */
 function createStreamCollector(
   provider: LLMConfig['provider'],
   sessionId: string,
+  sink: (e: ChatEvent) => void = emit,
 ): { onEvent: (json: Record<string, unknown>) => void; finish: () => { blocks: MessageBlock[]; reasoning: string } } {
   // OpenAI 兼容状态：文本一块 + tool_calls 按 index 累积 + 思考内容（reasoning_content）
   let oaText = ''
@@ -410,10 +415,10 @@ function createStreamCollector(
         if (!item || !delta) return
         if (item.kind === 'text' && delta.type === 'text_delta' && delta.text) {
           item.text += delta.text
-          emit({ type: 'delta', sessionId, delta: delta.text })
+          sink({ type: 'delta', sessionId, delta: delta.text })
         } else if (item.kind === 'thinking' && delta.type === 'thinking_delta' && delta.thinking) {
           item.text += delta.thinking
-          emit({ type: 'reasoning_delta', sessionId, delta: delta.thinking })
+          sink({ type: 'reasoning_delta', sessionId, delta: delta.thinking })
         } else if (item.kind === 'thinking' && delta.type === 'signature_delta' && delta.signature) {
           item.signature += delta.signature
         } else if (item.kind === 'tool' && delta.type === 'input_json_delta' && delta.partial_json) {
@@ -422,7 +427,7 @@ function createStreamCollector(
       } else if (json.type === 'content_block_stop') {
         const item = aItems[index]
         if (item && item.kind === 'tool') {
-          emit({ type: 'tool_use', sessionId, toolUseId: item.id, name: item.name, input: parseLooseJson(item.args) })
+          sink({ type: 'tool_use', sessionId, toolUseId: item.id, name: item.name, input: parseLooseJson(item.args) })
         }
       }
       return
@@ -444,11 +449,11 @@ function createStreamCollector(
     const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning
     if (reasoningDelta) {
       oaReasoning += reasoningDelta
-      emit({ type: 'reasoning_delta', sessionId, delta: reasoningDelta })
+      sink({ type: 'reasoning_delta', sessionId, delta: reasoningDelta })
     }
     if (delta?.content) {
       oaText += delta.content
-      emit({ type: 'delta', sessionId, delta: delta.content })
+      sink({ type: 'delta', sessionId, delta: delta.content })
     }
     for (const tc of delta?.tool_calls ?? []) {
       const idx = typeof tc.index === 'number' ? tc.index : oaCalls.size
@@ -493,7 +498,7 @@ function createStreamCollector(
       .map(([idx, c]): MessageBlock => {
         const id = c.id || `call_${idx}`
         const input = parseLooseJson(c.args)
-        emit({ type: 'tool_use', sessionId, toolUseId: id, name: c.name, input })
+        sink({ type: 'tool_use', sessionId, toolUseId: id, name: c.name, input })
         return { type: 'tool_use', id, name: c.name, input, status: 'running' }
       })
     const blocks: MessageBlock[] = []
@@ -507,6 +512,85 @@ function createStreamCollector(
 }
 
 // ---------- 代理循环 ----------
+
+/** 工具执行的门禁上下文：主循环与子代理共用同一套批准/权限/检查点逻辑 */
+interface ToolExecCtx {
+  tools: ToolDefinition[]
+  permissionRules: PermissionRules
+  approvalMode: ApprovalMode
+  projectPath: string | null
+  projectId: string
+  sessionId: string
+  signal: AbortSignal
+  emit: (e: ChatEvent) => void
+  onTodos: (todos: TodoItem[]) => void
+}
+
+/**
+ * 执行一个工具调用（原地写 tu.status / tu.result / tu.durationMs）：
+ * 检查点快照 → 权限规则（deny>ask>allow）→ 批准门（模式与规则综合裁定）→ 执行。
+ * 每一步的事件（tool_result / approval_request）经 ctx.emit 送出。
+ */
+async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise<void> {
+  const def = ctx.tools.find((d) => d.name === tu.name)
+  // 文件编辑类工具：执行前把目标文件快照进检查点（回滚用）
+  if (def?.kind === 'edit' && ctx.projectPath && typeof tu.input.path === 'string') {
+    await snapshotFilesBeforeChange(
+      sessionCheckpointsRoot(ctx.projectId, ctx.sessionId),
+      tu.id,
+      ctx.projectPath,
+      [tu.input.path],
+    )
+  }
+  const verdict = evaluateRules(ctx.permissionRules, tu.name, tu.input)
+  if (verdict === 'deny') {
+    const note = '权限规则（deny）拒绝了此操作'
+    tu.status = 'error'
+    tu.result = note
+    ctx.emit({ type: 'tool_result', sessionId: ctx.sessionId, toolUseId: tu.id, content: note, isError: true })
+    return
+  }
+  // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问；
+  // allow 规则强制放行，ask 规则强制询问（优先于模式）
+  const autoApprove =
+    verdict === 'allow' ? true : verdict === 'ask' ? false : ctx.approvalMode === 'fullAccess' || (ctx.approvalMode === 'autoEdit' && def?.kind === 'edit')
+  if (def?.requiresApproval && !autoApprove) {
+    // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
+    const suggest = def.requiresApproval ? suggestRule(tu.name, tu.input) : undefined
+    const outcome = await requestApproval(ctx.sessionId, tu.id, ctx.emit, suggest)
+    if (outcome !== 'approved') {
+      const note =
+        outcome === 'timeout'
+          ? '批准超时（120 秒无响应），操作未执行'
+          : outcome === 'stopped'
+            ? '用户停止了生成，操作未执行'
+            : '用户拒绝了本次操作'
+      tu.status = 'error'
+      tu.result = note
+      ctx.emit({ type: 'tool_result', sessionId: ctx.sessionId, toolUseId: tu.id, content: note, isError: true })
+      return
+    }
+  }
+  const result = await runToolUseBlock(tu, ctx.projectPath, {
+    signal: ctx.signal,
+    onOutput: (text) => ctx.emit({ type: 'tool_output', sessionId: ctx.sessionId, toolUseId: tu.id, text }),
+    onTodos: ctx.onTodos,
+    onAskUser: async (q) => {
+      const answer = await requestUserInput(ctx.sessionId, tu.id, q.question, q.options, ctx.emit)
+      return answer
+    },
+  })
+  tu.status = result.isError ? 'error' : 'done'
+  tu.result = result.content
+  tu.durationMs = result.durationMs
+  ctx.emit({
+    type: 'tool_result',
+    sessionId: ctx.sessionId,
+    toolUseId: tu.id,
+    content: result.content,
+    isError: result.isError,
+  })
+}
 
 async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string; compacted?: number }> {
   const cfg = await loadConfig()
@@ -545,6 +629,94 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
 
   const controller = new AbortController()
   aborters.set(req.sessionId, controller)
+
+  // 子代理（task 工具）：独立上下文里跑完整的"请求→工具→再请求"循环，
+  // 进度实时挂到 task 工具卡片的"实时输出"区，最终报告作为 tool 结果回主对话。
+  const subSystemPrompt = buildSubagentSystemPrompt(
+    'general-purpose',
+    `项目目录：${projectPath ?? '（无项目）'}${agentsMd ? `\n\n项目约定（AGENTS.md）：\n${agentsMd}` : ''}`,
+  )
+  const subExecCtx: ToolExecCtx = {
+    tools,
+    permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
+    approvalMode,
+    projectPath,
+    projectId: req.projectId,
+    sessionId: req.sessionId,
+    signal: controller.signal,
+    emit: (e) => {
+      // 子代理内部工具的结果/实时输出由 runSubagent 统一输出为进度行，不直接进主对话；
+      // 批准卡与提问等会话级事件照常转发（用户在主界面看到并处理）
+      if (e.type === 'tool_output' || e.type === 'tool_result') return
+      emit(e)
+    },
+    onTodos: (todos) => {
+      sessionTodos.set(req.sessionId, todos)
+      emit({ type: 'todos', sessionId: req.sessionId, todos })
+    },
+  }
+  let subRound = 0
+  const subCallRound = async (
+    messages: ChatHistoryMessage[],
+    roundTools: ToolDefinition[],
+    signal: AbortSignal,
+  ): Promise<{ blocks: MessageBlock[] }> => {
+    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(messages), roundTools, true, subSystemPrompt)
+    const exchange = beginExchange({
+      kind: 'chat',
+      round: ++subRound,
+      llm,
+      method: 'POST',
+      url,
+      proxyURL,
+      pricing,
+      peak,
+      headers: maskHeaders(headers),
+      body,
+    })
+    try {
+      const res = await undiciFetch(url, {
+        method: 'POST',
+        headers,
+        body,
+        signal,
+        dispatcher: getProxyDispatcher(llm.proxyURL ?? ''),
+      })
+      recordStatus(exchange, res.status)
+      if (!res.ok || !res.body) {
+        const detail = (await res.text().catch(() => '')).slice(0, 300)
+        throw new HttpError(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`, res.status)
+      }
+      // 子代理的流式增量不进主对话：sink 传空函数，只取组装结果
+      const collector = createStreamCollector(llm.provider, req.sessionId, () => {})
+      await readSSE(res.body, (json, raw) => {
+        recordSSELine(exchange, raw)
+        if (!json) return
+        recordUsageEvent(exchange, json)
+        collector.onEvent(json)
+      })
+      const fin = collector.finish()
+      recordToolCalls(
+        exchange,
+        fin.blocks
+          .filter((b): b is ToolUseBlock => b.type === 'tool_use')
+          .map((b) => ({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })),
+      )
+      recordAssembledText(exchange, textOfBlocks(fin.blocks))
+      endExchange(exchange)
+      return fin
+    } catch (err) {
+      endExchange(exchange, isAbortError(err) ? undefined : err instanceof Error ? err.message : String(err))
+      throw err
+    }
+  }
+  const taskTool = createTaskTool({
+    baseTools: tools, // 不含 task 自身（固化在创建时；pickTools 再兜底排除递归）
+    signal: controller.signal,
+    callRound: subCallRound,
+    executeTool: (tu) => executeToolWithGates(tu, subExecCtx),
+  })
+  tools = [...tools, taskTool]
 
   // 发送前裁剪：估算超过上下文上限的 70%（预留输出与估算误差）时，
   // 从最旧的整组开始丢弃。只影响请求体；会话文件与界面历史保持完整。
@@ -701,75 +873,23 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         return { ok: false, error: message, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
 
-      // 执行本轮的每个工具调用：权限规则（deny>ask>allow）优先于批准模式
+      // 执行本轮的每个工具调用（批准门/权限规则/检查点见 executeToolWithGates）
+      const execCtx: ToolExecCtx = {
+        tools,
+        permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
+        approvalMode,
+        projectPath,
+        projectId: req.projectId,
+        sessionId: req.sessionId,
+        signal: controller.signal,
+        emit,
+        onTodos: (todos) => {
+          sessionTodos.set(req.sessionId, todos)
+          emit({ type: 'todos', sessionId: req.sessionId, todos })
+        },
+      }
       for (const tu of toolUses) {
-        const def = tools.find((d) => d.name === tu.name)
-        // 文件编辑类工具：执行前把目标文件快照进检查点（回滚用）
-        if (def?.kind === 'edit' && projectPath && typeof tu.input.path === 'string') {
-          await snapshotFilesBeforeChange(
-            sessionCheckpointsRoot(req.projectId, req.sessionId),
-            tu.id,
-            projectPath,
-            [tu.input.path],
-          )
-        }
-        const verdict = evaluateRules(cfg.permissionRules, tu.name, tu.input)
-        if (verdict === 'deny') {
-          const note = '权限规则（deny）拒绝了此操作'
-          tu.status = 'error'
-          tu.result = note
-          emit({ type: 'tool_result', sessionId: req.sessionId, toolUseId: tu.id, content: note, isError: true })
-          continue
-        }
-        // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问；
-        // allow 规则强制放行，ask 规则强制询问（优先于模式）
-        const autoApprove =
-          verdict === 'allow' ? true : verdict === 'ask' ? false : approvalMode === 'fullAccess' || (approvalMode === 'autoEdit' && def?.kind === 'edit')
-        if (def?.requiresApproval && !autoApprove) {
-          // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
-          const suggest = def.requiresApproval ? suggestRule(tu.name, tu.input) : undefined
-          const outcome = await requestApproval(req.sessionId, tu.id, emit, suggest)
-          if (outcome !== 'approved') {
-            const note =
-              outcome === 'timeout'
-                ? '批准超时（120 秒无响应），操作未执行'
-                : outcome === 'stopped'
-                  ? '用户停止了生成，操作未执行'
-                  : '用户拒绝了本次操作'
-            tu.status = 'error'
-            tu.result = note
-            emit({
-              type: 'tool_result',
-              sessionId: req.sessionId,
-              toolUseId: tu.id,
-              content: note,
-              isError: true,
-            })
-            continue
-          }
-        }
-        const result = await runToolUseBlock(tu, projectPath, {
-          signal: controller.signal,
-          onOutput: (text) => emit({ type: 'tool_output', sessionId: req.sessionId, toolUseId: tu.id, text }),
-          onTodos: (todos) => {
-            sessionTodos.set(req.sessionId, todos)
-            emit({ type: 'todos', sessionId: req.sessionId, todos })
-          },
-          onAskUser: async (q) => {
-            const answer = await requestUserInput(req.sessionId, tu.id, q.question, q.options, emit)
-            return answer
-          },
-        })
-        tu.status = result.isError ? 'error' : 'done'
-        tu.result = result.content
-        tu.durationMs = result.durationMs
-        emit({
-          type: 'tool_result',
-          sessionId: req.sessionId,
-          toolUseId: tu.id,
-          content: result.content,
-          isError: result.isError,
-        })
+        await executeToolWithGates(tu, execCtx)
       }
     }
   } catch (err) {
