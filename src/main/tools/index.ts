@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { dirname } from 'node:path'
 import { ipcMain } from 'electron'
 import { safeResolve } from './paths'
+import { startShellTask, getShellTask, stopShellTask } from './shellTasks'
 import { grepTool, globTool } from './search'
 import type { TodoItem, ToolUseBlock } from '../../shared/types'
 
@@ -20,6 +20,8 @@ import type { TodoItem, ToolUseBlock } from '../../shared/types'
 export interface ToolContext {
   /** 激活项目的绝对路径，工具只能在这个目录内活动 */
   projectPath: string
+  /** 可选：当前会话 id（run_command 的 cwd 跨调用保持用） */
+  sessionId?: string
   /** 可选：把执行过程的实时输出（如命令的 stdout 流）推给聊天界面 */
   onOutput?: (text: string) => void
   /** 可选：更新当前会话的任务清单（todo_write 用） */
@@ -51,6 +53,10 @@ export interface ToolDefinition {
 }
 
 const MAX_LIST_ENTRIES = 300
+
+/** 会话保持的工作目录（run_command 的 cd 跨调用记忆，key = sessionId） */
+const sessionCwd = new Map<string, string>()
+let bgSeq = 0
 const MAX_READ_LINES = 2000
 const MAX_OUTPUT_CHARS = 20_000
 const MAX_WRITE_CHARS = 500_000
@@ -290,12 +296,13 @@ const RUN_COMMAND_TIMEOUT_MS = 60_000
 const runCommandTool: ToolDefinition = {
   name: 'run_command',
   description:
-    '在项目目录下执行一条 shell 命令（Windows 用 cmd，60 秒超时自动终止整个进程树），返回退出码与合并后的 stdout/stderr。用于运行脚本、测试、安装依赖、查看系统信息等。该操作在用户机器上真实执行，需要用户批准；非零退出码视为失败，输出里通常有报错信息。',
+    '在项目目录下执行一条 shell 命令（Windows 用 cmd），返回退出码与合并后的 stdout/stderr。用于运行脚本、测试、安装依赖、查看系统信息等。该操作在用户机器上真实执行，需要用户批准；非零退出码视为失败，输出里通常有报错信息。工作目录在多次调用间保持（cd 会记住）；run_in_background=true 时立即返回、进程持续运行（用 task_output 查询、task_stop 终止），适合 dev server / watch 等长驻命令。',
   inputSchema: {
     type: 'object',
     properties: {
       command: { type: 'string', description: '要执行的命令（shell 语法）' },
-      cwd: { type: 'string', description: '工作目录（项目内相对路径，默认项目根目录）' },
+      cwd: { type: 'string', description: '工作目录（项目内相对路径，默认上次所在目录）' },
+      run_in_background: { type: 'boolean', description: 'true = 后台运行：立即返回任务 id，输出用 task_output 查询' },
     },
     required: ['command'],
   },
@@ -305,8 +312,21 @@ const runCommandTool: ToolDefinition = {
   async execute(input, ctx) {
     const command = typeof input.command === 'string' ? input.command : ''
     if (!command.trim()) return { content: '缺少 command 参数', isError: true }
-    const cwd = safeResolve(ctx.projectPath, typeof input.cwd === 'string' ? input.cwd : '.')
 
+    // 工作目录：显式 cwd > 会话保持的上次目录 > 项目根（均限制在项目内）
+    const persisted = ctx.sessionId ? sessionCwd.get(ctx.sessionId) : undefined
+    const cwd = safeResolve(persisted ?? ctx.projectPath, typeof input.cwd === 'string' && input.cwd ? input.cwd : '.')
+
+    // 后台运行：启动即返回，输出累积在任务注册表里（无超时）
+    if (input.run_in_background === true) {
+      const id = `bash-${++bgSeq}`
+      startShellTask(id, command, cwd)
+      return {
+        content: `后台任务已启动（id: ${id}）\n命令: ${command}\n用 task_output 工具查询输出（任务无超时）；用 task_stop 终止。`,
+      }
+    }
+
+    // 前台：60 秒超时强杀；成功后检测 cd 更新会话保持的目录
     return new Promise((resolvePromise) => {
       const child = spawn(command, {
         cwd,
@@ -346,6 +366,18 @@ const runCommandTool: ToolDefinition = {
       })
       child.on('close', (code) => {
         clearTimeout(timer)
+        // cwd 保持：命令成功且以 cd 开头时，把会话工作目录更新为 cd 的目标
+        if (code === 0 && ctx.sessionId) {
+          const cd = command.match(/^\s*cd\s+"?([^"&|\n]+?)"?\s*(?:&&|$)/i)
+          if (cd) {
+            try {
+              const next = safeResolve(cwd, cd[1].trim())
+              sessionCwd.set(ctx.sessionId, next)
+            } catch {
+              // 越界目标忽略，保持原目录
+            }
+          }
+        }
         const notes = [
           timedOut ? '命令超时 60 秒，已强制终止进程树' : '',
           truncated ? `输出过长，已截断到 ${MAX_OUTPUT_CHARS} 字符` : '',
@@ -434,6 +466,47 @@ const askUserQuestionTool: ToolDefinition = {
   },
 }
 
+const taskOutputTool: ToolDefinition = {
+  name: 'task_output',
+  description: '查看后台任务的状态与已累积输出（run_command 以 run_in_background 启动的任务）。可反复调用轮询进度。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'string', description: '后台任务 id（run_command 后台启动时返回）' },
+    },
+    required: ['task_id'],
+  },
+  kind: 'read',
+  async execute(input) {
+    const id = typeof input.task_id === 'string' ? input.task_id : ''
+    const t = id ? getShellTask(id) : undefined
+    if (!t) return { content: `任务不存在或已被清理：${id}`, isError: true }
+    const tail = t.output.length > 8000 ? `…（前段已省略）\n${t.output.slice(-8000)}` : t.output
+    const state = t.status === 'running' ? '运行中' : t.status === 'killed' ? '已终止' : t.status === 'completed' ? '已完成' : '失败'
+    return {
+      content: `任务 ${t.id} 状态: ${state}${t.exitCode != null ? `（退出码 ${t.exitCode}）` : ''}\n命令: ${t.command}\n${t.truncated ? '（输出超长已截断）\n' : ''}${tail ? `\n${tail}` : '\n（暂无输出）'}`,
+    }
+  },
+}
+
+const taskStopTool: ToolDefinition = {
+  name: 'task_stop',
+  description: '终止一个后台任务（强杀整个进程树）。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      task_id: { type: 'string', description: '后台任务 id' },
+    },
+    required: ['task_id'],
+  },
+  kind: 'read',
+  async execute(input) {
+    const id = typeof input.task_id === 'string' ? input.task_id : ''
+    if (!stopShellTask(id)) return { content: `任务不存在：${id}`, isError: true }
+    return { content: `任务 ${id} 已终止` }
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
@@ -443,6 +516,8 @@ const registry = new Map<string, ToolDefinition>([
   [editFileTool.name, editFileTool],
   [multiEditTool.name, multiEditTool],
   [runCommandTool.name, runCommandTool],
+  [taskOutputTool.name, taskOutputTool],
+  [taskStopTool.name, taskStopTool],
   [todoWriteTool.name, todoWriteTool],
   [askUserQuestionTool.name, askUserQuestionTool],
 ])
@@ -469,6 +544,7 @@ export async function executeToolCall(
     signal?: AbortSignal
     onOutput?: (text: string) => void
     onTodos?: (todos: TodoItem[]) => void
+    sessionId?: string
     onAskUser?: (q: { question: string; options: string[] }) => Promise<string>
   } = {},
 ): Promise<ToolRunResult> {
@@ -525,6 +601,7 @@ export async function runToolUseBlock(
     signal?: AbortSignal
     onOutput?: (text: string) => void
     onTodos?: (todos: TodoItem[]) => void
+    sessionId?: string
     onAskUser?: (q: { question: string; options: string[] }) => Promise<string>
   } = {},
 ): Promise<ToolRunResult> {
