@@ -215,6 +215,21 @@ export interface FeatureEntry {
   hidden: boolean
 }
 
+/** 一台 MCP 服务器的配置（stdio 传输：command 为完整命令行，由主进程分词后直接 spawn） */
+export interface MCPServerConfig {
+  name: string
+  command: string
+  disabled?: boolean
+}
+
+/** 渲染进程可见的 MCP 服务器运行状态 */
+export interface McpServerStatus {
+  name: string
+  status: 'connected' | 'error'
+  error?: string
+  toolCount: number
+}
+
 /** 渲染进程可见的配置视图：apiKey 永远不出主进程 */
 export interface ConfigView {
   projects: ProjectInfo[]
@@ -238,6 +253,8 @@ export interface ConfigView {
   toolSwitches: Record<string, boolean>
   /** 权限规则（deny > ask > allow） */
   permissionRules: PermissionRules
+  /** MCP 服务器列表（其工具以 mcp__服务器__工具 并入工具池） */
+  mcpServers: MCPServerConfig[]
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */

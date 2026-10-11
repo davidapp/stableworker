@@ -11,6 +11,8 @@ import type {
   LLMConfig,
   LLMProfileView,
   LLMTestPayload,
+  MCPServerConfig,
+  McpServerStatus,
   ModelPricing,
   ProjectInfo,
   PermissionRules,
@@ -148,6 +150,15 @@ const api = {
   saveSkill: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:save', name, content),
   deleteSkill: (name: string): Promise<boolean> => ipcRenderer.invoke('skills:delete', name),
+
+  // ---- MCP 服务器 ----
+  getMcpAll: (): Promise<{ servers: MCPServerConfig[]; status: McpServerStatus[] }> =>
+    ipcRenderer.invoke('mcp:getAll'),
+  /** 保存服务器列表并按新配置 diff 连接，返回保存后的实时状态 */
+  saveMcpServers: (servers: MCPServerConfig[]): Promise<{ servers: MCPServerConfig[]; status: McpServerStatus[] }> =>
+    ipcRenderer.invoke('mcp:saveServers', servers),
+  /** 强制重连一台服务器（忽略现有连接），返回全部状态 */
+  reconnectMcp: (name: string): Promise<McpServerStatus[]> => ipcRenderer.invoke('mcp:reconnect', name),
   /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
   /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
   resolveSkill: (text: string): Promise<{ found: boolean; content?: string }> =>

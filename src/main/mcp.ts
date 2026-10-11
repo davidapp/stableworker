@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { ipcMain } from 'electron'
+import { loadConfig, saveConfig } from './config'
 import type { ToolDefinition } from './tools/index'
+import type { MCPServerConfig, McpServerStatus } from '../shared/types'
 
 /**
  * 最小 MCP（Model Context Protocol）客户端：stdio 传输，换行分隔 JSON-RPC 2.0。
@@ -7,12 +10,6 @@ import type { ToolDefinition } from './tools/index'
  *   initialize 握手 → notifications/initialized → tools/list → tools/call。
  * 每台服务器一个子进程；服务器崩溃标记 error，下次对话开始时自动重连。
  */
-
-export interface MCPServerConfig {
-  name: string
-  command: string
-  disabled?: boolean
-}
 
 export interface McpTool {
   name: string
@@ -150,7 +147,6 @@ export async function connectServer(name: string, command: string): Promise<void
   conn.child.on('error', (err: Error) => {
     conn.status = 'error'
     conn.error = err.message
-    for (const p of conn.pending.values()) p.reject(new Error())
     for (const p of conn.pending.values()) p.reject(new Error('MCP 服务器启动失败：' + err.message))
   })
   child.on('exit', () => {
@@ -226,13 +222,47 @@ export function getMcpToolDefs(): ToolDefinition[] {
   return defs
 }
 
-export function getMcpStatus(): { name: string; status: string; error?: string; toolCount: number }[] {
+export function getMcpStatus(): McpServerStatus[] {
   return [...connections.values()].map((c) => ({
     name: c.name,
     status: c.status,
     error: c.error,
     toolCount: c.tools.length,
   }))
+}
+
+/** 渲染进程可见的完整视图：配置 + 实时状态 */
+export interface McpAllResult {
+  servers: MCPServerConfig[]
+  status: McpServerStatus[]
+}
+
+/** 设置页的 IPC：读取 / 保存（保存即按新配置 diff 连接）/ 强制重连 */
+export function registerMcpHandlers(): void {
+  ipcMain.handle('mcp:getAll', async (): Promise<McpAllResult> => {
+    const cfg = await loadConfig()
+    return { servers: cfg.mcpServers ?? [], status: getMcpStatus() }
+  })
+
+  ipcMain.handle('mcp:saveServers', async (_e, servers: MCPServerConfig[]): Promise<McpAllResult> => {
+    const clean = (Array.isArray(servers) ? servers : [])
+      .map((s) => ({ name: String(s.name ?? '').trim(), command: String(s.command ?? '').trim(), disabled: s.disabled === true }))
+      .filter((s) => s.name && s.command)
+    const cfg = await loadConfig()
+    cfg.mcpServers = clean
+    await saveConfig(cfg)
+    await ensureMcpConnections(clean)
+    return { servers: clean, status: getMcpStatus() }
+  })
+
+  ipcMain.handle('mcp:reconnect', async (_e, name: string): Promise<McpServerStatus[]> => {
+    const cfg = await loadConfig()
+    const target = (cfg.mcpServers ?? []).find((s) => s.name === name)
+    if (target && !target.disabled) {
+      await connectServer(target.name, target.command).catch(() => {})
+    }
+    return getMcpStatus()
+  })
 }
 
 /** 进程退出前杀掉全部 MCP 服务器子进程 */

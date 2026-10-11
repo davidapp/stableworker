@@ -10,6 +10,7 @@ import { registerToolHandlers } from './tools'
 import { registerFileHistoryHandlers } from './fileHistory'
 import { registerContextHandlers } from './contextManage'
 import { registerSkillHandlers } from './skills'
+import { registerMcpHandlers, killAllMcpServers } from './mcp'
 import { setupUpdater } from './updater'
 import { openContextWindow, openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
@@ -78,6 +79,7 @@ app.whenReady().then(async () => {
   registerFileHistoryHandlers()
   registerContextHandlers()
   registerSkillHandlers()
+  registerMcpHandlers()
   setupUpdater()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createAppMenu(() => openInspectorWindow())
@@ -93,4 +95,9 @@ app.whenReady().then(async () => {
 // 非 macOS：关掉所有窗口就退出
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 退出前杀掉全部 MCP 服务器子进程，避免残留
+app.on('before-quit', () => {
+  killAllMcpServers()
 })

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
-import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, ModelPricing, PermissionRules, ProjectInfo } from '../shared/types'
+import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -68,6 +68,7 @@ interface StoredConfig {
   contextLimit?: number
   toolSwitches?: Record<string, boolean>
   permissionRules?: PermissionRules
+  mcpServers?: MCPServerConfig[]
 }
 
 let cache: StoredConfig | null = null
@@ -114,6 +115,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   }
   if (cache.toolSwitches === undefined) cache.toolSwitches = {}
   if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
+  if (cache.mcpServers === undefined) cache.mcpServers = []
   return cache
 }
 
@@ -173,6 +175,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     contextLimit: cfg.contextLimit ?? 0,
     toolSwitches: cfg.toolSwitches ?? {},
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
+    mcpServers: cfg.mcpServers ?? [],
   }
 }
 

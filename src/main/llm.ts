@@ -28,6 +28,7 @@ import {
 import { appendSummaryLine } from './sessions'
 import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
+import { ensureMcpConnections, getMcpToolDefs } from './mcp'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
@@ -515,9 +516,11 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
 
   const projectPath = cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
+  // MCP 服务器：对话开始时按配置 diff 连接（新连/断开已移除的），其工具并入下面的工具池
+  await ensureMcpConnections(cfg.mcpServers ?? [])
   // 工具开关：被禁用的工具不随请求发给模型（模型不知道 = 不会调用）
-  // 规划模式：所有需要批准的工具（写/改/命令）都从工具池移除，只保留只读研究
-  let tools = getToolDefinitions().filter((d) => cfg.toolSwitches?.[d.name] !== false)
+  // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
+  let tools = [...getToolDefinitions(), ...getMcpToolDefs()].filter((d) => cfg.toolSwitches?.[d.name] !== false)
   const approvalMode = cfg.approvalMode ?? 'confirm'
   if (approvalMode === 'plan') {
     tools = tools.filter((d) => !d.requiresApproval)
