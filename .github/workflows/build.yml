@@ -1,21 +1,31 @@
 name: Build
 
-# 三平台矩阵各跑一次 npm run dist：
-# - push 到 main 或打 v* 标签时自动触发
-# - 也可在 Actions 页面手动触发（workflow_dispatch）
-#
-# 产物去向：
-# - 每次构建的安装包（Windows NSIS / macOS DMG / Linux AppImage）上传为 Artifact
-# - push 到 main：自动更新滚动 Release「latest」（prerelease，始终是最新可用的构建）
-# - 打 v* 标签：创建正式 GitHub Release 并附上安装包
-
+# v* 标签构建正式发布候选；手动运行只保留 Artifact，不改动更新频道。
+# 发布前验证版本、元数据、完整文件哈希及 macOS 签名/公证。
 on:
   workflow_dispatch:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:version
+      - run: npm run typecheck
+      - run: npm test
+
   build:
+    needs: check
     strategy:
       fail-fast: false
       matrix:
@@ -23,19 +33,52 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-
       - run: npm ci
 
       - name: Build installers
-        run: npm run dist
+        shell: bash
         env:
-          # 未配置签名证书时跳过 macOS 签名探测，避免 CI 报错
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" && "$GITHUB_REF" == refs/tags/v* ]]; then
+            for key in CSC_LINK APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+              if [[ -z "${!key}" ]]; then
+                echo "::error::macOS release requires $key; see docs/releasing.md"
+                exit 1
+              fi
+            done
+            npm run dist -- --config.mac.forceCodeSigning=true --config.mac.notarize=true
+          elif [[ "$RUNNER_OS" == "Windows" && -n "$WIN_CSC_LINK" ]]; then
+            npm run dist -- --config.win.forceCodeSigning=true
+          else
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              echo "::warning::Windows certificate is not configured; installers will be unsigned."
+            fi
+            npm run dist
+          fi
+
+      - name: Verify update assets
+        run: npm run verify:release
+
+      - name: Verify macOS signature and notarization
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          for app in release/mac/StableWorker.app release/mac-arm64/StableWorker.app; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+            xcrun stapler validate "$app"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -44,37 +87,12 @@ jobs:
           path: |
             release/*.exe
             release/*.dmg
+            release/*.zip
             release/*.AppImage
             release/*.blockmap
-            release/*.yml
+            release/latest*.yml
           if-no-files-found: error
 
-  # 滚动 Release：main 的每次推送都覆盖更新「latest」，始终提供最新构建
-  release-latest:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Update rolling release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: latest
-          name: 最新构建（latest）
-          prerelease: true
-          files: artifacts/*
-          generate_release_notes: false
-          body: |
-            main 分支的自动构建，每次推送都会覆盖更新。
-            可能不如正式版稳定，追求稳定请使用 v* 正式标签的 Release。
-
-  # 正式发布：打 v* 标签触发
   release-tag:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
@@ -82,13 +100,29 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - uses: actions/download-artifact@v8
         with:
+          pattern: stableworker-*
           path: artifacts
           merge-multiple: true
-
-      - name: Create GitHub Release
+      - name: Verify merged release
+        run: npm run verify:release -- artifacts all
+      - name: Create release candidate
         uses: softprops/action-gh-release@v3
         with:
-          files: artifacts/*
+          draft: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*.exe
+            artifacts/*.dmg
+            artifacts/*.zip
+            artifacts/*.AppImage
+            artifacts/*.blockmap
+            artifacts/latest*.yml
           generate_release_notes: true
