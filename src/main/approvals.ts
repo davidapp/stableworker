@@ -21,7 +21,9 @@ interface PendingApproval {
   resolve: (outcome: ApprovalOutcome) => void
 }
 
-const pending = new Map<string, PendingApproval>()
+const pendingApprovals = new Map<string, PendingApproval>()
+/** 通用用户输入挂起（AskUserQuestion 等）：questionId → resolve */
+const pendingInputs = new Map<string, { resolve: (answer: string) => void; sessionId?: string }>()
 
 /** 发起批准请求：推送事件给渲染进程并挂起等待决定 */
 export function requestApproval(
@@ -36,11 +38,11 @@ export function requestApproval(
       sessionId,
       resolve: (outcome) => {
         // 防止超时/停止/用户响应竞争导致二次 resolve
-        if (!pending.delete(approvalId)) return
+        if (!pendingApprovals.delete(approvalId)) return
         resolve(outcome)
       },
     }
-    pending.set(approvalId, entry)
+    pendingApprovals.set(approvalId, entry)
     emit({ type: 'approval_request', sessionId, toolUseId, approvalId, suggestRule })
     const t = setTimeout(() => entry.resolve('timeout'), APPROVAL_TIMEOUT_MS)
     t.unref()
@@ -49,7 +51,7 @@ export function requestApproval(
 
 /** 渲染进程回传用户决定；返回 false 表示该批准已失效（超时/停止/未知 id） */
 export function respondApproval(approvalId: string, approved: boolean): { ok: boolean } {
-  const entry = pending.get(approvalId)
+  const entry = pendingApprovals.get(approvalId)
   if (!entry) return { ok: false }
   entry.resolve(approved ? 'approved' : 'rejected')
   return { ok: true }
@@ -57,11 +59,47 @@ export function respondApproval(approvalId: string, approved: boolean): { ok: bo
 
 /** 用户停止生成时，把该会话所有挂起的批准按"已停止"处理 */
 export function resolveSessionApprovals(sessionId: string): void {
-  for (const entry of [...pending.values()]) {
+  for (const entry of [...pendingApprovals.values()]) {
     if (entry.sessionId === sessionId) entry.resolve('stopped')
+  }
+}
+
+// ---------- 通用用户输入挂起（AskUserQuestion 工具） ----------
+
+/** 发出问题卡片并挂起等待用户作答；超时自动以"（超时未回答）"收尾 */
+export function requestUserInput(
+  sessionId: string,
+  toolUseId: string,
+  question: string,
+  options: string[],
+  emit: (event: ChatEvent) => void,
+): Promise<string> {
+  const questionId = randomUUID()
+  return new Promise((resolve) => {
+    pendingInputs.set(questionId, { resolve })
+    emit({ type: 'ask_user', sessionId, toolUseId, questionId, question, options })
+    const t = setTimeout(() => {
+      if (pendingInputs.delete(questionId)) resolve('（超时未回答）')
+    }, APPROVAL_TIMEOUT_MS)
+    t.unref()
+  })
+}
+
+export function respondUserInput(questionId: string, answer: string): boolean {
+  const e = pendingInputs.get(questionId)
+  if (!e) return false
+  e.resolve(answer)
+  return true
+}
+
+/** 用户停止时，挂起中的提问按"已停止"收尾 */
+export function resolveSessionUserInputs(sessionId: string): void {
+  for (const e of [...pendingInputs.values()]) {
+    if (e.sessionId === sessionId) e.resolve('（用户停止）')
   }
 }
 
 export function registerApprovalHandlers(): void {
   ipcMain.handle('approval:respond', (_e, approvalId: string, approved: boolean) => respondApproval(approvalId, approved))
+  ipcMain.handle('askUser:respond', (_e, questionId: string, answer: string) => respondUserInput(questionId, answer))
 }

@@ -24,6 +24,8 @@ export interface ToolContext {
   onOutput?: (text: string) => void
   /** 可选：更新当前会话的任务清单（todo_write 用） */
   onTodos?: (todos: TodoItem[]) => void
+  /** 可选：向用户提出结构化问题并等待回答（ask_user_question 用） */
+  onAskUser?: (q: { question: string; options: string[] }) => Promise<string>
 }
 
 export interface ToolOutput {
@@ -59,6 +61,9 @@ function truncate(text: string): string {
     ? text.slice(0, MAX_OUTPUT_CHARS) + `\n…（结果过长，已截断到 ${MAX_OUTPUT_CHARS} 字符）`
     : text
 }
+
+/** file-state 缓存：abs 路径 → 最近一次已知内容（read_file 记录，Edit 用于"先读后改"校验） */
+const fileStateCache = new Map<string, string>()
 
 const listFiles: ToolDefinition = {
   name: 'list_files',
@@ -103,6 +108,7 @@ const readFileTool: ToolDefinition = {
     if (!rel) return { content: '缺少 path 参数', isError: true }
     const file = safeResolve(ctx.projectPath, rel)
     const raw = await readFile(file, 'utf-8')
+    fileStateCache.set(file, raw) // 记录读取快照，供 edit_file 校验"先读后改"
     const allLines = raw.split('\n')
     const offset = Math.max(1, typeof input.offset === 'number' ? Math.floor(input.offset) : 1)
     const limit = Math.min(MAX_READ_LINES, typeof input.limit === 'number' ? Math.floor(input.limit) : 400)
@@ -172,6 +178,17 @@ const editFileTool: ToolDefinition = {
 
     const file = safeResolve(ctx.projectPath, rel)
     const raw = await readFile(file, 'utf-8')
+    // "先读后改"校验：Edit 必须基于最近一次 Read 的快照，防止基于猜测的盲改
+    const known = fileStateCache.get(file)
+    if (known == null) {
+      return { content: `编辑前必须先用 read_file 读取 ${rel}（防止基于猜测的盲改）`, isError: true }
+    }
+    if (known !== raw) {
+      return {
+        content: `${rel} 在上次读取后被修改过（外部编辑或命令改动）。请重新 read_file 获取最新内容后再编辑`,
+        isError: true,
+      }
+    }
     const count = raw.split(oldText).length - 1
     if (count === 0) {
       return {
@@ -188,8 +205,73 @@ const editFileTool: ToolDefinition = {
 
     const updated = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText)
     await writeFile(file, updated, 'utf-8')
+    fileStateCache.set(file, updated) // 编辑后同步快照，后续编辑无需重复读取
     const replaced = replaceAll ? count : 1
     return { content: `已编辑 ${rel}（替换 ${replaced} 处，-${oldText.length} +${newText.length} 字符）` }
+  },
+}
+
+const multiEditTool: ToolDefinition = {
+  name: 'multi_edit',
+  description:
+    '对项目内一个文本文件做多处精准替换（edits 数组按顺序逐个应用）。适合一次修改同一文件的多处内容；其余语义与 edit_file 相同。该操作会修改用户磁盘，写入前需要用户批准。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '项目内相对路径' },
+      edits: {
+        type: 'array',
+        description: '替换列表（按顺序应用）',
+        items: {
+          type: 'object',
+          properties: {
+            oldText: { type: 'string', description: '要被替换的原文' },
+            newText: { type: 'string', description: '替换后的新文本' },
+            replace_all: { type: 'boolean', description: '是否全部替换（默认唯一匹配）' },
+          },
+          required: ['oldText', 'newText'],
+        },
+      },
+    },
+    required: ['path', 'edits'],
+  },
+  requiresApproval: true,
+  kind: 'edit',
+  async execute(input, ctx) {
+    const rel = typeof input.path === 'string' ? input.path : ''
+    const edits = Array.isArray(input.edits) ? input.edits : null
+    if (!rel) return { content: '缺少 path 参数', isError: true }
+    if (!edits || edits.length === 0) return { content: '缺少 edits 参数', isError: true }
+
+    const file = safeResolve(ctx.projectPath, rel)
+    let raw = await readFile(file, 'utf-8')
+    const applied: string[] = []
+    for (let i = 0; i < edits.length; i++) {
+      const e = edits[i] as { oldText?: unknown; newText?: unknown; replace_all?: unknown }
+      const oldText = typeof e.oldText === 'string' ? e.oldText : ''
+      const newText = typeof e.newText === 'string' ? e.newText : ''
+      const replaceAll = e.replace_all === true
+      if (!oldText) {
+        return { content: `第 ${i + 1} 处替换缺少 oldText`, isError: true }
+      }
+      const count = raw.split(oldText).length - 1
+      if (count === 0) {
+        return {
+          content: `第 ${i + 1} 处替换的 oldText 在 ${rel} 中未找到（前面的替换可能改变了上下文）。当前已应用 ${i} 处、尚未写盘——请重新 read_file 后调整`,
+          isError: true,
+        }
+      }
+      if (count > 1 && !replaceAll) {
+        return {
+          content: `第 ${i + 1} 处替换的 oldText 出现了 ${count} 次。请扩大上下文或设置 replace_all`,
+          isError: true,
+        }
+      }
+      raw = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText)
+      applied.push(`#${i + 1}（-${oldText.length} +${newText.length} 字符）`)
+    }
+    await writeFile(file, raw, 'utf-8')
+    return { content: `已编辑 ${rel}（共 ${applied.length} 处：${applied.join('、')}）` }
   },
 }
 
@@ -322,6 +404,36 @@ const todoWriteTool: ToolDefinition = {
   },
 }
 
+const askUserQuestionTool: ToolDefinition = {
+  name: 'ask_user_question',
+  description:
+    '向用户提出结构化的选择题并等待回答（挂起直到用户作答）。用于需要用户决策的关键分歧点：方案选择、方向确认、信息补充。不要用于可以用工具自己查到答案的问题。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      question: { type: 'string', description: '问题内容（一句话）' },
+      options: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '2–4 个选项，每个选项一句话',
+      },
+    },
+    required: ['question', 'options'],
+  },
+  async execute(input, ctx) {
+    const question = typeof input.question === 'string' ? input.question : ''
+    const options = Array.isArray(input.options)
+      ? (input.options as unknown[]).filter((o): o is string => typeof o === 'string' && o.trim() !== '').slice(0, 4)
+      : []
+    if (!question || options.length < 2) {
+      return { content: '需要 question 与至少 2 个 options', isError: true }
+    }
+    if (!ctx.onAskUser) return { content: '当前界面不支持向用户提问', isError: true }
+    const answer = await ctx.onAskUser({ question, options })
+    return { content: `用户选择了：${answer}` }
+  },
+}
+
 const registry = new Map<string, ToolDefinition>([
   [listFiles.name, listFiles],
   [readFileTool.name, readFileTool],
@@ -329,8 +441,10 @@ const registry = new Map<string, ToolDefinition>([
   [globTool.name, globTool],
   [writeFileTool.name, writeFileTool],
   [editFileTool.name, editFileTool],
+  [multiEditTool.name, multiEditTool],
   [runCommandTool.name, runCommandTool],
   [todoWriteTool.name, todoWriteTool],
+  [askUserQuestionTool.name, askUserQuestionTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */
@@ -351,7 +465,12 @@ export async function executeToolCall(
   name: string,
   input: Record<string, unknown>,
   projectPath: string | null,
-  opts: { signal?: AbortSignal; onOutput?: (text: string) => void; onTodos?: (todos: TodoItem[]) => void } = {},
+  opts: {
+    signal?: AbortSignal
+    onOutput?: (text: string) => void
+    onTodos?: (todos: TodoItem[]) => void
+    onAskUser?: (q: { question: string; options: string[] }) => Promise<string>
+  } = {},
 ): Promise<ToolRunResult> {
   const started = Date.now()
   const tool = registry.get(name)
@@ -359,7 +478,12 @@ export async function executeToolCall(
   const run = async (): Promise<ToolOutput> => {
     if (!projectPath) return { content: '当前没有激活的项目目录，无法使用文件工具', isError: true }
     if (!tool) return { content: `未知工具：${name}`, isError: true }
-    return tool.execute(input, { projectPath, onOutput: opts.onOutput, onTodos: opts.onTodos })
+    return tool.execute(input, {
+      projectPath,
+      onOutput: opts.onOutput,
+      onTodos: opts.onTodos,
+      onAskUser: opts.onAskUser,
+    })
   }
 
   let out: ToolOutput
@@ -397,12 +521,18 @@ export async function executeToolCall(
 export async function runToolUseBlock(
   block: ToolUseBlock,
   projectPath: string | null,
-  opts: { signal?: AbortSignal; onOutput?: (text: string) => void; onTodos?: (todos: TodoItem[]) => void } = {},
+  opts: {
+    signal?: AbortSignal
+    onOutput?: (text: string) => void
+    onTodos?: (todos: TodoItem[]) => void
+    onAskUser?: (q: { question: string; options: string[] }) => Promise<string>
+  } = {},
 ): Promise<ToolRunResult> {
   return executeToolCall(block.name, block.input, projectPath, {
     signal: opts.signal,
     onOutput: opts.onOutput,
     onTodos: opts.onTodos,
+    onAskUser: opts.onAskUser,
   })
 }
 

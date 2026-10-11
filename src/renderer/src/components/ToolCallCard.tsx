@@ -28,6 +28,8 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
   const [answered, setAnswered] = useState(false)
   const [invalid, setInvalid] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [customAnswer, setCustomAnswer] = useState('')
 
   const respond = async (approved: boolean, alwaysAllow?: boolean): Promise<void> => {
     if (answered || !block.approvalId) return
@@ -37,6 +39,13 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
     }
     const res = await window.api.respondApproval(block.approvalId, approved)
     if (!res.ok) setInvalid(true)
+  }
+
+  // ask_user_question：把用户选择/输入作为工具结果回传
+  const answerQuestion = async (answerText: string): Promise<void> => {
+    if (answerText.trim() === '' || !block.userQuestion) return
+    setAnswer(answerText)
+    await window.api.respondAskUser(block.userQuestion.id, answerText)
   }
 
   const copyArgs = async (): Promise<void> => {
@@ -84,6 +93,36 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
           ) : null
         ) : null}
       </div>
+
+      {block.userQuestion && !answer ? (
+        <div className="tool-question">
+          <div className="tool-question-text">{block.userQuestion.question}</div>
+          <div className="ctx-btn-row">
+            {block.userQuestion.options.map((o) => (
+              <button key={o} className="btn" onClick={() => void answerQuestion(o)}>
+                {o}
+              </button>
+            ))}
+          </div>
+          <div className="ctx-btn-row">
+            <input
+              className="rename-input"
+              placeholder="或输入自定义回答…"
+              value={customAnswer}
+              onChange={(e) => setCustomAnswer(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && customAnswer.trim()) void answerQuestion(customAnswer.trim())
+              }}
+            />
+            <button className="btn" disabled={!customAnswer.trim()} onClick={() => void answerQuestion(customAnswer.trim())}>
+              提交
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {answer !== null ? (
+        <div className="tool-question-answered">已回答：{answer}（等待模型继续…）</div>
+      ) : null}
 
       {block.status === 'pending_approval' ? (
         <div className="tool-approve">

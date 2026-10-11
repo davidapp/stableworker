@@ -14,7 +14,7 @@ import {
   maskHeaders,
 } from './debug'
 import { isPeakTime } from './pricing'
-import { requestApproval, resolveSessionApprovals } from './approvals'
+import { requestApproval, resolveSessionApprovals, requestUserInput, resolveSessionUserInputs } from './approvals'
 import { snapshotFilesBeforeChange, sessionCheckpointsRoot } from './fileHistory'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
 import { trimHistory } from './contextTrim'
@@ -742,6 +742,10 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
             sessionTodos.set(req.sessionId, todos)
             emit({ type: 'todos', sessionId: req.sessionId, todos })
           },
+          onAskUser: async (q) => {
+            const answer = await requestUserInput(req.sessionId, tu.id, q.question, q.options, emit)
+            return answer
+          },
         })
         tu.status = result.isError ? 'error' : 'done'
         tu.result = result.content
@@ -774,6 +778,7 @@ export function registerChatHandlers(): void {
   ipcMain.handle('chat:stop', (_e, sessionId: string) => {
     aborters.get(sessionId)?.abort()
     resolveSessionApprovals(sessionId) // 挂起中的批准按"已停止"处理，循环随即收尾
+    resolveSessionUserInputs(sessionId) // 挂起中的提问按"已停止"收尾
     return true
   })
 

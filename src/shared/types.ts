@@ -115,6 +115,8 @@ export interface ToolUseBlock {
   rolledBack?: boolean
   /** 批准请求附带的建议规则（"允许并不再询问"用） */
   approvalSuggest?: string
+  /** ask_user_question 的问题卡片（等待用户作答时） */
+  userQuestion?: { id: string; question: string; options: string[] }
   durationMs?: number
 }
 
@@ -250,6 +252,14 @@ export type ChatEvent =
   | { type: 'tool_result'; sessionId: string; toolUseId: string; content: string; isError: boolean }
   | { type: 'approval_request'; sessionId: string; toolUseId: string; approvalId: string; suggestRule?: string }
   | { type: 'todos'; sessionId: string; todos: TodoItem[] }
+  | {
+      type: 'ask_user'
+      sessionId: string
+      toolUseId: string
+      questionId: string
+      question: string
+      options: string[]
+    }
   | { type: 'status'; sessionId: string; text: string }
   | {
       type: 'retry'

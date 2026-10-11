@@ -556,6 +556,19 @@ export function subscribeChatEvents(): () => void {
             : b,
         ),
       }))
+    } else if (event.type === 'ask_user') {
+      // ask_user_question 工具：把问题卡片挂到对应工具块上，等待用户作答
+      updateStreamingAssistant((m) => ({
+        ...m,
+        blocks: m.blocks.map((b) =>
+          b.type === 'tool_use' && b.id === event.toolUseId
+            ? {
+                ...b,
+                userQuestion: { id: event.questionId, question: event.question, options: event.options },
+              }
+            : b,
+        ),
+      }))
     } else if (event.type === 'done') {
       updateStreamingAssistant((m) => ({ ...m, streaming: false }))
       store.setState({ streaming: false, statusText: null })

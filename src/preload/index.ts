@@ -108,6 +108,9 @@ const api = {
   /** 回传用户对危险操作的批准决定；ok=false 表示该批准已失效（超时/停止） */
   respondApproval: (approvalId: string, approved: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('approval:respond', approvalId, approved),
+  /** 回传用户对 ask_user_question 的回答 */
+  respondAskUser: (questionId: string, answer: string): Promise<boolean> =>
+    ipcRenderer.invoke('askUser:respond', questionId, answer),
 
   /** 打开独立的 API 调试悬浮窗口 */
   openInspector: (): Promise<void> => ipcRenderer.invoke('inspector:open'),
