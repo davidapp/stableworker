@@ -49,12 +49,13 @@ process.stdin.on('data', (d) => {
       )
     } else if (msg.method === 'tools/call') {
       const a = (msg.params && msg.params.arguments) || {}
+      const extra = a.envKey ? ` env=${process.env[a.envKey] ?? ''}` : ''
       process.stdout.write(
         JSON.stringify({
           jsonrpc: '2.0',
           id: msg.id,
           result: {
-            content: [{ type: 'text', text: 'echo: ' + (a.text ?? '') }],
+            content: [{ type: 'text', text: 'echo: ' + (a.text ?? '') + extra }],
             isError: a.text === 'fail',
           },
         }) + '\n',

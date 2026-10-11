@@ -12,6 +12,8 @@ import type {
   LLMProfileView,
   LLMTestPayload,
   MCPServerConfig,
+  McpResourceContent,
+  McpResourceMeta,
   McpServerStatus,
   ModelPricing,
   ProjectInfo,
@@ -159,6 +161,12 @@ const api = {
     ipcRenderer.invoke('mcp:saveServers', servers),
   /** 强制重连一台服务器（忽略现有连接），返回全部状态 */
   reconnectMcp: (name: string): Promise<McpServerStatus[]> => ipcRenderer.invoke('mcp:reconnect', name),
+  /** 浏览一台已连接服务器的 resources 列表（第一页） */
+  listMcpResources: (name: string): Promise<{ ok: boolean; error?: string; resources: McpResourceMeta[] }> =>
+    ipcRenderer.invoke('mcp:listResources', name),
+  /** 读取一个资源（取文本部分） */
+  readMcpResource: (name: string, uri: string): Promise<{ ok: boolean; error?: string; contents: McpResourceContent[] }> =>
+    ipcRenderer.invoke('mcp:readResource', name, uri),
   /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
   /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
   resolveSkill: (text: string): Promise<{ found: boolean; content?: string }> =>

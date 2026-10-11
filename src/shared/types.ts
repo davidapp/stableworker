@@ -215,19 +215,41 @@ export interface FeatureEntry {
   hidden: boolean
 }
 
-/** 一台 MCP 服务器的配置（stdio 传输：command 为完整命令行，由主进程分词后直接 spawn） */
+/** 一台 MCP 服务器的配置（stdio 与 Streamable HTTP 两种传输，command / url 二选一） */
 export interface MCPServerConfig {
   name: string
-  command: string
+  /** stdio 启动命令行（主进程分词后直接 spawn，不经过 shell） */
+  command?: string
+  /** Streamable HTTP 服务器地址（POST JSON-RPC） */
+  url?: string
+  /** http 传输的附加请求头（如 Authorization） */
+  headers?: Record<string, string>
+  /** stdio 子进程的额外环境变量 */
+  env?: Record<string, string>
   disabled?: boolean
 }
 
 /** 渲染进程可见的 MCP 服务器运行状态 */
 export interface McpServerStatus {
   name: string
+  kind: 'stdio' | 'http'
   status: 'connected' | 'error'
   error?: string
   toolCount: number
+}
+
+/** MCP 资源元数据（resources/list） */
+export interface McpResourceMeta {
+  uri: string
+  name?: string
+  description?: string
+  mimeType?: string
+}
+
+/** MCP 资源读取结果（resources/read，取文本部分） */
+export interface McpResourceContent {
+  mimeType?: string
+  text: string
 }
 
 /** 渲染进程可见的配置视图：apiKey 永远不出主进程 */

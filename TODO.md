@@ -30,7 +30,7 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 ## 低优先级 / 想法
 
 - [x] **Plan mode**：批准模式新增 📋 规划模式（只读工具过滤 + 系统提示只读约束）
-- [x] **MCP 工具接入**：Model Context Protocol stdio 客户端（手写 JSON-RPC 2.0，initialize→tools/list→tools/call）；服务器在设置页管理，工具以 `mcp__服务器__工具` 并入工具池（默认需批准、无超时、规划模式排除）；http/SSE 传输与 resources/promotions 待做
+- [x] **MCP 工具接入**：Model Context Protocol 客户端（手写 JSON-RPC 2.0；stdio + Streamable HTTP 双传输，SSE 流式响应解析）；服务器在设置页管理（env 环境变量 / http 请求头编辑、资源浏览器、启停、重连），stdio 进程意外退出自动退避重连（5s/15s/30s→60s）；工具以 `mcp__服务器__工具` 并入工具池（默认需批准、无超时、规划模式排除）；未做：prompts、sampling、resources 分页与订阅
 - [ ] **子代理（Task 工具）**：上下文隔离的子任务 + 结果回传（复杂度高，依赖多轮循环成熟度）
 - [ ] **Web 工具**：WebFetch（拉 URL 转 markdown，注意 SSRF 防护）/ WebSearch（需接搜索 API）
 - [ ] **run_command 增强**：后台长驻进程（dev server 等）、ANSI 颜色渲染、命令白名单
