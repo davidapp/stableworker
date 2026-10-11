@@ -485,6 +485,13 @@ export function subscribeSessionsChanged(): () => void {
   })
 }
 
+/** 订阅"打开指定会话"请求（全局搜索窗口点击结果 → 主窗口跳转） */
+export function subscribeSessionsOpen(): () => void {
+  return window.api.onSessionsOpen(async ({ projectId, sessionId }) => {
+    await selectSession(projectId, sessionId)
+  })
+}
+
 async function reloadSessionsOf(projectId: string): Promise<void> {
   const sessions = await window.api.listSessions(projectId)
   store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject, [projectId]: sessions } }))

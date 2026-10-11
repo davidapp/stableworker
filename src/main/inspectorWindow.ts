@@ -9,6 +9,15 @@ import { join } from 'node:path'
 
 let inspectorWin: BrowserWindow | null = null
 let contextWin: BrowserWindow | null = null
+let searchWin: BrowserWindow | null = null
+
+function loadPage(win: BrowserWindow, page: string): void {
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
+    void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/?page=${page}`)
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'), { query: { page } })
+  }
+}
 
 export function openInspectorWindow(): void {
   if (inspectorWin && !inspectorWin.isDestroyed()) {
@@ -76,4 +85,31 @@ export function registerInspectorHandlers(): void {
   ipcMain.handle('inspector:open', () => openInspectorWindow())
   // 渲染进程请求打开上下文管理窗口
   ipcMain.handle('context:open', () => openContextWindow())
+  ipcMain.handle('search:open', () => openSearchWindow())
+}
+
+/** 全局搜索独立悬浮窗口（?page=search） */
+export function openSearchWindow(): void {
+  if (searchWin && !searchWin.isDestroyed()) {
+    searchWin.focus()
+    return
+  }
+  searchWin = new BrowserWindow({
+    width: 640,
+    height: 560,
+    title: '全局搜索',
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  searchWin.setAlwaysOnTop(true, 'floating')
+  searchWin.on('closed', () => {
+    searchWin = null
+  })
+  loadPage(searchWin, 'search')
 }

@@ -17,9 +17,11 @@ export default function App() {
     void actions.boot()
     const offChat = actions.subscribeChatEvents()
     const offSessions = actions.subscribeSessionsChanged()
+    const offOpen = actions.subscribeSessionsOpen()
     return () => {
       offChat()
       offSessions()
+      offOpen()
     }
   }, [])
 

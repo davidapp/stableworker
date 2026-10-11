@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { mkdir, readFile, readdir, rm, appendFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, appendFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { deleteSessionCheckpoints, deleteProjectCheckpoints } from './fileHistory'
 import { invalidateCompactCache, setCachedCompact } from './compact'
@@ -212,6 +212,13 @@ export async function listSessionMetas(projectId: string): Promise<SessionMeta[]
 }
 
 /** 外部修改会话后广播给所有窗口（主窗口据此重载，防止旧内存状态覆盖磁盘） */
+/** 打开会话事件：搜索窗口点击结果 → 主窗口跳转到该会话 */
+export function emitSessionsOpen(projectId: string, sessionId: string): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('sessions:open', { projectId, sessionId })
+  }
+}
+
 export function emitSessionsChanged(projectId: string, sessionId: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('sessions:changed', { projectId, sessionId })
@@ -219,7 +226,81 @@ export function emitSessionsChanged(projectId: string, sessionId: string): void 
 }
 
 export function registerSessionHandlers(): void {
-  // 外部（上下文管理窗口等）修改会话后广播：主窗口据此从磁盘重载，
+  // 全局搜索：跨项目扫描所有会话消息的文本（大小写不敏感子串），上限 50 条
+  ipcMain.handle(
+    'sessions:search',
+    async (_e, query: string): Promise<{ projectId: string; sessionId: string; sessionTitle: string; role: string; text: string; updatedAt: number }[]> => {
+      const q = query.trim().toLowerCase()
+      if (!q) return []
+      const cfg = await loadConfig()
+      const out: { projectId: string; sessionId: string; sessionTitle: string; role: string; text: string; updatedAt: number }[] = []
+      for (const p of cfg.projects ?? []) {
+        const metas = await listSessionMetas(p.id)
+        for (const meta of metas) {
+          if (out.length >= 50) break
+          const r = await loadSessionAny(p.id, meta.id)
+          if (!r.session) continue
+          for (const m of r.session.messages) {
+            const text = m.blocks
+              .filter((b) => b.type === 'text')
+              .map((b) => b.text)
+              .join('\n')
+            if (text.toLowerCase().includes(q)) {
+              const at = text.toLowerCase().indexOf(q)
+              out.push({
+                projectId: p.id,
+                sessionId: meta.id,
+                sessionTitle: meta.title,
+                role: m.role,
+                text: text.slice(Math.max(0, at - 40), at + 80),
+                updatedAt: meta.updatedAt,
+              })
+              if (out.length >= 50) break
+            }
+          }
+        }
+      }
+      return out
+    },
+  )
+
+  // 导出会话为 Markdown：保存对话框选择位置后写入
+  ipcMain.handle(
+    'sessions:exportMarkdown',
+    async (_e, projectId: string, sessionId: string): Promise<{ ok: boolean; path?: string; error?: string }> => {
+      try {
+        const r = await loadSessionAny(projectId, sessionId)
+        if (!r.session) return { ok: false, error: '会话不存在' }
+        const parts = [`# 会话导出：${r.session.title}`, '', `- 导出时间：${new Date().toLocaleString()}`, `- 消息数：${r.session.messages.length}`, '']
+        for (const m of r.session.messages) {
+          const role = m.role === 'user' ? '👤 用户' : '🤖 助手'
+          parts.push(`## ${role} · ${new Date(m.createdAt).toLocaleString()}`, '')
+          for (const b of m.blocks) {
+            if (b.type === 'text') parts.push(b.text, '')
+            else if (b.type === 'tool_use') parts.push(`> 🛠 调用工具 \`${b.name}\`：\`${JSON.stringify(b.input).slice(0, 300)}\``, '')
+          }
+        }
+        const { canceled, filePath } = await dialog.showSaveDialog({
+          title: '导出会话为 Markdown',
+          defaultPath: `${r.session.title.replace(/[\\/:*?"<>|]/g, '_')}.md`,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (canceled || !filePath) return { ok: false, error: '已取消' }
+        await writeFile(filePath, parts.join('\n'), 'utf-8')
+        return { ok: true, path: filePath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
+  // 打开会话（搜索窗口点击结果 → 主窗口跳转）
+  ipcMain.handle('sessions:open', async (_e, projectId: string, sessionId: string): Promise<boolean> => {
+    emitSessionsOpen(projectId, sessionId)
+    return true
+  })
+
+  // 外部（上下文管理窗口等）修改会话后广播：主窗口据此从磁盘重载，  // 外部（上下文管理窗口等）修改会话后广播：主窗口据此从磁盘重载，
   // 避免主窗口的旧内存状态在下一次保存时覆盖外部修改
   ipcMain.handle('sessions:current', async (): Promise<{ projectId: string; sessionId: string; title: string } | null> => {
     const cfg = await loadConfig()

@@ -98,6 +98,15 @@ const api = {
     ipcRenderer.on('sessions:changed', listener)
     return () => ipcRenderer.removeListener('sessions:changed', listener)
   },
+  /** 搜索窗口等请求主窗口打开指定会话 */
+  onSessionsOpen: (
+    callback: (e: { projectId: string; sessionId: string }) => void,
+  ): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { projectId: string; sessionId: string }): void =>
+      callback(payload)
+    ipcRenderer.on('sessions:open', listener)
+    return () => ipcRenderer.removeListener('sessions:open', listener)
+  },
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>
@@ -119,6 +128,8 @@ const api = {
   openInspector: (): Promise<void> => ipcRenderer.invoke('inspector:open'),
   /** 打开独立的上下文管理悬浮窗口 */
   openContextWindow: (): Promise<void> => ipcRenderer.invoke('context:open'),
+  /** 打开独立的全局搜索悬浮窗口 */
+  openSearchWindow: (): Promise<void> => ipcRenderer.invoke('search:open'),
   /** 上下文管理窗口：最近使用的会话（主窗口激活项目 + 最新一条） */
   getCurrentSession: (): Promise<{ projectId: string; sessionId: string; title: string } | null> =>
     ipcRenderer.invoke('sessions:current'),
@@ -144,6 +155,15 @@ const api = {
   /** 选段压缩：把 [startId..endId] 范围替换为一条摘要消息 */
   compressRange: (projectId: string, sessionId: string, startId: string, endId: string): Promise<ContextOpResult> =>
     ipcRenderer.invoke('sessions:compressRange', projectId, sessionId, startId, endId),
+  /** 全局搜索：跨项目扫描会话消息文本 */
+  searchAll: (query: string): Promise<{ projectId: string; sessionId: string; sessionTitle: string; role: string; text: string; updatedAt: number }[]> =>
+    ipcRenderer.invoke('sessions:search', query),
+  /** 导出会话为 Markdown */
+  exportMarkdown: (projectId: string, sessionId: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('sessions:exportMarkdown', projectId, sessionId),
+  /** 在主窗口打开指定会话 */
+  openSessionInMain: (projectId: string, sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:open', projectId, sessionId),
 
   /** 订阅批准请求（危险工具执行前触发） */
   onApprovalRequest: (callback: (event: { sessionId: string; toolUseId: string; approvalId: string }) => void): (() => void) => {

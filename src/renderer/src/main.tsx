@@ -16,6 +16,10 @@ if (page === 'inspector') {
   void import('./components/ContextWindow').then(({ ContextWindow }) => {
     createRoot(document.getElementById('root')!).render(<ContextWindow />)
   })
+} else if (page === 'search') {
+  void import('./components/SearchWindow').then(({ SearchWindow }) => {
+    createRoot(document.getElementById('root')!).render(<SearchWindow />)
+  })
 } else {
   void import('./App').then(({ default: App }) => {
     createRoot(document.getElementById('root')!).render(

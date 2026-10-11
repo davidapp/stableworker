@@ -206,6 +206,15 @@ export function ContextWindow() {
     })
   }
 
+  const exportMarkdown = async (): Promise<void> => {
+    if (!target) return
+    await run('导出会话', async () => {
+      const saved = await window.api.exportMarkdown(target.projectId, target.sessionId)
+      if (!saved.ok) throw new Error(saved.error ?? '导出失败')
+      setNotice('✅ 已导出到：' + saved.path)
+    })
+  }
+
   const queryBalance = async (): Promise<void> => {
     await run('查询余额', async () => {
       setBalance(await window.api.queryBalance())
@@ -312,6 +321,9 @@ export function ContextWindow() {
                 <div className="spacer" />
                 <button className="btn" disabled={messages.length === 0} onClick={compactAll}>
                   ⚡ 压缩全部对话
+                </button>
+                <button className="btn" disabled={messages.length === 0} title="导出会话为 Markdown 文件" onClick={() => void exportMarkdown()}>
+                  📄 导出
                 </button>
                 <button className="btn" disabled={messages.length === 0} onClick={clearAll}>
                   🧹 清空上下文
