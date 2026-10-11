@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { ipcMain } from 'electron'
 import { safeResolve } from './paths'
 import { startShellTask, getShellTask, stopShellTask } from './shellTasks'
+import { smartDecode } from './smartDecode'
 import { loadSkillContent, listSkillNames } from '../skills'
 import { grepTool, globTool } from './search'
 import type { TodoItem, ToolUseBlock } from '../../shared/types'
@@ -335,19 +336,21 @@ const runCommandTool: ToolDefinition = {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       })
-      let out = ''
+      const chunks: Buffer[] = []
+      let totalLen = 0
       let truncated = false
       const append = (data: Buffer): void => {
-        const text = data.toString('utf-8')
-        // 实时推给聊天卡片（同样有总量上限，防止海量输出刷爆 IPC）
-        if (ctx.onOutput && out.length < MAX_OUTPUT_CHARS) ctx.onOutput(text)
-        if (out.length >= MAX_OUTPUT_CHARS) {
+        // 实时推给聊天卡片（UTF-8 快速解码；最终结果在 close 时做智能解码纠偏）
+        if (ctx.onOutput && totalLen < MAX_OUTPUT_CHARS) ctx.onOutput(smartDecode(data))
+        if (totalLen >= MAX_OUTPUT_CHARS) {
           truncated = true
           return // 继续排空流让进程正常结束，只是不再记录
         }
-        out += text
-        if (out.length > MAX_OUTPUT_CHARS) {
-          out = out.slice(0, MAX_OUTPUT_CHARS)
+        chunks.push(data)
+        totalLen += data.length
+        if (totalLen > MAX_OUTPUT_CHARS) {
+          const over = totalLen - MAX_OUTPUT_CHARS
+          chunks[chunks.length - 1] = chunks[chunks.length - 1].subarray(0, chunks[chunks.length - 1].length - over)
           truncated = true
         }
       }
@@ -383,8 +386,9 @@ const runCommandTool: ToolDefinition = {
           timedOut ? '命令超时 60 秒，已强制终止进程树' : '',
           truncated ? `输出过长，已截断到 ${MAX_OUTPUT_CHARS} 字符` : '',
         ].filter(Boolean)
+        const decoded = smartDecode(Buffer.concat(chunks)).slice(0, MAX_OUTPUT_CHARS + 1000)
         resolvePromise({
-          content: truncate(`退出码: ${code ?? 'N/A'}\n${out}${notes.length ? `\n${notes.join('；')}` : ''}`),
+          content: truncate(`退出码: ${code ?? 'N/A'}\n${decoded}${notes.length ? `\n${notes.join('；')}` : ''}`),
           isError: timedOut || (code !== 0 && code !== null),
         })
       })

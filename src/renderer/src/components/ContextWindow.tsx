@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
 import type { BalanceResult, ChatMessage, ContextInfo } from '../../../shared/types'
 import { copyText } from '../clipboard'
 
@@ -350,6 +353,14 @@ export function ContextWindow() {
                   setDirty(true)
                 }}
               />
+              <div className="ctx-md-preview">
+                <div className="ctx-title-row">
+                  <span>渲染预览</span>
+                </div>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                  {editText}
+                </ReactMarkdown>
+              </div>
               <div className="ctx-btn-row">
                 <button className="btn btn-primary" disabled={!dirty} onClick={saveEdit}>
                   保存修改
