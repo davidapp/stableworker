@@ -35,7 +35,9 @@
 
 macOS 在 GitHub Actions Secrets 配置 `MAC_CSC_LINK`（Developer ID Application 的 .p12，推荐 base64）、
 `MAC_CSC_KEY_PASSWORD`（证书密码，允许空密码）、`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 `APPLE_TEAM_ID`。
-正式标签缺少证书或公证身份时明确失败，不再静默发布未签名的 macOS 包。
+正式标签缺少证书或公证身份时不再发布未签名的 macOS 包（v0.9.1 起）：macOS 平台**整体跳过**
+（构建日志 warning + Release 说明注明"macOS 本版跳过"），Windows/Linux 照常发布——
+门禁从"阻塞全部平台"改为"跳过缺失平台"，未签名 macOS 包依然一律不出。
 本次未创建证书或配置 Secrets，签名与公证路径尚需在有凭据的 macOS 运行器验证。
 
 Windows 可配置 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`；有证书时强制签名成功，
