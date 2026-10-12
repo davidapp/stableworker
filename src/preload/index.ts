@@ -205,8 +205,11 @@ const api = {
   },
 
   // ---- API 调试（学习用） ----
-  listDebugExchanges: (): Promise<DebugListItem[]> => ipcRenderer.invoke('debug:list'),
+  listDebugExchanges: (limit?: number): Promise<DebugListItem[]> => ipcRenderer.invoke('debug:list', limit),
   getDebugExchange: (id: string): Promise<DebugDetail | null> => ipcRenderer.invoke('debug:get', id),
+  /** 导出单条记录为格式化 JSON（保存对话框） */
+  exportDebug: (id: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('debug:export', id),
   clearDebugLog: (): Promise<boolean> => ipcRenderer.invoke('debug:clear'),
   /** 有新的 API 交换数据时触发（面板据此实时刷新） */
   onDebugUpdated: (callback: () => void): (() => void) => {

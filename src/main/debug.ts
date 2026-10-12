@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -374,10 +374,15 @@ function toDetail(ex: Exchange): DebugDetail {
 // ---------- IPC ----------
 
 export function registerDebugHandlers(): void {
-  // 列表只展示最近 10 次调用（更早的记录仍在磁盘上，可按 id 查详情）
-  ipcMain.handle('debug:list', (): DebugListItem[] =>
-    [...recent.map(toListItem), ...olderMeta].slice(0, 10),
-  )
+  // 列表默认最近 10 条，可传 limit 加载更多（"加载更多"每次 +25，上限 500）；
+  // 更早的记录仍在磁盘上，可按 id 查详情
+  ipcMain.handle('debug:list', (_e, limit?: number): DebugListItem[] => {
+    const n =
+      typeof limit === 'number' && Number.isFinite(limit)
+        ? Math.min(500, Math.max(1, Math.round(limit)))
+        : 10
+    return [...recent.map(toListItem), ...olderMeta].slice(0, n)
+  })
 
   ipcMain.handle('debug:get', async (_e, id: string): Promise<DebugDetail | null> => {
     const inMemory = recent.find((x) => x.id === id)
@@ -389,6 +394,38 @@ export function registerDebugHandlers(): void {
       return toDetail(JSON.parse(await readFile(join(logDir(), file), 'utf-8')) as Exchange)
     } catch {
       return null
+    }
+  })
+
+  // 导出单条记录为格式化 JSON（含脱敏后的完整请求/响应）
+  ipcMain.handle('debug:export', async (_e, id: string): Promise<{ ok: boolean; path?: string; error?: string }> => {
+    const inMemory = recent.find((x) => x.id === id)
+    let ex: Exchange | null = inMemory ?? null
+    if (!ex) {
+      const file = fileNames.get(id)
+      if (file) {
+        try {
+          ex = JSON.parse(await readFile(join(logDir(), file), 'utf-8')) as Exchange
+        } catch {
+          ex = null
+        }
+      }
+    }
+    if (!ex) return { ok: false, error: '记录不存在或已损坏' }
+    const stamp = new Date(ex.startedAt)
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const name = `api-${(ex.model || 'unknown').replace(/[^\w.-]/g, '_')}-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.json`
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: '导出 API 调试记录',
+      defaultPath: join(app.getPath('documents'), name),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (canceled || !filePath) return { ok: false }
+    try {
+      await writeFile(filePath, JSON.stringify(toDetail(ex), null, 2), 'utf-8')
+      return { ok: true, path: filePath }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
 
