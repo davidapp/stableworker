@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../store'
+import { Icon } from '../Icon'
 import * as actions from '../../actions'
 
 interface ToolMeta {
@@ -48,17 +49,18 @@ export function ToolSwitchesPage() {
 
       {tools.map((t) => (
         <div className="features-row" key={t.name}>
-          <label className="features-text">
+          <div className="features-text">
             <span className="features-label">
               <code className="tool-switch-name">{t.name}</code>
               {t.requiresApproval ? <span className="badge">需批准</span> : null}
               {t.kind ? <span className="badge">{KIND_LABEL[t.kind] ?? t.kind}</span> : null}
             </span>
             <small>{t.description}</small>
-          </label>
+          </div>
           <label className="features-toggle">
             <input
               type="checkbox"
+              aria-label={`启用 ${t.name}`}
               checked={isEnabled(t.name)}
               onChange={(e) => void toggle(t.name, e.target.checked)}
             />
@@ -69,7 +71,7 @@ export function ToolSwitchesPage() {
 
       <div className="settings-page-actions">
         <div className="spacer" />
-        {saved ? <span className="saved-hint">✅ 已保存，下一轮对话生效</span> : null}
+        {saved ? <span className="saved-hint" role="status"><Icon name="check" size={14} />已保存，下一轮对话生效</span> : null}
       </div>
     </div>
   )

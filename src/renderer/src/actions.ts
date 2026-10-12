@@ -1,4 +1,5 @@
 import { store } from './store'
+import { sameModelProfile, selectContextExchange } from '../../shared/contextUsage'
 import type {
   ApprovalMode,
   ChatEvent,
@@ -35,6 +36,7 @@ function applyConfig(cfg: ConfigView): void {
     features: cfg.features,
     sidebarWidth: cfg.sidebarWidth,
     contextLimit: cfg.contextLimit,
+    contextInfo: cfg.contextInfo ?? null,
     toolSwitches: cfg.toolSwitches,
     permissionRules: cfg.permissionRules,
     expandedProjects: cfg.sidebarExpanded ?? {},
@@ -60,6 +62,7 @@ export async function boot(): Promise<void> {
     if (first) await loadSessionIntoView(ap, first.id)
   }
   store.setState({ booted: true })
+  if (cfg.activeLlmId) void refreshModelContext(cfg.activeLlmId, false)
 }
 
 /** 拉取所有项目的会话列表（项目数量少，一次全量刷新最简单） */
@@ -217,6 +220,8 @@ export async function saveProfile(profile: LLMConfig & { id?: string; apiKey?: s
   const cfg = await window.api.saveProfile(profile)
   applyConfig(cfg)
   closeSettings()
+  const id = profile.id ?? cfg.activeLlmId
+  if (id) void refreshModelContext(id, false)
 }
 
 export async function deleteProfile(id: string): Promise<void> {
@@ -227,6 +232,24 @@ export async function deleteProfile(id: string): Promise<void> {
 export async function setActiveLlm(id: string): Promise<void> {
   const cfg = await window.api.setActiveLlm(id)
   applyConfig(cfg)
+  void refreshModelContext(id, false)
+}
+
+export async function refreshModelContext(id?: string, force = true): Promise<{ ok: boolean; message: string }> {
+  try {
+    const result = await window.api.refreshModelContext(id, force)
+    // Apply only model metadata; an in-flight refresh must not overwrite project navigation or drafts.
+    const current = store.getState()
+    const profiles = current.llmProfiles.map((p) => {
+      const received = result.config.llmProfiles.find((m) => m.id === p.id && sameModelProfile(p, m))
+      return received ? { ...p, contextInfo: received.contextInfo ?? null } : p
+    })
+    const active = profiles.find((p) => p.id === current.activeLlmId)
+    store.setState({ llmProfiles: profiles, contextInfo: active?.contextInfo ?? null, contextLimit: active?.contextInfo?.contextWindow ?? 0 })
+    return { ok: result.ok, message: result.message }
+  } catch {
+    return { ok: false, message: '模型容量刷新失败，保留当前已验证的容量' }
+  }
 }
 
 export async function setApprovalMode(mode: ApprovalMode): Promise<void> {
@@ -456,7 +479,10 @@ function updateStreamingAssistant(fn: (m: ChatMessage) => ChatMessage): void {
 }
 
 function markStreamingError(message: string): void {
-  updateStreamingAssistant((m) => ({ ...m, streaming: false, error: message }))
+  updateStreamingAssistant((m) => ({ ...m, streaming: false, error: message,
+    blocks: m.blocks.map((b) => b.type === 'tool_use' && (b.status === 'running' || b.status === 'pending_approval')
+      ? { ...b, status: 'error' as const, result: b.result ?? `执行已结束：${message}` } : b),
+  }))
   store.setState({ streaming: false })
   void persistCurrentSession()
 }
@@ -526,7 +552,7 @@ async function maybeAutoCompact(): Promise<void> {
   // compactNow 在主进程读磁盘上的会话文件，先确保本轮回复已落盘
   await persistCurrentSession()
   const list = await window.api.listDebugExchanges()
-  const latest = list.find((i) => i.kind === 'chat' && i.inputTokens != null)
+  const latest = selectContextExchange(list, s.activeSessionId, s.llmProfiles.find((p) => p.id === s.activeLlmId))
   const tokens = latest?.inputTokens
   if (!tokens || tokens < s.contextLimit * AUTO_COMPACT_RATIO) return
 

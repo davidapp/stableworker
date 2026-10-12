@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
 import { registerConfigHandlers } from './config'
 import { registerProjectHandlers } from './projects'
@@ -29,6 +29,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     title: 'StableWorker',
+    backgroundColor: '#161618',
     autoHideMenuBar: true, // 不显示菜单栏（按 Alt 可临时呼出，快捷键仍有效）
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -68,6 +69,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  nativeTheme.themeSource = 'dark'
   registerConfigHandlers()
   registerProjectHandlers()
   registerSessionHandlers()

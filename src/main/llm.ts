@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import type { Dispatcher } from 'undici'
 import { loadConfig, decryptApiKey } from './config'
+import { resolveModelContext } from './modelContexts'
 import {
   beginExchange,
   recordStatus,
@@ -69,7 +70,7 @@ const SYSTEM_PROMPT_BASE = [
   '汇报结果前先核对：只有看到工具返回成功结果，才可以说文件已写入。',
 ].join('\n')
 const MAX_TOKENS = 8192
-const MAX_TOOL_ROUNDS = 8
+const MAX_TOOL_ROUNDS = 50
 
 /** 任务清单缓存：会话 id → 当前任务清单（todo_write 工具维护，进程内） */
 const sessionTodos = new Map<string, TodoItem[]>()
@@ -572,6 +573,8 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
     }
   }
   const result = await runToolUseBlock(tu, ctx.projectPath, {
+    definition: def,
+    sessionId: ctx.sessionId,
     signal: ctx.signal,
     onOutput: (text) => ctx.emit({ type: 'tool_output', sessionId: ctx.sessionId, toolUseId: tu.id, text }),
     onTodos: ctx.onTodos,
@@ -664,6 +667,9 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   ): Promise<{ blocks: MessageBlock[] }> => {
     const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(messages), roundTools, true, systemPrompt)
     const exchange = beginExchange({
+      sessionId: req.sessionId,
+      profileId: llm.id,
+      scope: 'subagent',
       kind: 'chat',
       round: ++subRound,
       llm,
@@ -724,7 +730,8 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   // 发送前裁剪：估算超过上下文上限的 70%（预留输出与估算误差）时，
   // 从最旧的整组开始丢弃。只影响请求体；会话文件与界面历史保持完整。
   const conversation: HistoryMessage[] = req.messages.map((m) => ({ role: m.role, blocks: m.blocks }))
-  const historyBudget = (cfg.contextLimit ?? 0) > 0 ? Math.floor((cfg.contextLimit ?? 0) * 0.7) : Number.POSITIVE_INFINITY
+  const contextWindow = resolveModelContext(llm)?.contextWindow ?? 0
+  const historyBudget = contextWindow > 0 ? Math.floor(contextWindow * 0.7) : Number.POSITIVE_INFINITY
   const trim = trimHistory(conversation, historyBudget)
   const working = trim.kept
 
@@ -763,9 +770,12 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
 
   // 单轮请求：构建请求 → 流式读取 → 落调试记录 → 返回本轮 blocks。
   // 失败时（含中途断流）endExchange 后抛出，交给 withRetry 决定是否整轮重试。
-  const attemptRound = async (round: number): Promise<{ blocks: MessageBlock[]; reasoning: string }> => {
-      const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(requestMessages), tools, true, systemText)
+  const attemptRound = async (round: number, roundTools = tools): Promise<{ blocks: MessageBlock[]; reasoning: string }> => {
+    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(requestMessages), roundTools, true, systemText)
     const exchange = beginExchange({
+      sessionId: req.sessionId,
+      profileId: llm.id,
+      scope: 'main',
       kind: 'chat',
       round,
       llm,
@@ -836,16 +846,35 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
     }
   }
 
+  // 结束或异常时必须给已显示的工具卡发送终态，避免遗留永久“运行中”。
+  let pendingTools: ToolUseBlock[] = []
+  const failPendingTools = (message: string): void => {
+    for (const tu of pendingTools) {
+      if (tu.status === 'done' || tu.status === 'error') continue
+      tu.status = 'error'
+      tu.result = message
+      emit({ type: 'tool_result', sessionId: req.sessionId, toolUseId: tu.id, content: message, isError: true })
+    }
+  }
+
   try {
     let round = 0
     while (true) {
       round++
+      const finalRound = round > MAX_TOOL_ROUNDS
+      if (finalRound) {
+        emit({ type: 'status', sessionId: req.sessionId, text: `已完成 ${MAX_TOOL_ROUNDS} 轮工具调用，正在汇总当前进展…` })
+        requestMessages.push({
+          role: 'user',
+          blocks: [{ type: 'text', text: '（系统提示：已达本次工具轮次上限。请基于已有工具结果汇总已完成的工作、未完成的工作及下一步，不要再调用工具，也不要将未完成的任务描述为已完成。用户可继续发送消息接续任务。）' }],
+        })
+      }
       // 请求韧性：网络错误 / 429 / 5xx / 529 指数退避重试；4xx 与用户中止不重试。
       // 每次重试前发 retry 事件，渲染端清掉已收到的半截回复并显示重试进度。
       const { blocks: assistantBlocks } = await withRetry({
         maxRetries: 4,
         signal: controller.signal,
-        fn: () => attemptRound(round),
+        fn: () => attemptRound(round, finalRound ? [] : tools),
         shouldRetry: (err) =>
           !isAbortError(err) &&
           (err instanceof HttpError ? RETRYABLE_STATUS.has(err.status) : true),
@@ -861,17 +890,18 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         },
       })
 
-      conversation.push({ role: 'assistant', blocks: assistantBlocks })
-      working.push({ role: 'assistant', blocks: assistantBlocks })
+      // working 与 requestMessages 通常是同一数组；只追加一次，避免每轮工具历史翻倍。
       requestMessages.push({ role: 'assistant', blocks: assistantBlocks })
 
       const toolUses = assistantBlocks.filter((b): b is ToolUseBlock => b.type === 'tool_use')
+      pendingTools = toolUses
       if (toolUses.length === 0) {
         emit({ type: 'done', sessionId: req.sessionId })
         return { ok: true, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
-      if (round >= MAX_TOOL_ROUNDS) {
-        const message = `已达单次回复最大工具轮次（${MAX_TOOL_ROUNDS}），请继续对话`
+      if (finalRound) {
+        const message = `已达单次回复最大工具轮次（${MAX_TOOL_ROUNDS}），本轮未执行额外工具，请继续对话`
+        failPendingTools(message)
         emit({ type: 'error', sessionId: req.sessionId, message })
         return { ok: false, error: message, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
@@ -893,7 +923,10 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
       }
       // 只读工具并行执行（对齐 Claude Code）；含写操作/需批准的轮次保持串行
       if (toolUses.length > 1 && toolUses.every((tu) => isParallelSafe(tu, tools))) {
-        await Promise.all(toolUses.map((tu) => executeToolWithGates(tu, execCtx)))
+        // 等全部调用收尾后再传播异常，防止仍在运行的调用在会话结束后发出结果。
+        const results = await Promise.allSettled(toolUses.map((tu) => executeToolWithGates(tu, execCtx)))
+        const failed = results.find((result) => result.status === 'rejected')
+        if (failed?.status === 'rejected') throw failed.reason
       } else {
         for (const tu of toolUses) {
           await executeToolWithGates(tu, execCtx)
@@ -902,6 +935,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    failPendingTools(controller.signal.aborted ? '用户停止了生成，操作中断' : `任务中断：${message}`)
     if (controller.signal.aborted) {
       emit({ type: 'done', sessionId: req.sessionId }) // 用户手动停止，按正常结束处理
       return { ok: true }

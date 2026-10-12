@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { MCPServerConfig, McpResourceContent, McpResourceMeta, McpServerStatus } from '../../../../shared/types'
+import { Icon } from '../Icon'
+import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
 
 interface Draft {
   type: 'stdio' | 'http'
@@ -50,7 +52,7 @@ export function McpPage() {
   const [status, setStatus] = useState<McpServerStatus[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState('')
+  const [notice, setNotice] = useState<SettingsNoticeValue | null>(null)
   const [panel, setPanel] = useState<ResourcePanel | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -66,25 +68,27 @@ export function McpPage() {
   const statusOf = (name: string): McpServerStatus | undefined => status.find((s) => s.name === name)
 
   const statusBadge = (s: MCPServerConfig): string => {
-    if (s.disabled) return '⏸ 已停用'
+    if (s.disabled) return '已停用'
     const st = statusOf(s.name)
-    if (!st) return '· 未连接'
+    if (!st) return '未连接'
     const kind = st.kind === 'http' ? 'HTTP' : 'stdio'
-    if (st.status === 'connected') return `✅ 已连接（${kind}）· ${st.toolCount} 个工具`
-    return `❌ ${st.error ?? '连接失败'}`
+    if (st.status === 'connected') return `已连接（${kind}）· ${st.toolCount} 个工具`
+    return st.error ?? '连接失败'
   }
 
   const endpointOf = (s: MCPServerConfig): string => s.url ?? s.command ?? ''
 
   const persist = async (list: MCPServerConfig[]): Promise<void> => {
     setBusy(true)
-    setNotice('')
+    setNotice(null)
     try {
       const r = await window.api.saveMcpServers(list)
       setServers(r.servers)
       setStatus(r.status)
       const failed = r.status.filter((s) => s.status === 'error')
-      setNotice(failed.length > 0 ? `⚠ 已保存，但 ${failed.map((f) => f.name).join('、')} 连接失败` : '✅ 已保存并连接')
+      setNotice(failed.length > 0
+        ? { tone: 'warning', text: `已保存，但 ${failed.map((f) => f.name).join('、')} 连接失败` }
+        : { tone: 'success', text: '已保存并连接' })
     } finally {
       setBusy(false)
     }
@@ -94,7 +98,7 @@ export function McpPage() {
     if (!draft) return
     const name = draft.name.trim()
     if (!name) {
-      setNotice('❌ 名称不能为空')
+      setNotice({ tone: 'error', text: '名称不能为空' })
       return
     }
     const cfg: MCPServerConfig = { name, disabled: false }
@@ -103,7 +107,7 @@ export function McpPage() {
       const headers = parseKV(draft.headersText)
       if (headers) cfg.headers = headers
       if (!cfg.url) {
-        setNotice('❌ 服务器地址（URL）不能为空')
+        setNotice({ tone: 'error', text: '服务器地址（URL）不能为空' })
         return
       }
     } else {
@@ -111,12 +115,12 @@ export function McpPage() {
       const env = parseKV(draft.envText)
       if (env) cfg.env = env
       if (!cfg.command) {
-        setNotice('❌ 启动命令不能为空')
+        setNotice({ tone: 'error', text: '启动命令不能为空' })
         return
       }
     }
     if (servers.some((s) => s.name === name && s.name !== draft.originalName)) {
-      setNotice('❌ 已存在同名服务器')
+      setNotice({ tone: 'error', text: '已存在同名服务器' })
       return
     }
     const list = draft.isNew
@@ -138,7 +142,7 @@ export function McpPage() {
 
   const reconnect = async (name: string): Promise<void> => {
     setBusy(true)
-    setNotice('')
+    setNotice(null)
     try {
       setStatus(await window.api.reconnectMcp(name))
     } finally {
@@ -192,10 +196,11 @@ export function McpPage() {
         <>
           <div className="field">
             <span>传输方式</span>
-            <div>
-              <label style={{ marginRight: 16 }}>
+            <div className="settings-radio-group">
+              <label>
                 <input
                   type="radio"
+                  name="mcp-transport"
                   checked={draft.type === 'stdio'}
                   onChange={() => setDraft({ ...draft, type: 'stdio' })}
                 />{' '}
@@ -204,6 +209,7 @@ export function McpPage() {
               <label>
                 <input
                   type="radio"
+                  name="mcp-transport"
                   checked={draft.type === 'http'}
                   onChange={() => setDraft({ ...draft, type: 'http' })}
                 />{' '}
@@ -214,6 +220,7 @@ export function McpPage() {
           <div className="field">
             <span>服务器名（用于工具命名 mcp__名称__工具）</span>
             <input
+              aria-label="服务器名"
               value={draft.name}
               placeholder="例如 filesystem"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -224,6 +231,7 @@ export function McpPage() {
               <div className="field">
                 <span>启动命令（完整命令行，支持双引号包裹含空格的参数）</span>
                 <input
+                  aria-label="启动命令"
                   value={draft.command}
                   placeholder={EXAMPLE_STDIO}
                   onChange={(e) => setDraft({ ...draft, command: e.target.value })}
@@ -233,6 +241,7 @@ export function McpPage() {
                 <span>环境变量（可选，每行 KEY=VALUE）</span>
                 <textarea
                   className="holidays-input"
+                  aria-label="环境变量"
                   rows={3}
                   value={draft.envText}
                   placeholder={'API_KEY=sk-xxx\nDEBUG=1'}
@@ -245,6 +254,7 @@ export function McpPage() {
               <div className="field">
                 <span>服务器地址（Streamable HTTP 端点）</span>
                 <input
+                  aria-label="服务器地址"
                   value={draft.url}
                   placeholder={EXAMPLE_HTTP}
                   onChange={(e) => setDraft({ ...draft, url: e.target.value })}
@@ -254,6 +264,7 @@ export function McpPage() {
                 <span>请求头（可选，每行 KEY=VALUE，如 Authorization）</span>
                 <textarea
                   className="holidays-input"
+                  aria-label="请求头"
                   rows={3}
                   value={draft.headersText}
                   placeholder={'Authorization=Bearer sk-xxx'}
@@ -267,6 +278,7 @@ export function McpPage() {
               取消
             </button>
             <div className="spacer" />
+            <SettingsNotice notice={notice} />
             <button className="btn btn-primary" disabled={busy} onClick={() => void saveDraft()}>
               保存并连接
             </button>
@@ -275,7 +287,7 @@ export function McpPage() {
       ) : (
         <>
           {servers.length === 0 ? (
-            <div className="profile-empty">还没有配置 MCP 服务器。点下面"＋ 新增服务器"添加。</div>
+            <div className="profile-empty">还没有 MCP 服务器。添加一个服务器，将外部工具接入工作区。</div>
           ) : (
             <div className="profile-list">
               {servers.map((s) => (
@@ -286,7 +298,8 @@ export function McpPage() {
                         <code className="tool-switch-name">{s.name}</code>
                       </span>
                       <small>{endpointOf(s)}</small>
-                      <small>
+                      <small className={`status-line status-${s.disabled || !statusOf(s.name) ? 'muted' : statusOf(s.name)?.status === 'connected' ? 'success' : 'error'}`}>
+                        <span className="status-dot" />
                         {statusBadge(s)}
                         {s.env ? ' · env' : ''}
                         {s.headers ? ' · headers' : ''}
@@ -296,10 +309,10 @@ export function McpPage() {
                       {!s.disabled ? (
                         <>
                           <button className="btn" disabled={busy} onClick={() => void reconnect(s.name)}>
-                            重连
+                            <Icon name="refresh" size={14} />重连
                           </button>
                           <button className="btn" onClick={() => void openResources(s.name)}>
-                            {panel?.server === s.name ? '收起资源' : '资源'}
+                            <Icon name="list" size={14} />{panel?.server === s.name ? '收起资源' : '资源'}
                           </button>
                         </>
                       ) : null}
@@ -307,40 +320,41 @@ export function McpPage() {
                         {s.disabled ? '启用' : '停用'}
                       </button>
                       <button className="btn" onClick={() => setDraft(editDraft(s))}>
-                        编辑
+                        <Icon name="edit" size={14} />编辑
                       </button>
                       <button className="btn btn-danger-ghost" disabled={busy} onClick={() => void remove(s)}>
-                        删除
+                        <Icon name="trash" size={14} />删除
                       </button>
                     </div>
                   </div>
                   {panel?.server === s.name ? (
-                    <div style={{ margin: '4px 0 10px 12px', padding: '8px 10px', border: '1px solid var(--border, #333)', borderRadius: 8 }}>
+                    <div className="settings-resource-panel">
                       {panel.loading ? <small>读取资源列表…</small> : null}
-                      {panel.error ? <small>❌ {panel.error}</small> : null}
+                      {panel.error ? <SettingsNotice notice={{ tone: 'error', text: panel.error }} /> : null}
                       {!panel.loading && !panel.error && panel.items.length === 0 ? (
                         <small>该服务器没有暴露资源（或未实现 resources）。</small>
                       ) : null}
                       {panel.items.map((r) => (
-                        <div key={r.uri} style={{ margin: '2px 0' }}>
+                        <div key={r.uri} className="settings-resource-item">
                           <button
                             className="btn"
-                            style={{ fontSize: 12 }}
                             disabled={panel.readingUri === r.uri}
                             title={r.description ?? r.uri}
                             onClick={() => void readResource(s.name, r.uri)}
                           >
-                            {panel.readingUri === r.uri ? '读取中…' : `📄 ${r.name ?? r.uri}`}
+                            <Icon name="code" size={14} />{panel.readingUri === r.uri ? '读取中…' : r.name ?? r.uri}
                           </button>
                         </div>
                       ))}
-                      {panel.contentError ? <small>❌ {panel.contentError}</small> : null}
+                      {panel.contentError ? <SettingsNotice notice={{ tone: 'error', text: panel.contentError }} /> : null}
                       {panel.content !== undefined ? (
                         <>
-                          <textarea className="holidays-input" rows={6} readOnly value={panel.content} />
-                          <button className="btn" style={{ marginTop: 4 }} onClick={() => void navigator.clipboard.writeText(panel.content ?? '')}>
-                            复制内容
-                          </button>
+                          <textarea className="holidays-input" aria-label="资源内容" rows={6} readOnly value={panel.content} />
+                          <div className="settings-resource-actions">
+                            <button className="btn" onClick={() => void navigator.clipboard.writeText(panel.content ?? '')}>
+                              <Icon name="copy" size={14} />复制内容
+                            </button>
+                          </div>
                         </>
                       ) : null}
                     </div>
@@ -365,10 +379,10 @@ export function McpPage() {
                 })
               }
             >
-              ＋ 新增服务器
+              <Icon name="plus" size={14} />新增服务器
             </button>
             <div className="spacer" />
-            {notice ? <span className="saved-hint">{notice}</span> : null}
+            <SettingsNotice notice={notice} />
           </div>
         </>
       )}

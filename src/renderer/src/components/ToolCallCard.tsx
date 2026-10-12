@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffLines } from '../../../shared/diff'
 import type { ToolUseBlock } from '../../../shared/types'
 import { copyText } from '../clipboard'
+import { Icon } from './Icon'
 
 /** 参数展示截断：write_file 这类工具的 content 可能非常大 */
 const MAX_ARGS_DISPLAY = 800
@@ -72,7 +73,7 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
   return (
     <div className={`tool-card ${block.status}`}>
       <div className="tool-card-head">
-        <span>{block.name === 'task' ? '🤖' : '🛠'}</span>
+        <Icon name={block.name === 'task' ? 'chat' : 'terminal'} size={14} />
         <span className="tool-name">{block.name === 'task' ? '子代理（task）' : block.name}</span>
         {block.status === 'pending_approval' ? <span className="tool-status pending">等待批准</span> : null}
         {block.status === 'running' ? <span className="tool-status running">运行中…</span> : null}
@@ -85,10 +86,10 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
         </button>
         {(block.name === 'write_file' || block.name === 'edit_file') && block.status === 'done' ? (
           block.rolledBack ? (
-            <span className="tool-status rolled">⏪ 已回滚</span>
+            <span className="tool-status rolled">已回滚</span>
           ) : onRestore ? (
             <button className="tool-copy-btn" title="回滚到本次修改之前的状态" onClick={onRestore}>
-              ⏪ 回滚
+              回滚
             </button>
           ) : null
         ) : null}
@@ -132,7 +133,7 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
 
       {block.status === 'pending_approval' ? (
         <div className="tool-approve">
-          <span className="tool-approve-text">⚠ 该操作会修改你的磁盘，需要你的批准</span>
+          <span className="tool-approve-text"><Icon name="shield" size={14} /> 该操作会修改你的磁盘，需要你的批准</span>
           {answered ? (
             <span className="tool-status running">已响应…</span>
           ) : invalid ? (

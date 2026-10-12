@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../store'
 import type { SkillMeta } from '../../../../shared/types'
+import { Icon } from '../Icon'
+import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
 
 /** 斜杠命令页：管理全局（userData/skills）与项目级（.stableworker/commands）命令，同名项目优先 */
 export function SkillsPage() {
   const { activeProjectId } = useApp()
   const [skills, setSkills] = useState<SkillMeta[]>([])
   const [editing, setEditing] = useState<{ name: string; content: string; scope: SkillMeta['scope']; isNew: boolean } | null>(null)
-  const [notice, setNotice] = useState('')
+  const [notice, setNotice] = useState<SettingsNoticeValue | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     setSkills(await window.api.listSkills())
@@ -21,10 +23,10 @@ export function SkillsPage() {
     if (!editing) return
     const r = await window.api.saveSkill(editing.name, editing.content, editing.scope)
     if (!r.ok) {
-      setNotice(`❌ ${r.error ?? '保存失败'}`)
+      setNotice({ tone: 'error', text: r.error ?? '保存失败' })
       return
     }
-    setNotice('✅ 已保存')
+    setNotice({ tone: 'success', text: '已保存' })
     setEditing(null)
     await refresh()
   }
@@ -51,6 +53,7 @@ export function SkillsPage() {
           <div className="field">
             <span>命令名（触发为 /名称）</span>
             <input
+              aria-label="命令名"
               value={editing.name}
               placeholder="例如 commit"
               disabled={!editing.isNew}
@@ -60,10 +63,11 @@ export function SkillsPage() {
           {!editing.isNew ? null : (
             <div className="field">
               <span>保存位置</span>
-              <div>
-                <label style={{ marginRight: 16 }}>
+              <div className="settings-radio-group">
+                <label>
                   <input
                     type="radio"
+                    name="skill-scope"
                     checked={editing.scope === 'global'}
                     onChange={() => setEditing({ ...editing, scope: 'global' })}
                   />{' '}
@@ -72,6 +76,7 @@ export function SkillsPage() {
                 <label>
                   <input
                     type="radio"
+                    name="skill-scope"
                     checked={editing.scope === 'project'}
                     disabled={!activeProjectId}
                     onChange={() => setEditing({ ...editing, scope: 'project' })}
@@ -85,6 +90,7 @@ export function SkillsPage() {
             <span>模板内容（$ARGUMENTS = 全部参数，$1/$2 = 位置参数）</span>
             <textarea
               className="holidays-input"
+              aria-label="模板内容"
               rows={10}
               value={editing.content}
               placeholder={'请 review 以下改动并给出意见：\n$ARGUMENTS'}
@@ -96,6 +102,7 @@ export function SkillsPage() {
               取消
             </button>
             <div className="spacer" />
+            <SettingsNotice notice={notice} />
             <button className="btn btn-primary" onClick={() => void save()}>
               保存
             </button>
@@ -104,7 +111,7 @@ export function SkillsPage() {
       ) : (
         <>
           {skills.length === 0 ? (
-            <div className="profile-empty">还没有自定义命令。点下面"＋ 新建命令"创建。</div>
+            <div className="profile-empty">还没有自定义命令，创建一个模板来简化重复工作。</div>
           ) : (
             <div className="profile-list">
               {skills.map((s) => (
@@ -112,7 +119,7 @@ export function SkillsPage() {
                   <div className="profile-info">
                     <span className="profile-name">
                       <code className="tool-switch-name">/{s.name}</code>
-                      <span className="saved-hint" style={{ marginLeft: 8 }}>
+                      <span className="settings-meta">
                         {scopeLabel(s.scope)}
                       </span>
                     </span>
@@ -123,10 +130,10 @@ export function SkillsPage() {
                       className="btn"
                       onClick={() => setEditing({ name: s.name, content: s.content, scope: s.scope, isNew: false })}
                     >
-                      编辑
+                      <Icon name="edit" size={14} />编辑
                     </button>
                     <button className="btn btn-danger-ghost" onClick={() => void remove(s)}>
-                      删除
+                      <Icon name="trash" size={14} />删除
                     </button>
                   </div>
                 </div>
@@ -138,10 +145,10 @@ export function SkillsPage() {
               className="btn btn-primary"
               onClick={() => setEditing({ name: '', content: '', scope: 'global', isNew: true })}
             >
-              ＋ 新建命令
+              <Icon name="plus" size={14} />新建命令
             </button>
             <div className="spacer" />
-            {notice ? <span className="saved-hint">{notice}</span> : null}
+            <SettingsNotice notice={notice} />
           </div>
         </>
       )}

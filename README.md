@@ -47,7 +47,7 @@ npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等�
               │                                ▼
         结果回传给模型 ◀── 主进程执行工具（路径限制在项目目录内）
               │
-              └─ 模型继续思考，可能再次调用工具 …… 直到给出纯文本回复（最多 8 轮）
+              └─ 模型继续思考，可能再次调用工具 …… 直到给出纯文本回复（最多 50 轮工具调用，之后汇总当前进展）
 ```
 
 - **消息模型**：对齐 LLM API 的 content blocks（`text` / `reasoning` / `tool_use`），工具结果挂在
@@ -153,6 +153,12 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
 - **上下文管理**：环形水位条（点击看构成明细 + 缓存命中率；总量为服务端精确值、拆分为本地
   估算）；估算超上下文上限 70% 时发送前自动裁剪——从最旧**整组**丢弃，绝不拆开
   tool_calls 与 tool_result；只影响请求体，会话与界面历史保持完整（`src/main/contextTrim.ts`）
+- **真实模型容量**：按协议、服务地址和准确模型名获取 `/models` 元数据，输入窗口与输出上限分别保存。
+  优先使用服务返回值；服务未提供时使用 [已核实的官方配置](config/model-contexts.json)，未知模型显示“上限未确认”，不会猜成 32k。
+  容量缓存固化在 `userData/model-contexts.json`（macOS 通常为 `~/Library/Application Support/stableworker/model-contexts.json`），
+  记录来源与核实时间，不保存密钥。保存或切换模型会更新当前容量，可在水位详情或 LLM 设置中点击刷新；
+  特殊服务也可在模型配置中显式填写手动容量。旧版全局 `contextLimit` 仅归档为 `legacyContextLimit`，不再作为模型真实容量。
+  水位只读取当前会话、当前模型配置的主代理请求，旧版没有会话身份的日志不用于计算水位，等待下一次请求获得真实用量。
 - **会话存储（append-only JSONL）**：每会话一个 `.jsonl`，每行一个操作（meta / 按 index 设
   消息 / clear / summary 摘要压缩记录），只追加不重写——写入 O(新内容)，崩溃最多损失最后半行
   （解析失败跳过）；旧版单 JSON 自动转换（`src/main/sessions.ts`）

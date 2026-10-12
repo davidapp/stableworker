@@ -580,6 +580,8 @@ export async function executeToolCall(
   input: Record<string, unknown>,
   projectPath: string | null,
   opts: {
+    /** 已经过权限门禁的当前工具定义（包含按会话创建的 task 与 MCP 工具） */
+    definition?: ToolDefinition
     signal?: AbortSignal
     onOutput?: (text: string) => void
     onTodos?: (todos: TodoItem[]) => void
@@ -588,20 +590,23 @@ export async function executeToolCall(
   } = {},
 ): Promise<ToolRunResult> {
   const started = Date.now()
-  const tool = registry.get(name)
+  const tool = opts.definition?.name === name ? opts.definition : registry.get(name)
   const timeoutMs = tool?.timeoutMs ?? TOOL_TIMEOUT_MS
   const run = async (): Promise<ToolOutput> => {
+    if (opts.signal?.aborted) return { content: '用户已停止，操作中断', isError: true }
     if (!projectPath) return { content: '当前没有激活的项目目录，无法使用文件工具', isError: true }
     if (!tool) return { content: `未知工具：${name}`, isError: true }
     return tool.execute(input, {
       projectPath,
+      sessionId: opts.sessionId,
       onOutput: opts.onOutput,
       onTodos: opts.onTodos,
       onAskUser: opts.onAskUser,
     })
   }
 
-  let out: ToolOutput
+  let timeout: NodeJS.Timeout | undefined
+  let onAbort: (() => void) | undefined
   const race: Promise<ToolOutput | never>[] = [
     run().catch((err: unknown) => ({
       content: err instanceof Error ? err.message : String(err),
@@ -612,8 +617,8 @@ export async function executeToolCall(
   if (Number.isFinite(timeoutMs)) {
     race.push(
       new Promise<never>((_, reject) => {
-        const t = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
-        t.unref()
+        timeout = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
+        timeout.unref()
       }),
     )
   }
@@ -625,15 +630,20 @@ export async function executeToolCall(
           reject(new Error('用户已停止，操作中断'))
           return
         }
-        const onAbort = (): void => reject(new Error('用户已停止，操作中断'))
+        onAbort = (): void => reject(new Error('用户已停止，操作中断'))
         signal.addEventListener('abort', onAbort, { once: true })
       }),
     )
   }
-  out = await Promise.race(race).catch((err: unknown) => ({
-    content: err instanceof Error ? err.message : String(err),
-    isError: true,
-  }))
+  const out = await Promise.race(race)
+    .catch((err: unknown) => ({
+      content: err instanceof Error ? err.message : String(err),
+      isError: true,
+    }))
+    .finally(() => {
+      if (timeout) clearTimeout(timeout)
+      if (onAbort) opts.signal?.removeEventListener('abort', onAbort)
+    })
   return { content: truncate(out.content), isError: Boolean(out.isError), durationMs: Date.now() - started }
 }
 
@@ -642,6 +652,7 @@ export async function runToolUseBlock(
   block: ToolUseBlock,
   projectPath: string | null,
   opts: {
+    definition?: ToolDefinition
     signal?: AbortSignal
     onOutput?: (text: string) => void
     onTodos?: (todos: TodoItem[]) => void
@@ -650,9 +661,11 @@ export async function runToolUseBlock(
   } = {},
 ): Promise<ToolRunResult> {
   return executeToolCall(block.name, block.input, projectPath, {
+    definition: opts.definition,
     signal: opts.signal,
     onOutput: opts.onOutput,
     onTodos: opts.onTodos,
+    sessionId: opts.sessionId,
     onAskUser: opts.onAskUser,
   })
 }

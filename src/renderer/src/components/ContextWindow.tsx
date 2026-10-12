@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import type { BalanceResult, ChatMessage, ContextInfo } from '../../../shared/types'
 import { copyText } from '../clipboard'
+import { Icon } from './Icon'
 
 /**
  * 上下文管理窗口（独立悬浮窗，?page=context）：
@@ -13,6 +14,12 @@ import { copyText } from '../clipboard'
  */
 
 const fmtTs = (ts: number): string => new Date(ts).toLocaleString()
+
+function clampListWidth(width: number): number {
+  // 为详情保留至少 300px，并预留 5px 分隔条。
+  const maxWidth = Math.max(240, Math.min(560, window.innerWidth - 305))
+  return Math.min(maxWidth, Math.max(240, width))
+}
 
 function roleLabel(role: string): string {
   return role === 'user' ? '用户' : role === 'assistant' ? '助手' : role
@@ -35,7 +42,7 @@ function preview(m: ChatMessage): string {
 
 export function ContextWindow() {
   const [target, setTarget] = useState<{ projectId: string; sessionId: string; title: string } | null>(null)
-  const [listWidth, setListWidth] = useState(340)
+  const [listWidth, setListWidth] = useState(() => clampListWidth(340))
   const draggingRef = useRef(false)
   const [missing, setMissing] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -49,7 +56,7 @@ export function ContextWindow() {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
 
-  // 左栏宽度拖拽（240–560px），仅本窗口内存态
+  // 左栏宽度拖拽（240–560px），随窗口宽度限制，保留详情的可用空间。
   const onSplitterDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     e.currentTarget.setPointerCapture(e.pointerId)
     draggingRef.current = true
@@ -58,7 +65,7 @@ export function ContextWindow() {
   }
   const onSplitterMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (!draggingRef.current) return
-    setListWidth(Math.min(560, Math.max(240, e.clientX)))
+    setListWidth(clampListWidth(e.clientX))
   }
   const onSplitterUp = (): void => {
     if (!draggingRef.current) return
@@ -66,6 +73,12 @@ export function ContextWindow() {
     document.body.style.userSelect = ''
     document.body.style.cursor = ''
   }
+
+  useEffect(() => {
+    const onResize = (): void => setListWidth(clampListWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!target) return
@@ -109,9 +122,9 @@ export function ContextWindow() {
     try {
       await fn()
       await refresh()
-      setNotice(`✅ ${name}完成`)
+      setNotice(`${name}完成`)
     } catch (err) {
-      setNotice(`❌ ${err instanceof Error ? err.message : String(err)}`)
+      setNotice(`失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setBusy(null)
     }
@@ -211,7 +224,7 @@ export function ContextWindow() {
     await run('导出会话', async () => {
       const saved = await window.api.exportMarkdown(target.projectId, target.sessionId)
       if (!saved.ok) throw new Error(saved.error ?? '导出失败')
-      setNotice('✅ 已导出到：' + saved.path)
+      setNotice('已导出到：' + saved.path)
     })
   }
 
@@ -223,23 +236,32 @@ export function ContextWindow() {
 
   if (missing) {
     return (
-      <div className="ctx-window">
-        <div className="inspector-empty">当前没有打开的会话。先在主窗口选择一个项目和会话，再打开本窗口。</div>
+      <div className="utility-window ctx-window">
+        <header className="utility-header">
+          <div className="utility-brand"><Icon name="logo" size={18} /><span>StableWorker</span></div>
+          <div className="utility-heading"><h2 className="utility-title">上下文管理</h2><span className="utility-subtitle">管理会话消息与摘要</span></div>
+        </header>
+        <div className="inspector-empty"><Icon name="chat" size={24} /><span>当前没有打开的会话。先在主窗口选择一个项目和会话，再打开本窗口。</span></div>
       </div>
     )
   }
 
   return (
-    <div className="ctx-window">
-      <header className="inspector-header">
-        <h2>上下文管理</h2>
-        <span className="hint">
-          {target?.title ?? '…'} · {info ? `${info.messageCount} 条消息 · ≈${info.tokensEstimate.toLocaleString()} tokens` : ''}
-        </span>
-        <div className="spacer" />
-        <button className="btn" onClick={() => void refresh()}>
-          刷新
-        </button>
+    <div className="utility-window ctx-window">
+      <header className="utility-header">
+        <div className="utility-brand"><Icon name="logo" size={18} /><span>StableWorker</span></div>
+        <div className="utility-heading">
+          <h2 className="utility-title">上下文管理</h2>
+          <span className="utility-subtitle">
+            {target?.title ?? '…'} · {info ? `${info.messageCount} 条消息 · ≈${info.tokensEstimate.toLocaleString()} tokens` : ''}
+          </span>
+        </div>
+        <div className="utility-actions">
+          <button className="btn" onClick={() => void refresh()}>
+            <Icon name="refresh" />
+            刷新
+          </button>
+        </div>
       </header>
 
       <div className="ctx-split">
@@ -253,7 +275,8 @@ export function ContextWindow() {
               title={checked.size < 2 ? '勾选两条以上可压缩该范围' : '把勾选范围压缩为一条摘要'}
               onClick={compressChecked}
             >
-              ⚡ 压缩所选{checked.size > 0 ? `（${checked.size} 条）` : ''}
+              <Icon name="brain" />
+              压缩所选{checked.size > 0 ? `（${checked.size} 条）` : ''}
             </button>
           </div>
           {messages.map((m, idx) => {
@@ -275,7 +298,7 @@ export function ContextWindow() {
                 <div className="ctx-list-texts">
                   <div className="ctx-list-role">
                     {roleLabel(m.role)} · 第 {idx + 1} 条
-                    {m.blocks.some((b) => b.type === 'tool_use') ? ' · 🛠' : ''}
+                    {m.blocks.some((b) => b.type === 'tool_use') ? <Icon name="code" size={12} className="ctx-inline-icon" /> : null}
                   </div>
                   <div className="ctx-list-preview">{preview(m)}</div>
                 </div>
@@ -305,45 +328,52 @@ export function ContextWindow() {
                 </span>
               </div>
               <textarea
-                className="holidays-input"
+                className="holidays-input ctx-summary-input"
                 rows={10}
                 value={sumText}
                 placeholder={'选中左侧消息可查看 / 编辑 / 删除。\n摘要压缩记录也会显示在这里，可手写或删除。'}
                 onChange={(e) => setSumText(e.target.value)}
               />
               <div className="ctx-btn-row">
-                <button className="btn" disabled={!sumText.trim()} onClick={saveSummary}>
+                <button className="btn btn-primary" disabled={!sumText.trim()} onClick={saveSummary}>
+                  <Icon name="check" />
                   保存摘要
                 </button>
-                <button className="btn" disabled={!info?.summary} onClick={deleteSummary}>
+                <button className="btn btn-danger-ghost" disabled={!info?.summary} onClick={deleteSummary}>
+                  <Icon name="trash" />
                   删除摘要
                 </button>
                 <div className="spacer" />
                 <button className="btn" disabled={messages.length === 0} onClick={compactAll}>
-                  ⚡ 压缩全部对话
+                  <Icon name="brain" />
+                  压缩全部对话
                 </button>
                 <button className="btn" disabled={messages.length === 0} title="导出会话为 Markdown 文件" onClick={() => void exportMarkdown()}>
-                  📄 导出
+                  <Icon name="download" />
+                  导出
                 </button>
-                <button className="btn" disabled={messages.length === 0} onClick={clearAll}>
-                  🧹 清空上下文
+                <button className="btn btn-danger-ghost" disabled={messages.length === 0} onClick={clearAll}>
+                  <Icon name="trash" />
+                  清空上下文
                 </button>
               </div>
               <div className="hint-line">
                 提示：在左侧勾选两条以上消息，可把该范围压缩成一条摘要消息（整段替换，保持工具调用配对）。
               </div>
 
-              <div className="ctx-title-row" style={{ marginTop: 14 }}>
+              <div className="ctx-title-row ctx-section-spaced">
                 <span>API Key 余额</span>
                 <button className="btn" disabled={busy !== null} onClick={() => void queryBalance()}>
+                  <Icon name="key" />
                   {busy === '查询余额' ? '查询中…' : '查询'}
                 </button>
               </div>
               {balance ? (
-                <div className="ctx-value">
+                <div className={`ctx-value ctx-balance result-status ${balance.ok ? 'success' : 'error'}`} role="status">
+                  <Icon name={balance.ok ? 'check' : 'warning'} />
                   {balance.ok
-                    ? `✅ 可用：${balance.currency === 'USD' ? '$' : balance.currency === 'CNY' ? '¥' : ''}${balance.totalBalance ?? '?'}${balance.currency === 'CNY' ? '（人民币）' : ''}${balance.grantedBalance && balance.grantedBalance !== '0' ? ` · 赠送 ${balance.grantedBalance}` : ''}${balance.isAvailable === false ? ' · ⚠ 账户不可用' : ''}`
-                    : `❌ ${balance.error ?? '查询失败'}`}
+                    ? `可用：${balance.currency === 'USD' ? '$' : balance.currency === 'CNY' ? '¥' : ''}${balance.totalBalance ?? '?'}${balance.currency === 'CNY' ? '（人民币）' : ''}${balance.grantedBalance && balance.grantedBalance !== '0' ? ` · 赠送 ${balance.grantedBalance}` : ''}${balance.isAvailable === false ? ' · 账户不可用' : ''}`
+                    : balance.error ?? '查询失败'}
                 </div>
               ) : null}
             </>
@@ -352,7 +382,7 @@ export function ContextWindow() {
               <div className="ctx-title-row">
                 <span className="ctx-detail-title">
                   {roleLabel(selected.role)} · 第 {selectedIndex + 1} 条
-                  {selected.blocks.some((b) => b.type === 'tool_use') ? ' · 🛠 含工具调用' : ''}
+                  {selected.blocks.some((b) => b.type === 'tool_use') ? <span className="ctx-inline-icon"><Icon name="code" size={12} /> 含工具调用</span> : null}
                 </span>
                 <span className="ctx-value">{fmtTs(selected.createdAt)}</span>
               </div>
@@ -375,28 +405,33 @@ export function ContextWindow() {
               </div>
               <div className="ctx-btn-row">
                 <button className="btn btn-primary" disabled={!dirty} onClick={saveEdit}>
+                  <Icon name="check" />
                   保存修改
                 </button>
                 <button className="btn" disabled={!dirty} onClick={() => select(selected.id)}>
+                  <Icon name="close" />
                   放弃修改
                 </button>
                 <div className="spacer" />
                 <button className="btn" onClick={() => void copyText(editText)}>
+                  <Icon name="copy" />
                   复制
                 </button>
                 <button className="btn btn-danger-ghost" onClick={deleteSelected}>
+                  <Icon name="trash" />
                   删除此消息
                 </button>
               </div>
               {selected.blocks.some((b) => b.type === 'tool_use') ? (
-                <div className="hint-line">
-                  ⚠ 此消息包含工具调用（编辑仅改文本部分，工具调用与其结果原样保留）。
+                <div className="hint-line result-status">
+                  <Icon name="warning" />
+                  此消息包含工具调用（编辑仅改文本部分，工具调用与其结果原样保留）。
                 </div>
               ) : null}
             </>
           )}
 
-          {notice ? <div className="ctx-panel-notice">{notice}</div> : null}
+          {notice ? <div className={`ctx-panel-notice result-status ${notice.startsWith('失败：') ? 'error' : 'success'}`} role="status"><Icon name={notice.startsWith('失败：') ? 'warning' : 'check'} />{notice}</div> : null}
         </section>
       </div>
     </div>

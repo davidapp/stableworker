@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useApp } from '../../store'
 import type { SubagentTypeConfig } from '../../../../shared/types'
+import { Icon } from '../Icon'
+import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
 
 interface Draft extends SubagentTypeConfig {
   originalName: string
@@ -12,10 +14,10 @@ export function SubagentTypesPage() {
   // 列表直接来自 store（保存后 ConfigView 经 applyConfig 回流）
   const { subagentTypes: types } = useApp()
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [notice, setNotice] = useState('')
+  const [notice, setNotice] = useState<SettingsNoticeValue | null>(null)
 
   const persist = async (list: SubagentTypeConfig[]): Promise<void> => {
-    setNotice('')
+    setNotice(null)
     await window.api.setSubagentTypes(list)
   }
 
@@ -23,19 +25,19 @@ export function SubagentTypesPage() {
     if (!draft) return
     const name = draft.name.trim()
     if (!/^[A-Za-z0-9_-]+$/.test(name)) {
-      setNotice('❌ 名称只能包含字母、数字、下划线和连字符')
+      setNotice({ tone: 'error', text: '名称只能包含字母、数字、下划线和连字符' })
       return
     }
     if (name === 'general-purpose' || name === 'Explore') {
-      setNotice('❌ 不能使用内置类型名')
+      setNotice({ tone: 'error', text: '不能使用内置类型名' })
       return
     }
     if (!draft.description.trim()) {
-      setNotice('❌ 请填写一句话说明（模型靠它选型）')
+      setNotice({ tone: 'error', text: '请填写一句话说明（模型靠它选型）' })
       return
     }
     if (types.some((t) => t.name === name && name !== draft.originalName)) {
-      setNotice('❌ 已存在同名类型')
+      setNotice({ tone: 'error', text: '已存在同名类型' })
       return
     }
     const entry: SubagentTypeConfig = {
@@ -49,7 +51,7 @@ export function SubagentTypesPage() {
       : types.map((t) => (t.name === draft.originalName ? entry : t))
     setDraft(null)
     await persist(list)
-    setNotice('✅ 已保存（下一轮对话生效）')
+    setNotice({ tone: 'success', text: '已保存（下一轮对话生效）' })
   }
 
   const remove = async (t: SubagentTypeConfig): Promise<void> => {
@@ -72,6 +74,7 @@ export function SubagentTypesPage() {
           <div className="field">
             <span>类型名（模型传 subagent_type 用）</span>
             <input
+              aria-label="类型名"
               value={draft.name}
               placeholder="例如 code-reviewer"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -80,6 +83,7 @@ export function SubagentTypesPage() {
           <div className="field">
             <span>一句话说明（给模型看的选型依据）</span>
             <input
+              aria-label="一句话说明"
               value={draft.description}
               placeholder="例如：按严重度输出代码评审意见"
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
@@ -87,10 +91,11 @@ export function SubagentTypesPage() {
           </div>
           <div className="field">
             <span>工具范围</span>
-            <div>
-              <label style={{ marginRight: 16 }}>
+            <div className="settings-radio-group">
+              <label>
                 <input
                   type="radio"
+                  name="subagent-tools"
                   checked={draft.tools === 'all'}
                   onChange={() => setDraft({ ...draft, tools: 'all' })}
                 />{' '}
@@ -99,6 +104,7 @@ export function SubagentTypesPage() {
               <label>
                 <input
                   type="radio"
+                  name="subagent-tools"
                   checked={draft.tools === 'read-only'}
                   onChange={() => setDraft({ ...draft, tools: 'read-only' })}
                 />{' '}
@@ -110,6 +116,7 @@ export function SubagentTypesPage() {
             <span>角色设定（追加到子代理系统提示）</span>
             <textarea
               className="holidays-input"
+              aria-label="角色设定"
               rows={6}
               value={draft.prompt}
               placeholder={'你是代码评审专家。评审输出按以下分节：\n## 严重度（高/中/低）\n## 位置（文件:行号）\n## 建议'}
@@ -121,6 +128,7 @@ export function SubagentTypesPage() {
               取消
             </button>
             <div className="spacer" />
+            <SettingsNotice notice={notice} />
             <button className="btn btn-primary" onClick={() => void saveDraft()}>
               保存
             </button>
@@ -129,7 +137,7 @@ export function SubagentTypesPage() {
       ) : (
         <>
           {types.length === 0 ? (
-            <div className="profile-empty">还没有自定义类型。点下面"＋ 新增类型"创建，或直接用内置的两种。</div>
+            <div className="profile-empty">还没有自定义类型。创建专属代理，或使用内置的通用与探索代理。</div>
           ) : (
             <div className="profile-list">
               {types.map((t) => (
@@ -137,7 +145,7 @@ export function SubagentTypesPage() {
                   <div className="profile-info">
                     <span className="profile-name">
                       <code className="tool-switch-name">{t.name}</code>
-                      <span className="saved-hint" style={{ marginLeft: 8 }}>
+                      <span className="settings-meta">
                         {t.tools === 'read-only' ? '只读' : '全部工具'}
                       </span>
                     </span>
@@ -148,10 +156,10 @@ export function SubagentTypesPage() {
                       className="btn"
                       onClick={() => setDraft({ ...t, originalName: t.name, isNew: false })}
                     >
-                      编辑
+                      <Icon name="edit" size={14} />编辑
                     </button>
                     <button className="btn btn-danger-ghost" onClick={() => void remove(t)}>
-                      删除
+                      <Icon name="trash" size={14} />删除
                     </button>
                   </div>
                 </div>
@@ -165,10 +173,10 @@ export function SubagentTypesPage() {
                 setDraft({ name: '', description: '', tools: 'read-only', prompt: '', originalName: '', isNew: true })
               }
             >
-              ＋ 新增类型
+              <Icon name="plus" size={14} />新增类型
             </button>
             <div className="spacer" />
-            {notice ? <span className="saved-hint">{notice}</span> : null}
+            <SettingsNotice notice={notice} />
           </div>
         </>
       )}

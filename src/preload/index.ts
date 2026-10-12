@@ -39,6 +39,8 @@ import type {
 const api = {
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
+  refreshModelContext: (id?: string, force = true): Promise<{ ok: boolean; message: string; config: ConfigView }> =>
+    ipcRenderer.invoke('config:refreshModelContext', id, force),
   saveProfile: (profile: LLMConfig & { id?: string; apiKey?: string }): Promise<ConfigView> =>
     ipcRenderer.invoke('config:saveProfile', profile),
   deleteProfile: (id: string): Promise<ConfigView> => ipcRenderer.invoke('config:deleteProfile', id),

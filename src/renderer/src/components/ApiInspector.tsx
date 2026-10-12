@@ -4,6 +4,7 @@ import json from 'highlight.js/lib/languages/json'
 import { decimalToPico, picoToDecimalString } from '../../../shared/money'
 import type { Currency, DebugDetail, DebugListItem, Money } from '../../../shared/types'
 import { copyText } from '../clipboard'
+import { Icon } from './Icon'
 
 hljs.registerLanguage('json', json)
 
@@ -40,8 +41,9 @@ function DebugPre({ text, json = false, className = 'debug-pre' }: { text: strin
 
   return (
     <div className="copyable-pre">
-      <button className="copy-btn" onClick={() => void copy()}>
-        {copied ? '✓ 已复制' : '复制'}
+      <button className="btn copy-btn" onClick={() => void copy()}>
+        <Icon name={copied ? 'check' : 'copy'} size={12} />
+        {copied ? '已复制' : '复制'}
       </button>
       {html !== null ? (
         <pre className={className} dangerouslySetInnerHTML={{ __html: html }} />
@@ -84,7 +86,7 @@ export function ApiInspector() {
     if (!selectedId) return
     setExportNote('')
     const r = await window.api.exportDebug(selectedId)
-    setExportNote(r.ok ? `✅ 已导出：${r.path}` : r.error ? `❌ ${r.error}` : '')
+    setExportNote(r.ok ? `已导出：${r.path}` : r.error ? `导出失败：${r.error}` : '')
     if (r.ok) setTimeout(() => setExportNote(''), 6000)
   }
 
@@ -118,40 +120,45 @@ export function ApiInspector() {
     })()
 
   return (
-    <div className="inspector-page">
+    <div className="utility-window inspector-page">
       <div className="inspector">
-        <header className="inspector-header">
-          <h2>API 调试日志</h2>
-          <span className="hint">记录永久保存在本地 · 密钥已脱敏 · 对话进行中可实时观察事件流</span>
-          <div className="spacer" />
-          {exportNote ? <span className="saved-hint">{exportNote}</span> : null}
-          <select
-            className="model-select"
-            style={{ maxWidth: 180 }}
-            value={modelFilter}
-            title="按模型过滤已加载的记录"
-            onChange={(e) => setModelFilter(e.target.value)}
-          >
-            <option value="">全部模型（{list.length}）</option>
-            {models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <button className="btn" disabled={!selectedId} title="把选中这条记录导出为格式化 JSON" onClick={() => void exportSelected()}>
-            导出 JSON
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              if (window.confirm('确定清空全部 API 调用记录？磁盘上的日志文件也会一并删除，不可恢复。')) {
-                void window.api.clearDebugLog()
-              }
-            }}
-          >
-            清空
-          </button>
+        <header className="utility-header">
+          <div className="utility-brand"><Icon name="logo" size={18} /><span>StableWorker</span></div>
+          <div className="utility-heading">
+            <h2 className="utility-title">API 调试日志</h2>
+            <span className="utility-subtitle">本地保存 · 密钥脱敏 · 实时观察事件流</span>
+          </div>
+          <div className="utility-actions">
+            {exportNote ? <span className={`result-status ${exportNote.startsWith('导出失败：') ? 'error' : 'success'}`} role="status">{exportNote}</span> : null}
+            <select
+              className="model-select inspector-model-filter"
+              value={modelFilter}
+              title="按模型过滤已加载的记录"
+              onChange={(e) => setModelFilter(e.target.value)}
+            >
+              <option value="">全部模型（{list.length}）</option>
+              {models.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <button className="btn" disabled={!selectedId} title="把选中这条记录导出为格式化 JSON" onClick={() => void exportSelected()}>
+              <Icon name="download" />
+              导出 JSON
+            </button>
+            <button
+              className="btn btn-danger-ghost"
+              onClick={() => {
+                if (window.confirm('确定清空全部 API 调用记录？磁盘上的日志文件也会一并删除，不可恢复。')) {
+                  void window.api.clearDebugLog()
+                }
+              }}
+            >
+              <Icon name="trash" />
+              清空
+            </button>
+          </div>
         </header>
 
         <div className="inspector-body">
@@ -175,7 +182,7 @@ export function ApiInspector() {
                     <span className="badge model" title={item.url}>
                       {item.model || '(未设模型)'}
                     </span>
-                    <span className={`status ${item.error ? 'err' : ''}`}>
+                    <span className={`status ${item.error ? 'err' : item.status == null ? 'pending' : ''}`}>
                       {item.error ? '失败' : (item.status ?? '进行中…')}
                     </span>
                   </div>
@@ -191,7 +198,8 @@ export function ApiInspector() {
               ))
             )}
             {list.length >= limit && limit < 500 ? (
-              <button className="btn" style={{ margin: '8px auto', display: 'block' }} onClick={() => setLimit((l) => l + 25)}>
+              <button className="btn inspector-load-more" onClick={() => setLimit((l) => l + 25)}>
+                <Icon name="arrowDown" />
                 加载更多（已加载 {list.length} 条）
               </button>
             ) : null}

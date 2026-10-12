@@ -21,6 +21,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
     <footer className="composer">
       <div className="composer-box">
         <textarea
+          aria-label="消息"
           value={text}
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           rows={3}
@@ -90,6 +91,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
         )}
         </div>
       </div>
+      <div className="composer-hint"><span>结合项目文件与你协作</span><span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span></div>
     </footer>
   )
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../../store'
+import { Icon } from '../Icon'
 import * as actions from '../../actions'
 import type { Currency, ModelPricing } from '../../../../shared/types'
 
@@ -92,6 +93,7 @@ export function PricingPage() {
   return (
     <div className="settings-page">
       <h2>模型价格</h2>
+      <p className="hint-line">维护模型单价与节假日，查看每次请求的准确成本。</p>
 
       <div className="field">
         <span>价格表（本币 / 每百万 tokens，供 API 调试面板精确计费）</span>
@@ -107,11 +109,13 @@ export function PricingPage() {
           {pricing.map((row, i) => (
             <div className="pricing-row" key={i}>
               <input
+                aria-label="模型名称"
                 value={row.model}
                 placeholder="模型名"
                 onChange={(e) => updatePricingRow(i, { model: e.target.value })}
               />
               <select
+                aria-label="计费币种"
                 value={row.currency}
                 onChange={(e) => updatePricingRow(i, { currency: e.target.value as Currency })}
               >
@@ -125,16 +129,18 @@ export function PricingPage() {
                   min="0"
                   step="any"
                   value={row.prices[k.key]}
+                  aria-label={`${row.model || "模型"} ${k.label}（每百万 tokens）`}
                   title={`${k.label}（每百万 tokens）`}
                   onChange={(e) => updatePriceCell(i, k.key, e.target.value)}
                 />
               ))}
               <button
                 className="icon-btn pricing-remove"
+                aria-label={`删除 ${row.model || "该模型"} 的价格`}
                 title="删除该模型价格"
                 onClick={() => setPricing((rows) => rows.filter((_, idx) => idx !== i))}
               >
-                ×
+                <Icon name="trash" size={14} />
               </button>
             </div>
           ))}
@@ -159,7 +165,7 @@ export function PricingPage() {
             ])
           }
         >
-          ＋ 添加模型价格
+          <Icon name="plus" size={14} />添加模型价格
         </button>
         <small>
           命中/未命中 = 输入 tokens 的缓存命中与未命中单价；不分时定价的服务商把两档填成一样即可。
@@ -171,6 +177,7 @@ export function PricingPage() {
         <span>法定节假日（北京时间，每行一个，格式 YYYY-MM-DD；当天全天空闲计费）</span>
         <textarea
           className="holidays-input"
+          aria-label="法定节假日"
           rows={6}
           value={holidaysText}
           placeholder={'2026-10-01\n2026-10-02\n…'}
@@ -183,7 +190,7 @@ export function PricingPage() {
 
       <div className="settings-page-actions">
         <div className="spacer" />
-        {saved ? <span className="saved-hint">✅ 已保存</span> : null}
+        {saved ? <span className="saved-hint" role="status"><Icon name="check" size={14} />已保存</span> : null}
         <button className="btn btn-primary" onClick={() => void save()}>
           保存
         </button>

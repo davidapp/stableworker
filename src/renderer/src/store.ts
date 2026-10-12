@@ -4,6 +4,7 @@ import type {
   ChatMessage,
   FeatureEntry,
   LLMProfileView,
+  ModelContextInfo,
   ModelPricing,
   ProjectInfo,
   SessionMeta,
@@ -54,6 +55,7 @@ export interface AppState {
   subagentTypes: SubagentTypeConfig[]
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
+  contextInfo: ModelContextInfo | null
   /** 工具开关：工具名 → 是否启用；未记录的默认启用 */
   toolSwitches: Record<string, boolean>
   /** 权限规则（deny > ask > allow） */
@@ -106,6 +108,7 @@ export const store = createStore<AppState>({
   sidebarWidth: 240,
   subagentTypes: [],
   contextLimit: 0,
+  contextInfo: null,
   toolSwitches: {},
   permissionRules: { allow: [], ask: [], deny: [] },
   settingsPage: 'llm',

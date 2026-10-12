@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../../store'
+import { Icon } from '../Icon'
 import * as actions from '../../actions'
 import { FEATURE_DEFS } from '../../features'
 
@@ -34,13 +35,14 @@ export function FeaturesPage() {
       ) : (
         FEATURE_DEFS.map((d) => (
           <div className="features-row" key={d.id}>
-            <label className="features-text">
+            <div className="features-text">
               <span className="features-label">{d.label}</span>
               <small>{d.description}</small>
-            </label>
+            </div>
             <label className="features-toggle">
               <input
                 type="checkbox"
+                aria-label={`显示 ${d.label}`}
                 checked={draft[d.id] ?? true}
                 onChange={(e) => toggle(d.id, e.target.checked)}
               />
@@ -52,7 +54,7 @@ export function FeaturesPage() {
 
       <div className="settings-page-actions">
         <div className="spacer" />
-        {saved ? <span className="saved-hint">✅ 已保存</span> : null}
+        {saved ? <span className="saved-hint" role="status"><Icon name="check" size={14} />已保存</span> : null}
         <button className="btn btn-primary" onClick={() => void save()}>
           保存
         </button>

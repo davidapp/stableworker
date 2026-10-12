@@ -60,6 +60,16 @@ export interface LLMConfig {
   proxyURL: string
   /** 思考力度（推理模型）：off = 不传参数走模型默认；low/medium/high 映射到各协议的对应参数 */
   thinkingEffort?: 'off' | 'low' | 'medium' | 'high'
+  /** Explicit user override for providers that do not publish a usable model capacity. */
+  contextWindowOverride?: number
+}
+
+export interface ModelContextInfo {
+  contextWindow: number
+  maxOutputTokens?: number
+  source: 'api' | 'official-docs' | 'manual'
+  sourceUrl: string
+  checkedAt: string
 }
 
 /** 渲染进程可见的配置档视图（apiKey 掩码） */
@@ -67,6 +77,7 @@ export interface LLMProfileView extends LLMConfig {
   id: string
   hasApiKey: boolean
   apiKeyHint: string
+  contextInfo?: ModelContextInfo | null
 }
 
 export interface ProjectInfo {
@@ -290,6 +301,8 @@ export interface ConfigView {
   sidebarWidth: number
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
+  /** Capacity of the active profile, with provenance; null means unknown. */
+  contextInfo?: ModelContextInfo | null
   /** 工具开关：工具名 → 是否启用；未记录的工具默认启用 */
   toolSwitches: Record<string, boolean>
   /** 权限规则（deny > ask > allow） */
@@ -371,6 +384,9 @@ export interface ContextBreakdown {
 /** 调试列表条目（轻量，不含大字段） */
 export interface DebugListItem {
   id: string
+  sessionId?: string
+  profileId?: string
+  scope?: 'main' | 'subagent'
   kind: 'chat' | 'test'
   /** 工具调用回合序号（1 起）；0 = 非对话请求（如测试连接） */
   round: number

@@ -27,7 +27,10 @@ export function openInspectorWindow(): void {
   inspectorWin = new BrowserWindow({
     width: 1020,
     height: 680,
-    title: 'API 调试',
+    minWidth: 760,
+    minHeight: 480,
+    title: 'StableWorker · API 调试',
+    backgroundColor: '#161618',
     alwaysOnTop: true,
     autoHideMenuBar: true,
     webPreferences: {
@@ -58,7 +61,10 @@ export function openContextWindow(): void {
   contextWin = new BrowserWindow({
     width: 760,
     height: 720,
-    title: '上下文管理',
+    minWidth: 680,
+    minHeight: 480,
+    title: 'StableWorker · 上下文管理',
+    backgroundColor: '#161618',
     alwaysOnTop: true,
     autoHideMenuBar: true,
     webPreferences: {
@@ -97,7 +103,10 @@ export function openSearchWindow(): void {
   searchWin = new BrowserWindow({
     width: 640,
     height: 560,
-    title: '全局搜索',
+    minWidth: 480,
+    minHeight: 360,
+    title: 'StableWorker · 全局搜索',
+    backgroundColor: '#161618',
     alwaysOnTop: true,
     autoHideMenuBar: true,
     webPreferences: {

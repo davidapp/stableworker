@@ -24,6 +24,9 @@ const SAVE_DEBOUNCE_MS = 500
 
 interface Exchange {
   id: string
+  sessionId?: string
+  profileId?: string
+  scope?: 'main' | 'subagent'
   kind: 'chat' | 'test'
   /** 工具调用回合序号（1 起）；0 = 非对话请求 */
   round: number
@@ -144,6 +147,9 @@ export async function initDebugLog(): Promise<void> {
 // ---------- 记录写入（由 llm.ts 调用） ----------
 
 export function beginExchange(input: {
+  sessionId?: string
+  profileId?: string
+  scope?: 'main' | 'subagent'
   kind: Exchange['kind']
   llm: LLMConfig
   method: string
@@ -158,6 +164,9 @@ export function beginExchange(input: {
 }): Exchange {
   const ex: Exchange = {
     id: randomUUID(),
+    sessionId: input.sessionId,
+    profileId: input.profileId,
+    scope: input.scope,
     kind: input.kind,
     round: input.round ?? 0,
     trimmedCount: input.trimmedCount,
@@ -333,6 +342,9 @@ function prettyJSON(body: string): string {
 function toListItem(ex: Exchange): DebugListItem {
   return {
     id: ex.id,
+    sessionId: ex.sessionId,
+    profileId: ex.profileId,
+    scope: ex.scope,
     kind: ex.kind,
     round: ex.round ?? 0,
     trimmedCount: ex.trimmedCount,

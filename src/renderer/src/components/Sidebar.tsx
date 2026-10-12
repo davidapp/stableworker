@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { SessionMeta } from '../../../shared/types'
 import { useApp } from '../store'
 import * as actions from '../actions'
+import { Icon } from './Icon'
 
 /** 侧栏：项目树。项目可展开出会话叶子；叶子右键可重命名/删除；项目行上的 ＋ 新建会话 */
 export function Sidebar() {
@@ -16,10 +17,12 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" aria-label="工作区导航">
+      <div className="sidebar-brand"><span className="brand-mark"><Icon name="logo" size={18} /></span><span>StableWorker</span></div>
       <button className="btn btn-block" onClick={() => void actions.addProject()}>
-        ＋ 新建项目
+        <Icon name="plus" /> 新建项目
       </button>
+      <div className="sidebar-section-label">工作区 <span>{projects.length}</span></div>
       <ul className="project-list">
         {projects.map((p) => {
           const expanded = expandedProjects[p.id] ?? false
@@ -30,11 +33,13 @@ export function Sidebar() {
                 <button
                   className="chevron"
                   title={expanded ? '折叠' : '展开会话'}
+                  aria-expanded={expanded}
                   onClick={() => actions.toggleProjectExpanded(p.id)}
                 >
-                  {expanded ? '▾' : '▸'}
+                  <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={12} />
                 </button>
                 <span className="project-name" title={p.path} onClick={() => void actions.selectProject(p.id)}>
+                  <Icon name="folder" size={15} />
                   {p.name}
                 </span>
                 <button
@@ -45,7 +50,7 @@ export function Sidebar() {
                     void actions.newSessionInProject(p.id)
                   }}
                 >
-                  ＋
+                  <Icon name="plus" size={14} />
                 </button>
               </div>
 
@@ -79,8 +84,8 @@ export function Sidebar() {
                           setMenu({ x: e.clientX, y: e.clientY, projectId: p.id, session: s })
                         }}
                       >
+                        <Icon name={s.damaged ? 'warning' : 'chat'} size={14} />
                         <span className="session-title">
-                          {s.damaged ? '⚠ ' : ''}
                           {s.title}
                         </span>
                         <button
@@ -93,7 +98,7 @@ export function Sidebar() {
                             }
                           }}
                         >
-                          ×
+                          <Icon name="close" size={12} />
                         </button>
                       </li>
                     ),
@@ -103,20 +108,24 @@ export function Sidebar() {
             </li>
           )
         })}
-        {projects.length === 0 ? <li className="session-empty">（还没有项目）</li> : null}
+        {projects.length === 0 ? <li className="sidebar-empty"><Icon name="folder" size={24} /><span>还没有工作区</span><small>添加本地目录，开始协作</small></li> : null}
       </ul>
 
       <div className="sidebar-footer">
         <div className="sidebar-footer-actions">
           <button className="icon-btn-lg" title="设置" onClick={() => actions.openSettings()}>
-            ⚙
+            <Icon name="settings" /> <span>设置</span>
+          </button>
+          <button className="icon-btn-lg" title="搜索所有会话" aria-label="搜索所有会话" onClick={() => void window.api.openSearchWindow()}>
+            <Icon name="search" />
           </button>
           <button
             className="icon-btn-lg"
             title="API 调试（Ctrl+Alt+D）"
+            aria-label="API 调试"
             onClick={() => void window.api.openInspector()}
           >
-            🔍
+            <Icon name="terminal" />
           </button>
         </div>
       </div>
@@ -140,7 +149,7 @@ export function Sidebar() {
                 setMenu(null)
               }}
             >
-              ✏️ 重命名
+              <Icon name="edit" size={14} /> 重命名
             </button>
             <button
               className="ctx-menu-item danger"
@@ -151,7 +160,7 @@ export function Sidebar() {
                 setMenu(null)
               }}
             >
-              🗑 删除会话
+              <Icon name="trash" size={14} /> 删除会话
             </button>
           </div>
         </>

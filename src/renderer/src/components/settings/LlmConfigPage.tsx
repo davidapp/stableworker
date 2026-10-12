@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useApp } from '../../store'
 import * as actions from '../../actions'
 import type { LLMProfileView, ProviderType } from '../../../../shared/types'
+import { Icon } from '../Icon'
+import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
 
 /** 预设配置：选一下就填好名称 / 协议 / BaseURL，模型给出常见候选（仍可手输），附官方文档 */
 interface ProviderPreset {
@@ -21,7 +23,7 @@ const PRESETS: ProviderPreset[] = [
     name: 'DeepSeek',
     provider: 'openai-compatible',
     baseURL: 'https://api.deepseek.com/',
-    models: ['deepseek-flash', 'deepseek-pro'],
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     docsURL: 'https://api-docs.deepseek.com/zh-cn/quick_start',
   },
   {
@@ -123,6 +125,7 @@ interface ProfileDraft {
   /** 编辑已有配置档时用于 apiKey 占位提示 */
   hasApiKey: boolean
   apiKeyHint: string
+  contextWindowOverride: string
 }
 
 function draftFromProfile(p: LLMProfileView): ProfileDraft {
@@ -137,6 +140,7 @@ function draftFromProfile(p: LLMProfileView): ProfileDraft {
     apiKey: '',
     hasApiKey: p.hasApiKey,
     apiKeyHint: p.apiKeyHint,
+    contextWindowOverride: p.contextWindowOverride?.toString() ?? '',
   }
 }
 
@@ -152,6 +156,7 @@ function blankDraft(): ProfileDraft {
     apiKey: '',
     hasApiKey: false,
     apiKeyHint: '',
+    contextWindowOverride: '',
   }
 }
 
@@ -160,21 +165,28 @@ export function LlmConfigPage() {
   const { llmProfiles, activeLlmId } = useApp()
   const [editing, setEditing] = useState<ProfileDraft | null>(null)
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState('')
+  const [refreshingContext, setRefreshingContext] = useState<string | null>(null)
+  const [contextNotice, setContextNotice] = useState<SettingsNoticeValue | null>(null)
+  const [testResult, setTestResult] = useState<SettingsNoticeValue | null>(null)
   const [saved, setSaved] = useState(false)
 
   const startNew = (): void => {
-    setTestResult('')
+    setTestResult(null)
     setEditing(blankDraft())
   }
 
   const startEdit = (p: LLMProfileView): void => {
-    setTestResult('')
+    setTestResult(null)
     setEditing(draftFromProfile(p))
   }
 
   const save = async (): Promise<void> => {
     if (!editing) return
+    const override = editing.contextWindowOverride.trim() ? Number(editing.contextWindowOverride) : 0
+    if (!Number.isSafeInteger(override) || override < 0) {
+      setTestResult({ tone: 'error', text: '上下文容量必须是非负整数，留空表示自动获取' })
+      return
+    }
     await actions.saveProfile({
       id: editing.id ?? undefined,
       name: editing.name,
@@ -183,6 +195,7 @@ export function LlmConfigPage() {
       model: editing.model,
       proxyURL: editing.proxyURL,
       apiKey: editing.apiKey.trim() || undefined,
+      contextWindowOverride: override,
     })
     setEditing(null)
     setSaved(true)
@@ -205,7 +218,7 @@ export function LlmConfigPage() {
   const test = async (): Promise<void> => {
     if (!editing) return
     setTesting(true)
-    setTestResult('')
+    setTestResult(null)
     const res = await window.api.testLlm({
       id: editing.id ?? undefined,
       name: editing.name,
@@ -215,7 +228,7 @@ export function LlmConfigPage() {
       proxyURL: editing.proxyURL,
       apiKey: editing.apiKey.trim() || undefined,
     })
-    setTestResult(res.ok ? `✅ ${res.message}` : `❌ ${res.message}`)
+    setTestResult({ tone: res.ok ? 'success' : 'error', text: res.message })
     setTesting(false)
   }
 
@@ -234,7 +247,7 @@ export function LlmConfigPage() {
       setEditing((prev) =>
         prev ? { ...prev, presetId, name: p.name, provider: p.provider, baseURL: p.baseURL, model: p.models[0] ?? '' } : prev,
       )
-      setTestResult('')
+      setTestResult(null)
     }
 
     return (
@@ -309,6 +322,14 @@ export function LlmConfigPage() {
         </label>
 
         <label className="field">
+          <span>上下文容量覆盖（tokens，可选）</span>
+          <input type="number" min="1" step="1" value={editing.contextWindowOverride}
+            placeholder="留空，从服务元数据或已核实的官方配置获取"
+            onChange={(e) => setEditing({ ...editing, contextWindowOverride: e.target.value })} />
+          <small>只有需要手动指定时填写；容量详情会明确标为手动配置。</small>
+        </label>
+
+        <label className="field">
           <span>API Key</span>
           <input
             type="password"
@@ -331,11 +352,11 @@ export function LlmConfigPage() {
           <small>填写后该配置档的所有 API 请求经此代理发送（http/https 代理）；留空则直连。</small>
         </label>
 
-        {testResult ? <div className="test-result">{testResult}</div> : null}
+        <SettingsNotice notice={testResult} />
 
         <div className="settings-page-actions">
           <button className="btn" disabled={testing} onClick={() => void test()}>
-            {testing ? '测试中…' : '测试连接'}
+            <Icon name="refresh" size={14} />{testing ? '测试中…' : '测试连接'}
           </button>
           <div className="spacer" />
           <button className="btn" onClick={() => setEditing(null)}>
@@ -358,7 +379,7 @@ export function LlmConfigPage() {
       </p>
 
       {llmProfiles.length === 0 ? (
-        <div className="profile-empty">还没有配置档，点下面"＋ 新增配置"开始。</div>
+        <div className="profile-empty">还没有模型配置。添加服务商与 API Key，即可开始对话。</div>
       ) : (
         <div className="profile-list">
           {llmProfiles.map((p) => (
@@ -366,24 +387,35 @@ export function LlmConfigPage() {
               <div className="profile-info">
                 <span className="profile-name">
                   {p.name}
-                  {p.id === activeLlmId ? <span className="profile-active-badge">激活中</span> : null}
+                  {p.id === activeLlmId ? <span className="status-line status-success"><span className="status-dot" />使用中</span> : null}
                 </span>
                 <small>
                   {p.provider === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'} · {p.model || '(未设模型)'} ·{' '}
                   {p.hasApiKey ? `密钥 ${p.apiKeyHint}` : '未设密钥'}
                 </small>
+                <small>
+                  上下文：{p.contextInfo ? `${p.contextInfo.contextWindow.toLocaleString()} tokens · ${p.contextInfo.source === 'api' ? '服务元数据' : p.contextInfo.source === 'manual' ? '手动配置' : '官方文档'}` : '上限未确认'}
+                </small>
               </div>
               <div className="profile-actions">
+                <button className="btn" disabled={refreshingContext !== null} onClick={async () => {
+                  setRefreshingContext(p.id)
+                  const result = await actions.refreshModelContext(p.id)
+                  setContextNotice({ tone: result.ok ? 'success' : 'warning', text: result.message })
+                  setRefreshingContext(null)
+                }}>
+                  <Icon name="refresh" size={14} />{refreshingContext === p.id ? '获取中…' : '获取容量'}
+                </button>
                 {p.id !== activeLlmId ? (
                   <button className="btn" onClick={() => void actions.setActiveLlm(p.id)}>
                     使用
                   </button>
                 ) : null}
                 <button className="btn" onClick={() => startEdit(p)}>
-                  编辑
+                  <Icon name="edit" size={14} />编辑
                 </button>
                 <button className="btn btn-danger-ghost" onClick={() => void remove(p)}>
-                  删除
+                  <Icon name="trash" size={14} />删除
                 </button>
               </div>
             </div>
@@ -393,11 +425,12 @@ export function LlmConfigPage() {
 
       <div className="settings-page-actions">
         <button className="btn btn-primary" onClick={startNew}>
-          ＋ 新增配置
+          <Icon name="plus" size={14} />新增配置
         </button>
         <div className="spacer" />
-        {saved ? <span className="saved-hint">✅ 已保存</span> : null}
+        {saved ? <span className="saved-hint" role="status"><Icon name="check" size={14} />已保存</span> : null}
       </div>
+      <SettingsNotice notice={contextNotice} />
     </div>
   )
 }

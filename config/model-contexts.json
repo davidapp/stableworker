@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "description": "Verified model context windows. Exact model IDs and service endpoints only; never infer a capacity from a model family. Runtime API metadata is cached in userData/model-contexts.json without credentials.",
+  "models": [
+    {
+      "models": [
+        "deepseek-flash",
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp"
+      ],
+      "baseURLs": [
+        "https://api.deepseek.com",
+        "https://api.deepseek.com/v1",
+        "https://api.deepseek.com/anthropic"
+      ],
+      "providers": [
+        "openai-compatible",
+        "anthropic"
+      ],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 393216,
+      "sourceUrl": "https://api-docs.deepseek.com/api/list-models/",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "gpt-5"
+      ],
+      "baseURLs": [
+        "https://api.openai.com/v1"
+      ],
+      "providers": [
+        "openai-compatible"
+      ],
+      "contextWindow": 400000,
+      "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "gpt-5-mini"
+      ],
+      "baseURLs": [
+        "https://api.openai.com/v1"
+      ],
+      "providers": [
+        "openai-compatible"
+      ],
+      "contextWindow": 400000,
+      "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5-mini",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "gpt-4.1"
+      ],
+      "baseURLs": [
+        "https://api.openai.com/v1"
+      ],
+      "providers": [
+        "openai-compatible"
+      ],
+      "contextWindow": 1047576,
+      "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4.1",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5"
+      ],
+      "baseURLs": [
+        "https://api.anthropic.com",
+        "https://api.anthropic.com/v1"
+      ],
+      "providers": [
+        "anthropic"
+      ],
+      "contextWindow": 200000,
+      "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "checkedAt": "2026-10-12"
+    }
+  ]
+}

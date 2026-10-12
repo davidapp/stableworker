@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../../store'
+import { Icon } from '../Icon'
 import * as actions from '../../actions'
 import type { PermissionRules } from '../../../../shared/types'
 
@@ -39,6 +40,7 @@ export function RulesPage() {
           <span>{k.label}</span>
           <textarea
             className="holidays-input"
+            aria-label={k.label}
             rows={4}
             value={draft[k.key].join('\n')}
             placeholder={'run_command(npm:*)\nedit_file(src/*)'}
@@ -50,7 +52,7 @@ export function RulesPage() {
 
       <div className="settings-page-actions">
         <div className="spacer" />
-        {saved ? <span className="saved-hint">✅ 已保存，下一轮对话生效</span> : null}
+        {saved ? <span className="saved-hint" role="status"><Icon name="check" size={14} />已保存，下一轮对话生效</span> : null}
         <button className="btn btn-primary" onClick={() => void save()}>
           保存
         </button>

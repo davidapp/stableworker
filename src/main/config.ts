@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
+import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
 import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, SubagentTypeConfig } from '../shared/types'
 
 /**
@@ -34,21 +35,6 @@ const DEFAULT_MODEL_PRICING: ModelPricing[] = [
 
 const APPROVAL_MODES: ApprovalMode[] = ['plan', 'confirm', 'autoEdit', 'fullAccess']
 
-/** 各模型家族的上下文窗口默认值（tokens）；未匹配的模型用 fallback */
-const CONTEXT_LIMITS: { match: RegExp; limit: number }[] = [
-  // DeepSeek V4 系列原生支持 1M 上下文（官方 API，无长上下文加价）
-  { match: /deepseek/i, limit: 1_000_000 },
-  { match: /glm/i, limit: 128_000 },
-  { match: /kimi|moonshot/i, limit: 256_000 },
-  { match: /claude/i, limit: 200_000 },
-  { match: /gpt-5|gpt-4\.1|gpt-4o/i, limit: 128_000 },
-]
-const CONTEXT_LIMIT_FALLBACK = 32_000
-
-export function defaultContextLimit(model: string): number {
-  return CONTEXT_LIMITS.find((e) => e.match.test(model))?.limit ?? CONTEXT_LIMIT_FALLBACK
-}
-
 /** 一条 LLM 配置档的落盘形态（apiKey 为加密后字符串） */
 type StoredProfile = LLMConfig & { id: string; apiKey: string }
 
@@ -66,6 +52,8 @@ interface StoredConfig {
   features?: FeatureEntry[]
   sidebarWidth?: number
   contextLimit?: number
+  /** Old unscoped limit retained for migration/auditing, never used as verified model capacity. */
+  legacyContextLimit?: number
   toolSwitches?: Record<string, boolean>
   permissionRules?: PermissionRules
   mcpServers?: MCPServerConfig[]
@@ -79,8 +67,17 @@ function configPath(): string {
   return join(app.getPath('userData'), 'config.json')
 }
 
+function updateContextLimit(cfg: StoredConfig): void {
+  const profile = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId)
+  cfg.contextLimit = resolveModelContext(profile)?.contextWindow ?? 0
+}
+
 export async function loadConfig(): Promise<StoredConfig> {
-  if (cache) return cache
+  await initializeModelContexts(join(app.getPath('userData'), 'model-contexts.json'))
+  if (cache) {
+    updateContextLimit(cache)
+    return cache
+  }
   try {
     cache = JSON.parse(await readFile(configPath(), 'utf-8')) as StoredConfig
   } catch {
@@ -110,11 +107,12 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.features === undefined) cache.features = []
   if (cache.sidebarWidth === undefined) cache.sidebarWidth = 240
   cache.sidebarWidth = Math.min(480, Math.max(180, cache.sidebarWidth))
-  // 上下文上限按当前激活模型给默认值；首次生成后固化（可在 config.json 手改）
-  if (cache.contextLimit === undefined) {
-    const model = cache.llmProfiles?.find((p) => p.id === cache?.activeLlmId)?.model ?? ''
-    cache.contextLimit = defaultContextLimit(model)
+  // The old global value may have been initialized before any model existed.
+  // Preserve it for audit only; real capacity is resolved by service + exact model.
+  if (cache.contextLimit !== undefined && cache.legacyContextLimit === undefined) {
+    cache.legacyContextLimit = cache.contextLimit
   }
+  updateContextLimit(cache)
   if (cache.toolSwitches === undefined) cache.toolSwitches = {}
   if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
   if (cache.mcpServers === undefined) cache.mcpServers = []
@@ -124,6 +122,7 @@ export async function loadConfig(): Promise<StoredConfig> {
 }
 
 export async function saveConfig(next: StoredConfig): Promise<ConfigView> {
+  updateContextLimit(next)
   cache = next
   await writeFile(configPath(), JSON.stringify(next, null, 2), 'utf-8')
   return toConfigView(next)
@@ -167,6 +166,9 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
       baseURL: p.baseURL,
       model: p.model,
       proxyURL: p.proxyURL,
+      thinkingEffort: p.thinkingEffort,
+      contextWindowOverride: p.contextWindowOverride,
+      contextInfo: resolveModelContext(p),
       hasApiKey: Boolean(p.apiKey),
       apiKeyHint: maskKey(decryptApiKey(p.apiKey)),
     })),
@@ -176,7 +178,8 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     holidays: cfg.holidays ?? [],
     features: cfg.features ?? [],
     sidebarWidth: cfg.sidebarWidth ?? 240,
-    contextLimit: cfg.contextLimit ?? 0,
+    contextLimit: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId))?.contextWindow ?? 0,
+    contextInfo: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId)),
     toolSwitches: cfg.toolSwitches ?? {},
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
     mcpServers: cfg.mcpServers ?? [],
@@ -188,12 +191,24 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
 export function registerConfigHandlers(): void {
   ipcMain.handle('config:get', async (): Promise<ConfigView> => toConfigView(await loadConfig()))
 
+  ipcMain.handle('config:refreshModelContext', async (_e, id?: string, force = true) => {
+    const cfg = await loadConfig()
+    const profile = cfg.llmProfiles?.find((p) => p.id === (id ?? cfg.activeLlmId))
+    if (!profile) return { ok: false, message: '请先配置模型', config: toConfigView(cfg) }
+    const result = await refreshModelContext({ ...profile }, decryptApiKey(profile.apiKey), force)
+    return { ...result, config: await saveConfig(await loadConfig()) }
+  })
+
   // 新增或更新一条配置档；apiKey 留空且原来已保存过 key 时保留旧 key；新增即激活
   ipcMain.handle(
     'config:saveProfile',
     async (_e, input: LLMConfig & { id?: string; apiKey?: string }): Promise<ConfigView> => {
       const cfg = await loadConfig()
       cfg.llmProfiles ??= []
+      if (input.contextWindowOverride !== undefined &&
+          (!Number.isSafeInteger(input.contextWindowOverride) || input.contextWindowOverride < 0)) {
+        throw new Error('上下文容量必须是非负整数；0 表示自动获取')
+      }
       if (input.id) {
         const p = cfg.llmProfiles.find((x) => x.id === input.id)
         if (!p) return toConfigView(cfg)
@@ -202,6 +217,7 @@ export function registerConfigHandlers(): void {
         p.name = input.name.trim() || p.name
         p.baseURL = input.baseURL.trim()
         p.model = input.model.trim()
+        if (input.contextWindowOverride !== undefined) p.contextWindowOverride = input.contextWindowOverride || undefined
         p.proxyURL = input.proxyURL?.trim() ?? ''
         p.apiKey = keepOldKey ? p.apiKey : encryptApiKey(input.apiKey?.trim() ?? '')
       } else {
@@ -211,6 +227,7 @@ export function registerConfigHandlers(): void {
           name: input.name.trim() || '默认配置',
           baseURL: input.baseURL.trim(),
           model: input.model.trim(),
+          contextWindowOverride: input.contextWindowOverride || undefined,
           proxyURL: input.proxyURL?.trim() ?? '',
           apiKey: encryptApiKey(input.apiKey?.trim() ?? ''),
         })
@@ -290,11 +307,12 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
-  // 保存上下文窗口上限（tokens；0 = 未知）
+  // Explicit capacity override belongs to the active profile; 0 returns to verified metadata.
   ipcMain.handle('config:setContextLimit', async (_e, limit: number): Promise<ConfigView> => {
     const cfg = await loadConfig()
     if (typeof limit === 'number' && Number.isFinite(limit) && limit >= 0) {
-      cfg.contextLimit = Math.round(limit)
+      const profile = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId)
+      if (profile && Number.isSafeInteger(limit)) profile.contextWindowOverride = limit || undefined
     }
     return saveConfig(cfg)
   })

@@ -8,6 +8,7 @@ import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
 import { TodoPanel } from './TodoPanel'
 import { copyText } from '../clipboard'
+import { Icon } from './Icon'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
 function CodeBlock({ children }: { children?: ReactNode }) {
@@ -44,6 +45,7 @@ export function ChatPane() {
     sessionWarning,
     saveError,
     statusText,
+    sessionsByProject,
   } = useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
@@ -81,15 +83,19 @@ export function ChatPane() {
   }
 
   const project = projects.find((p) => p.id === activeProjectId)
+  const session = project ? sessionsByProject[project.id]?.find((s) => s.id === activeSessionId) : null
 
   if (!project) {
     return (
       <main className="chat-pane">
+        <header className="chat-header"><Icon name="folder" /><span className="chat-header-project">工作区</span></header>
         <div className="empty-state">
-          <h2>欢迎使用 StableWorker</h2>
-          <p>先在左侧添加一个项目目录，然后就可以开始对话了。</p>
+          <span className="empty-state-icon"><Icon name="code" size={28} /></span>
+          <span className="empty-state-eyebrow">你的 AI 编程工作区</span>
+          <h2>从一个项目开始</h2>
+          <p>添加本地项目目录，与助手一起阅读代码、规划修改和完成开发。</p>
           <button className="btn btn-primary" onClick={() => void actions.addProject()}>
-            ＋ 添加项目
+            <Icon name="plus" /> 添加项目
           </button>
         </div>
       </main>
@@ -99,17 +105,20 @@ export function ChatPane() {
   return (
     <main className="chat-pane">
       <header className="chat-header">
+        <Icon name="folder" />
         <span className="chat-header-project" title={project.path}>
           {project.name}
         </span>
+        <span className="header-separator">/</span>
+        <span className="chat-header-session">{session?.title ?? '新会话'}</span>
         <div className="spacer" />
         {activeSessionId && messages.length > 0 ? (
           <button
-            className="btn"
+            className="btn btn-ghost"
             title="上下文管理：浏览 / 编辑 / 删除消息，管理摘要与压缩（独立窗口）"
             onClick={() => void window.api.openContextWindow()}
           >
-            📚 上下文
+            <Icon name="list" size={14} /> 上下文
           </button>
         ) : null}
       </header>
@@ -117,7 +126,7 @@ export function ChatPane() {
       {saveError ? (
         <div className="chat-banner error">
           <span>
-            ⚠ 会话保存失败：{saveError}。新消息目前只存在内存中，请勿关闭应用。
+            会话保存失败：{saveError}。新消息目前只存在内存中，请勿关闭应用。
           </span>
           <div className="chat-banner-actions">
             <button className="btn" onClick={() => void actions.retrySaveSession()}>
@@ -143,14 +152,24 @@ export function ChatPane() {
 
       {!activeLlm ? (
         <div className="empty-state">
-          <p>还没有配置 LLM API。</p>
+          <span className="empty-state-icon"><Icon name="sliders" size={28} /></span>
+          <h2>连接你的模型</h2>
+          <p>配置模型服务和 API Key，开始在这个工作区中协作。</p>
           <button className="btn btn-primary" onClick={() => actions.openSettings()}>
-            打开 LLM 设置
+            <Icon name="settings" /> 配置模型
           </button>
         </div>
       ) : messages.length === 0 ? (
         <div className="empty-state">
-          <p>开始你的第一轮对话。可以直接问项目相关的问题，助手会调用工具查看文件。</p>
+          <span className="empty-state-icon"><Icon name="chat" size={28} /></span>
+          <span className="empty-state-eyebrow">{project.name}</span>
+          <h2>今天一起完成什么？</h2>
+          <p>提问、排查问题或描述一个想法，助手会结合项目文件与你协作。</p>
+          <div className="conversation-starters">
+            {['介绍这个项目的结构', '检查代码中潜在的问题', '帮我规划下一步开发'].map((prompt) => (
+              <button key={prompt} className="btn btn-ghost" onClick={() => void actions.sendChat(prompt)}>{prompt}<Icon name="arrowUp" size={14} /></button>
+            ))}
+          </div>
         </div>
       ) : (
       <div className="message-list-wrap">
@@ -172,7 +191,7 @@ export function ChatPane() {
                       if (b.type === 'reasoning') {
                         return (
                           <details key={i} className="reasoning-collapse">
-                            <summary>🤔 思考过程</summary>
+                            <summary><Icon name="brain" size={14} /> 思考过程</summary>
                             <div className="reasoning-text">{b.text}</div>
                           </details>
                         )
@@ -217,7 +236,7 @@ export function ChatPane() {
           </div>
           {showJumpButton ? (
             <button className="jump-bottom" title="滚到最下面" onClick={jumpToBottom}>
-              ↓
+              <Icon name="arrowDown" />
             </button>
           ) : null}
         </div>
