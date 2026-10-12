@@ -1,15 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatHistoryMessage, ToolUseBlock } from '../src/shared/types'
+import type { ChatHistoryMessage, SubagentTypeConfig, ToolUseBlock } from '../src/shared/types'
 import type { ToolDefinition } from '../src/main/tools/index'
-import { runSubagent } from '../src/main/subagent'
+import { createTaskTool, resolveSubagentType, runSubagent } from '../src/main/subagent'
 
 const readTool: ToolDefinition = {
   name: 'read_file',
   description: 'read',
   inputSchema: { type: 'object' },
   requiresApproval: false,
+  kind: 'read',
   async execute() {
     return { content: 'file body' }
+  },
+}
+const grepTool: ToolDefinition = {
+  name: 'grep',
+  description: 'grep',
+  inputSchema: { type: 'object' },
+  requiresApproval: false,
+  kind: 'read',
+  async execute() {
+    return { content: 'matches' }
   },
 }
 const writeTool: ToolDefinition = {
@@ -53,7 +64,7 @@ describe('子代理循环', () => {
       prompt: '调研 llm.ts 的代理循环',
       subagentType: 'general-purpose',
       baseTools: [readTool, writeTool, askTool, taskTool],
-
+      systemPrompt: 'sub',
       signal: new AbortController().signal,
       onProgress: (l) => progress.push(l),
       callRound: async (messages, tools) => {
@@ -88,7 +99,7 @@ describe('子代理循环', () => {
       prompt: '只读调研',
       subagentType: 'Explore',
       baseTools: [readTool, writeTool, askTool, taskTool],
-
+      systemPrompt: 'sub',
       signal: new AbortController().signal,
       onProgress: () => {},
       callRound: async (_m, tools) => {
@@ -107,7 +118,7 @@ describe('子代理循环', () => {
       prompt: '一直调工具',
       subagentType: 'general-purpose',
       baseTools: [readTool],
-
+      systemPrompt: 'sub',
       maxRounds: 2,
       signal: new AbortController().signal,
       onProgress: () => {},
@@ -135,7 +146,7 @@ describe('子代理循环', () => {
       prompt: 'x',
       subagentType: 'general-purpose',
       baseTools: [readTool],
-
+      systemPrompt: 'sub',
       signal: ac.signal,
       onProgress: () => {},
       callRound: async () => {
@@ -145,5 +156,94 @@ describe('子代理循环', () => {
     })
     expect(result.isError).toBe(true)
     expect(result.content).toContain('停止')
+  })
+})
+
+describe('并行工具执行', () => {
+  it('纯只读轮并行，含写工具的轮次串行', async () => {
+    let phase = 0
+    let maxReadConc = 0
+    let maxWriteConc = 0
+    let active = 0
+    const track = () => async (tu: ToolUseBlock) => {
+      active++
+      if (phase === 1) maxReadConc = Math.max(maxReadConc, active)
+      else maxWriteConc = Math.max(maxWriteConc, active)
+      await new Promise((r) => setTimeout(r, 15))
+      tu.status = 'done'
+      tu.result = 'ok'
+      active--
+    }
+    await runSubagent({
+      prompt: 'x',
+      subagentType: 'general-purpose',
+      baseTools: [readTool, grepTool, writeTool],
+      systemPrompt: 'sub',
+      signal: new AbortController().signal,
+      onProgress: () => {},
+      callRound: async () => {
+        phase++
+        if (phase === 1) return { blocks: [toolUse('a', 'read_file'), toolUse('b', 'grep')] }
+        if (phase === 2) return { blocks: [toolUse('c', 'read_file'), toolUse('d', 'write_file')] }
+        return { blocks: [{ type: 'text', text: 'done' }] }
+      },
+      executeTool: track(),
+    })
+    expect(maxReadConc).toBe(2)
+    expect(maxWriteConc).toBe(1)
+  })
+})
+
+describe('自定义子代理类型', () => {
+  const custom: SubagentTypeConfig = {
+    name: 'reviewer',
+    description: '代码评审',
+    tools: 'read-only',
+    prompt: '你是评审专家',
+  }
+
+  it('resolveSubagentType：只读范围 + 角色设定', () => {
+    const r = resolveSubagentType('reviewer', [readTool, grepTool, writeTool], [custom])
+    expect(r.pool.map((t) => t.name)).toEqual(['read_file', 'grep'])
+    expect(r.promptAppend).toBe('你是评审专家')
+    expect(r.label).toContain('reviewer')
+    // 未知名称回退 general-purpose
+    const fallback = resolveSubagentType('no-such', [readTool, writeTool], [])
+    expect(fallback.pool.map((t) => t.name)).toContain('write_file')
+    expect(fallback.promptAppend).toBeUndefined()
+  })
+
+  it('runSubagent 收到拼接了角色设定的系统提示', async () => {
+    let seenSystem = ''
+    const resolved = resolveSubagentType('reviewer', [readTool], [custom])
+    await runSubagent({
+      prompt: 'x',
+      subagentType: 'general-purpose',
+      resolved,
+      baseTools: [readTool],
+      systemPrompt: 'BASE',
+      signal: new AbortController().signal,
+      onProgress: () => {},
+      callRound: async (_m, _t, _s, sys) => {
+        seenSystem = sys
+        return { blocks: [{ type: 'text', text: 'ok' }] }
+      },
+      executeTool: async () => {},
+    })
+    expect(seenSystem).toBe('BASE\n\n角色设定：你是评审专家')
+  })
+
+  it('task 工具 schema 动态包含自定义类型', () => {
+    const tool = createTaskTool({
+      baseTools: [readTool],
+      systemPrompt: 'BASE',
+      customTypes: [custom],
+      signal: new AbortController().signal,
+      callRound: async () => ({ blocks: [] }),
+      executeTool: async () => {},
+    })
+    const props = tool.inputSchema.properties as { subagent_type?: { enum?: string[] } }
+    expect(props.subagent_type?.enum).toEqual(['general-purpose', 'Explore', 'reviewer'])
+    expect(tool.description).toContain('reviewer（代码评审）')
   })
 })

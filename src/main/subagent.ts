@@ -1,4 +1,4 @@
-import type { ChatHistoryMessage, MessageBlock, ToolUseBlock } from '../shared/types'
+import type { ChatHistoryMessage, MessageBlock, SubagentTypeConfig, ToolUseBlock } from '../shared/types'
 import type { ToolContext, ToolDefinition } from './tools/index'
 
 /**
@@ -27,6 +27,10 @@ export interface RunSubagentArgs {
   subagentType: SubagentType
   /** 主循环当前工具池（已过工具开关与规划模式过滤，不含 task 自身） */
   baseTools: ToolDefinition[]
+  /** 基础系统提示词（随每轮请求发送；自定义类型会追加角色设定） */
+  systemPrompt: string
+  /** 预解析好的类型（自定义代理类型用）；不传则按 subagentType 解析内置类型 */
+  resolved?: ResolvedSubagentType
   maxRounds?: number
   signal: AbortSignal
   /** 进度一行；主进程把它 emit 成 tool_output 挂到 task 工具卡片的实时输出区 */
@@ -36,6 +40,7 @@ export interface RunSubagentArgs {
     messages: ChatHistoryMessage[],
     tools: ToolDefinition[],
     signal: AbortSignal,
+    systemPrompt: string,
   ) => Promise<SubagentRound>
   /** 带门禁执行一个工具调用（会原地写 tu.status / tu.result / tu.durationMs） */
   executeTool: (tu: ToolUseBlock) => Promise<void>
@@ -57,6 +62,40 @@ function pickTools(subagentType: SubagentType, baseTools: ToolDefinition[]): Too
   return pool
 }
 
+/** 解析后的子代理类型：工具池 + 进度显示名 + 追加系统提示 */
+export interface ResolvedSubagentType {
+  pool: ToolDefinition[]
+  label: string
+  promptAppend?: string
+}
+
+/**
+ * 按名称解析子代理类型：内置 general-purpose / Explore，或用户在设置里
+ * 定义的自定义类型（工具范围 + 角色设定）。未知名称回退为 general-purpose。
+ */
+export function resolveSubagentType(
+  type: string,
+  baseTools: ToolDefinition[],
+  customTypes: SubagentTypeConfig[],
+): ResolvedSubagentType {
+  const custom = customTypes.find((c) => c.name === type)
+  if (custom) {
+    return {
+      pool: pickTools(custom.tools === 'read-only' ? 'Explore' : 'general-purpose', baseTools),
+      label: `自定义 · ${custom.name}`,
+      promptAppend: custom.prompt.trim() || undefined,
+    }
+  }
+  const t: SubagentType = type === 'Explore' ? 'Explore' : 'general-purpose'
+  return { pool: pickTools(t, baseTools), label: t === 'Explore' ? '只读研究型' : '通用型' }
+}
+
+/** 只读工具（kind === 'read' 且无需批准）才允许与其他调用并行执行 */
+export function isParallelSafe(tu: ToolUseBlock, tools: ToolDefinition[]): boolean {
+  const def = tools.find((d) => d.name === tu.name)
+  return Boolean(def && !def.requiresApproval && def.kind === 'read')
+}
+
 /** 工具调用的一行摘要（进度用）：抓最有辨识度的参数截断 */
 function summarizeInput(tu: ToolUseBlock): string {
   const raw = (tu.input.path ?? tu.input.command ?? tu.input.pattern ?? tu.input.query ?? tu.input.url ?? '') as string
@@ -72,12 +111,14 @@ function tailLine(text: string | undefined): string {
 }
 
 export async function runSubagent(args: RunSubagentArgs): Promise<{ content: string; isError: boolean }> {
-  const { prompt, subagentType, baseTools, signal, onProgress, callRound, executeTool } = args
+  const { prompt, baseTools, systemPrompt, signal, onProgress, callRound, executeTool } = args
   const maxRounds = args.maxRounds ?? 12
-  const tools = pickTools(subagentType, baseTools)
+  const resolved = args.resolved ?? resolveSubagentType(args.subagentType, baseTools, [])
+  const tools = resolved.pool
+  const effectiveSystem = resolved.promptAppend ? `${systemPrompt}\n\n角色设定：${resolved.promptAppend}` : systemPrompt
   const messages: ChatHistoryMessage[] = [{ role: 'user', blocks: [{ type: 'text', text: prompt }] }]
   onProgress(
-    `🤖 子代理启动 · ${subagentType === 'Explore' ? '只读研究型' : '通用型'} · ${tools.length} 个工具 · 最多 ${maxRounds} 轮`,
+    `🤖 子代理启动 · ${resolved.label} · ${tools.length} 个工具 · 最多 ${maxRounds} 轮`,
   )
 
   const finalTextOf = (blocks: MessageBlock[]): string => textOf(blocks) || '（子代理没有返回文本内容）'
@@ -85,7 +126,7 @@ export async function runSubagent(args: RunSubagentArgs): Promise<{ content: str
   try {
     for (let round = 1; round <= maxRounds; round++) {
       if (signal.aborted) return { content: '任务被用户停止', isError: true }
-      const { blocks } = await callRound(messages, tools, signal)
+      const { blocks } = await callRound(messages, tools, signal, effectiveSystem)
       messages.push({ role: 'assistant', blocks })
 
       const toolUses = blocks.filter((b): b is ToolUseBlock => b.type === 'tool_use')
@@ -94,11 +135,22 @@ export async function runSubagent(args: RunSubagentArgs): Promise<{ content: str
         return { content: finalTextOf(blocks), isError: false }
       }
       onProgress(`── 第 ${round} 轮：${toolUses.length} 个工具调用`)
-      for (const tu of toolUses) {
-        if (signal.aborted) break
-        onProgress(`🛠 ${tu.name}（${summarizeInput(tu)}）`)
-        await executeTool(tu)
-        onProgress(`${tu.status === 'error' ? '  ✗' : '  ✓'} ${tu.name}${tailLine(tu.result)}`)
+      // 只读调用并行执行（对齐 Claude Code 的并行工具）；含写/需批准的轮次保持串行
+      if (toolUses.length > 1 && toolUses.every((tu) => isParallelSafe(tu, tools))) {
+        await Promise.all(
+          toolUses.map(async (tu) => {
+            onProgress(`🛠 ${tu.name}（${summarizeInput(tu)}）`)
+            await executeTool(tu)
+            onProgress(`${tu.status === 'error' ? '  ✗' : '  ✓'} ${tu.name}${tailLine(tu.result)}`)
+          }),
+        )
+      } else {
+        for (const tu of toolUses) {
+          if (signal.aborted) break
+          onProgress(`🛠 ${tu.name}（${summarizeInput(tu)}）`)
+          await executeTool(tu)
+          onProgress(`${tu.status === 'error' ? '  ✗' : '  ✓'} ${tu.name}${tailLine(tu.result)}`)
+        }
       }
     }
 
@@ -108,7 +160,7 @@ export async function runSubagent(args: RunSubagentArgs): Promise<{ content: str
       role: 'user',
       blocks: [{ type: 'text', text: '（系统提示：已达最大工具轮次。请基于以上全部发现立即输出最终报告，不要再调用工具。）' }],
     })
-    const final = await callRound(messages, [], signal)
+    const final = await callRound(messages, [], signal, effectiveSystem)
     onProgress('✅ 子代理完成（轮次上限收尾）')
     return { content: finalTextOf(final.blocks), isError: false }
   } catch (e) {
@@ -124,25 +176,33 @@ export const TASK_TOOL_NAME = 'task'
 
 export interface TaskToolDeps {
   baseTools: ToolDefinition[]
+  /** 基础系统提示词（llm.ts 构建；自定义类型的角色设定会追加在它后面） */
+  systemPrompt: string
+  /** 用户自定义的子代理类型（设置页维护） */
+  customTypes: SubagentTypeConfig[]
   signal: AbortSignal
   callRound: RunSubagentArgs['callRound']
   executeTool: RunSubagentArgs['executeTool']
 }
 
 export function createTaskTool(deps: TaskToolDeps): ToolDefinition {
+  const customNames = deps.customTypes.map((c) => c.name)
+  const customHint = deps.customTypes.length
+    ? ' 可选的自定义类型：' + deps.customTypes.map((c) => `${c.name}（${c.description}）`).join('；') + '。'
+    : ''
   return {
     name: TASK_TOOL_NAME,
     description:
       '把一个独立任务分派给子代理（subagent）执行。子代理拥有独立上下文与工具，自主完成多轮"读代码/搜索/执行"后' +
       '只把最终报告返回。适用：大范围代码调研（读很多文件但只需一段结论）、独立的小任务、需要隔离中间过程的探索。' +
-      'prompt 必须自包含（子代理看不到主对话历史）；subagent_type 选 Explore（只读研究，更快更安全）或 general-purpose（可用全部工具）。',
+      'prompt 必须自包含（子代理看不到主对话历史）；subagent_type 选 Explore（只读研究，更快更安全）或 general-purpose（可用全部工具）。' + customHint,
     inputSchema: {
       type: 'object',
       properties: {
         prompt: { type: 'string', description: '任务描述，必须自包含：目标、背景、期望的报告内容' },
         subagent_type: {
           type: 'string',
-          enum: ['general-purpose', 'Explore'],
+          enum: ['general-purpose', 'Explore', ...customNames],
           description: '子代理类型，默认 general-purpose；纯研究任务建议 Explore',
         },
       },
@@ -154,11 +214,12 @@ export function createTaskTool(deps: TaskToolDeps): ToolDefinition {
     async execute(input: Record<string, unknown>, ctx: ToolContext) {
       const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
       if (!prompt) return { content: '缺少 prompt 参数：请描述要分派给子代理的任务', isError: true }
-      const subagentType: SubagentType = input.subagent_type === 'Explore' ? 'Explore' : 'general-purpose'
       const r = await runSubagent({
         prompt,
-        subagentType,
+        subagentType: input.subagent_type === 'Explore' ? 'Explore' : 'general-purpose',
+        resolved: resolveSubagentType(String(input.subagent_type ?? ''), deps.baseTools, deps.customTypes),
         baseTools: deps.baseTools,
+        systemPrompt: deps.systemPrompt,
         signal: deps.signal,
         // 进度走 ctx.onOutput（已由执行器绑定到本工具调用卡片"实时输出"区）
         onProgress: (line) => ctx.onOutput?.(line + '\n'),

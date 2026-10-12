@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
-import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo } from '../shared/types'
+import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, SubagentTypeConfig } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -70,6 +70,7 @@ interface StoredConfig {
   permissionRules?: PermissionRules
   mcpServers?: MCPServerConfig[]
   sidebarExpanded?: Record<string, boolean>
+  subagentTypes?: SubagentTypeConfig[]
 }
 
 let cache: StoredConfig | null = null
@@ -118,6 +119,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
   if (cache.mcpServers === undefined) cache.mcpServers = []
   if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
+  if (cache.subagentTypes === undefined) cache.subagentTypes = []
   return cache
 }
 
@@ -179,6 +181,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
     mcpServers: cfg.mcpServers ?? [],
     sidebarExpanded: cfg.sidebarExpanded ?? {},
+    subagentTypes: cfg.subagentTypes ?? [],
   }
 }
 
@@ -267,6 +270,23 @@ export function registerConfigHandlers(): void {
   ipcMain.handle('config:setSidebarExpanded', async (_e, map: Record<string, boolean>): Promise<ConfigView> => {
     const cfg = await loadConfig()
     cfg.sidebarExpanded = map && typeof map === 'object' ? map : {}
+    return saveConfig(cfg)
+  })
+
+  // 自定义子代理类型（整体替换；名称校验 + 不与内置类型冲突）
+  ipcMain.handle('config:setSubagentTypes', async (_e, list: SubagentTypeConfig[]): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    const BUILT_IN = new Set(['general-purpose', 'Explore'])
+    const seen = new Set<string>()
+    const clean = (Array.isArray(list) ? list : [])
+      .map((t) => ({
+        name: String(t.name ?? '').trim(),
+        description: String(t.description ?? '').trim(),
+        tools: t.tools === 'read-only' ? ('read-only' as const) : ('all' as const),
+        prompt: String(t.prompt ?? ''),
+      }))
+      .filter((t) => /^[A-Za-z0-9_-]+$/.test(t.name) && !BUILT_IN.has(t.name) && !seen.has(t.name) && seen.add(t.name))
+    cfg.subagentTypes = clean
     return saveConfig(cfg)
   })
 

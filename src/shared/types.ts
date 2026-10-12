@@ -245,6 +245,18 @@ export interface SkillMeta {
   scope: 'global' | 'project'
 }
 
+/** 自定义子代理类型：出现在 task 工具的 subagent_type 枚举里（内置 general-purpose / Explore 之外） */
+export interface SubagentTypeConfig {
+  /** 标识符（模型传参用；字母数字下划线连字符） */
+  name: string
+  /** 一句话说明（给模型看，帮它选型） */
+  description: string
+  /** 工具范围：all = 继承全部工具，read-only = 只读 */
+  tools: 'all' | 'read-only'
+  /** 角色设定，追加到子代理系统提示（如"你是代码评审专家，输出按 严重度/位置/建议 分节"） */
+  prompt: string
+}
+
 /** MCP 资源元数据（resources/list） */
 export interface McpResourceMeta {
   uri: string
@@ -286,6 +298,8 @@ export interface ConfigView {
   mcpServers: MCPServerConfig[]
   /** 侧栏项目节点的展开状态（projectId → 是否展开，持久化） */
   sidebarExpanded: Record<string, boolean>
+  /** 自定义子代理类型列表（task 工具的 subagent_type 动态枚举） */
+  subagentTypes: SubagentTypeConfig[]
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */

@@ -29,7 +29,7 @@ import { appendSummaryLine } from './sessions'
 import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
 import { ensureMcpConnections, getMcpToolDefs } from './mcp'
-import { createTaskTool, buildSubagentSystemPrompt } from './subagent'
+import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe } from './subagent'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
@@ -660,8 +660,9 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
     messages: ChatHistoryMessage[],
     roundTools: ToolDefinition[],
     signal: AbortSignal,
+    systemPrompt: string = subSystemPrompt,
   ): Promise<{ blocks: MessageBlock[] }> => {
-    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(messages), roundTools, true, subSystemPrompt)
+    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(messages), roundTools, true, systemPrompt)
     const exchange = beginExchange({
       kind: 'chat',
       round: ++subRound,
@@ -712,6 +713,8 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   }
   const taskTool = createTaskTool({
     baseTools: tools, // 不含 task 自身（固化在创建时；pickTools 再兜底排除递归）
+    systemPrompt: subSystemPrompt,
+    customTypes: cfg.subagentTypes ?? [],
     signal: controller.signal,
     callRound: subCallRound,
     executeTool: (tu) => executeToolWithGates(tu, subExecCtx),
@@ -888,8 +891,13 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
           emit({ type: 'todos', sessionId: req.sessionId, todos })
         },
       }
-      for (const tu of toolUses) {
-        await executeToolWithGates(tu, execCtx)
+      // 只读工具并行执行（对齐 Claude Code）；含写操作/需批准的轮次保持串行
+      if (toolUses.length > 1 && toolUses.every((tu) => isParallelSafe(tu, tools))) {
+        await Promise.all(toolUses.map((tu) => executeToolWithGates(tu, execCtx)))
+      } else {
+        for (const tu of toolUses) {
+          await executeToolWithGates(tu, execCtx)
+        }
       }
     }
   } catch (err) {

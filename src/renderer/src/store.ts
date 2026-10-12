@@ -7,6 +7,7 @@ import type {
   ModelPricing,
   ProjectInfo,
   SessionMeta,
+  SubagentTypeConfig,
   TodoItem,
 } from '../../shared/types'
 
@@ -49,6 +50,8 @@ export interface AppState {
   features: FeatureEntry[]
   /** 侧栏宽度（拖拽分隔条调整，持久化） */
   sidebarWidth: number
+  /** 自定义子代理类型（task 工具 subagent_type 动态枚举） */
+  subagentTypes: SubagentTypeConfig[]
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
   /** 工具开关：工具名 → 是否启用；未记录的默认启用 */
@@ -101,6 +104,7 @@ export const store = createStore<AppState>({
   holidays: [],
   features: [],
   sidebarWidth: 240,
+  subagentTypes: [],
   contextLimit: 0,
   toolSwitches: {},
   permissionRules: { allow: [], ask: [], deny: [] },

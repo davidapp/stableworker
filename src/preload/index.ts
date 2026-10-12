@@ -27,6 +27,7 @@ import type {
   ContextOpResult,
   BalanceResult,
   SkillMeta,
+  SubagentTypeConfig,
 } from '../shared/types'
 
 /**
@@ -50,6 +51,9 @@ const api = {
   /** 侧栏项目节点的展开状态（整体替换持久化） */
   setSidebarExpanded: (map: Record<string, boolean>): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setSidebarExpanded', map),
+  /** 自定义子代理类型（整体替换，出现在 task 工具的 subagent_type 枚举里） */
+  setSubagentTypes: (list: SubagentTypeConfig[]): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setSubagentTypes', list),
   setContextLimit: (limit: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setContextLimit', limit),
   setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>

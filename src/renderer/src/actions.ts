@@ -38,6 +38,7 @@ function applyConfig(cfg: ConfigView): void {
     toolSwitches: cfg.toolSwitches,
     permissionRules: cfg.permissionRules,
     expandedProjects: cfg.sidebarExpanded ?? {},
+    subagentTypes: cfg.subagentTypes ?? [],
   })
 }
 
