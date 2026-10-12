@@ -7,6 +7,7 @@ import { startShellTask, getShellTask, stopShellTask } from './shellTasks'
 import { smartDecode } from './smartDecode'
 import { loadSkillContent, listSkillNames } from '../skills'
 import { grepTool, globTool } from './search'
+import { webFetchTool } from './webFetch'
 import type { TodoItem, ToolUseBlock } from '../../shared/types'
 
 /**
@@ -557,6 +558,7 @@ const registry = new Map<string, ToolDefinition>([
   [todoWriteTool.name, todoWriteTool],
   [skillTool.name, skillTool],
   [askUserQuestionTool.name, askUserQuestionTool],
+  [webFetchTool.name, webFetchTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */
