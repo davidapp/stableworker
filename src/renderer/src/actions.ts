@@ -37,6 +37,7 @@ function applyConfig(cfg: ConfigView): void {
     contextLimit: cfg.contextLimit,
     toolSwitches: cfg.toolSwitches,
     permissionRules: cfg.permissionRules,
+    expandedProjects: cfg.sidebarExpanded ?? {},
   })
 }
 
@@ -50,7 +51,10 @@ export async function boot(): Promise<void> {
   const map = await reloadAllSessions(cfg.projects)
   const ap = cfg.activeProjectId
   if (ap) {
-    store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [ap]: true } }))
+    // 展开状态已持久化；从没记录过的项目（首次添加）默认展开
+    if (cfg.sidebarExpanded?.[ap] === undefined) {
+      store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [ap]: true } }))
+    }
     const first = map[ap]?.[0]
     if (first) await loadSessionIntoView(ap, first.id)
   }
@@ -118,11 +122,12 @@ export async function selectProject(id: string): Promise<void> {
   await refreshProjectSessions(id)
 }
 
-/** 展开/折叠项目节点；展开时顺手刷新该项目的会话列表 */
+/** 展开/折叠项目节点；展开时顺手刷新该项目的会话列表；状态持久化到配置 */
 export function toggleProjectExpanded(projectId: string): void {
   const prev = store.getState().expandedProjects
   const next = { ...prev, [projectId]: !prev[projectId] }
   store.setState({ expandedProjects: next })
+  void window.api.setSidebarExpanded(next)
   if (next[projectId]) void refreshProjectSessions(projectId)
 }
 
@@ -497,6 +502,52 @@ async function reloadSessionsOf(projectId: string): Promise<void> {
   store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject, [projectId]: sessions } }))
 }
 
+// ---------- 上下文自动压缩（对齐 Claude Code 的 auto-compact） ----------
+
+const AUTO_COMPACT_RATIO = 0.8 // 上下文占用超过上限的 80% 触发
+const AUTO_COMPACT_MIN_MESSAGES = 6 // 太短的会话压了没意义
+const AUTO_COMPACT_COOLDOWN_MS = 5 * 60_000 // 触发后 5 分钟内不重复
+let autoCompactRunning = false
+let lastAutoCompactAt = 0
+
+/**
+ * 回复完成后检查：上一轮请求的服务端精确 inputTokens 超过水位时，
+ * 自动执行与手动"⚡ 压缩全部对话"完全相同的管线（compactNow）。
+ * 放在渲染端做是为了零竞态——此时会话刚由 persistCurrentSession 落盘，
+ * 压缩完成后 sessions:changed 广播会触发界面从磁盘重载。
+ */
+async function maybeAutoCompact(): Promise<void> {
+  const s = store.getState()
+  if (autoCompactRunning || !s.contextLimit) return
+  if (Date.now() - lastAutoCompactAt < AUTO_COMPACT_COOLDOWN_MS) return
+  if (!s.activeProjectId || !s.activeSessionId) return
+  if (s.messages.length < AUTO_COMPACT_MIN_MESSAGES) return
+  // compactNow 在主进程读磁盘上的会话文件，先确保本轮回复已落盘
+  await persistCurrentSession()
+  const list = await window.api.listDebugExchanges()
+  const latest = list.find((i) => i.kind === 'chat' && i.inputTokens != null)
+  const tokens = latest?.inputTokens
+  if (!tokens || tokens < s.contextLimit * AUTO_COMPACT_RATIO) return
+
+  autoCompactRunning = true
+  lastAutoCompactAt = Date.now()
+  const pct = Math.round((tokens / s.contextLimit) * 100)
+  store.setState({ statusText: `上下文已达 ${pct}%，自动压缩中…` })
+  try {
+    const r = await window.api.compactNow(s.activeProjectId, s.activeSessionId)
+    if (r.ok) {
+      store.setState({ statusText: `✅ 已自动压缩上下文（原 ${pct}%），摘要可在 📚 上下文窗口查看` })
+      setTimeout(() => {
+        if (store.getState().statusText?.startsWith('✅ 已自动压缩')) store.setState({ statusText: null })
+      }, 8000)
+    } else {
+      store.setState({ statusText: `自动压缩失败：${r.error ?? '未知原因'}（可稍后在上下文窗口手动压缩）` })
+    }
+  } finally {
+    autoCompactRunning = false
+  }
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {
@@ -580,6 +631,7 @@ export function subscribeChatEvents(): () => void {
       updateStreamingAssistant((m) => ({ ...m, streaming: false }))
       store.setState({ streaming: false, statusText: null })
       void persistCurrentSession()
+      void maybeAutoCompact()
     } else if (event.type === 'error') {
       store.setState({ statusText: null })
       markStreamingError(event.message)

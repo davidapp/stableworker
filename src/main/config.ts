@@ -69,6 +69,7 @@ interface StoredConfig {
   toolSwitches?: Record<string, boolean>
   permissionRules?: PermissionRules
   mcpServers?: MCPServerConfig[]
+  sidebarExpanded?: Record<string, boolean>
 }
 
 let cache: StoredConfig | null = null
@@ -116,6 +117,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.toolSwitches === undefined) cache.toolSwitches = {}
   if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
   if (cache.mcpServers === undefined) cache.mcpServers = []
+  if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
   return cache
 }
 
@@ -176,6 +178,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     toolSwitches: cfg.toolSwitches ?? {},
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
     mcpServers: cfg.mcpServers ?? [],
+    sidebarExpanded: cfg.sidebarExpanded ?? {},
   }
 }
 
@@ -257,6 +260,13 @@ export function registerConfigHandlers(): void {
     const cfg = await loadConfig()
     cfg.toolSwitches ??= {}
     cfg.toolSwitches[name] = enabled
+    return saveConfig(cfg)
+  })
+
+  // 侧栏项目节点的展开状态（整体替换，渲染端每次折叠/展开都全量回写）
+  ipcMain.handle('config:setSidebarExpanded', async (_e, map: Record<string, boolean>): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    cfg.sidebarExpanded = map && typeof map === 'object' ? map : {}
     return saveConfig(cfg)
   })
 

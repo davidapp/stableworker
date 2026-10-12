@@ -38,7 +38,9 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [ ] **本地 token 估算精度**：接入真正的 tokenizer（当前为启发式估算，仅用于比例与裁剪触发）
 - [ ] **流式 Markdown 增量渲染**：长回复下避免每次增量都重渲染整段
 - [x] **run_command 中文输出乱码**：smartDecode（UTF-8 替换符多于 GBK 时自动改用 GBK 解码）
-- [ ] **侧栏展开状态持久化**：项目树的展开 / 折叠状态存入配置
+- [x] **上下文自动压缩（auto-compact）**：回复完成后服务端 inputTokens 超过上限 80% 且消息 ≥6 条时，自动执行与手动压缩完全相同的 compactNow 管线（渲染端触发：先等本轮落盘再压缩，零竞态；5 分钟冷却）；状态条显示"上下文已达 N%，自动压缩中…"
+- [x] **斜杠命令项目级**：`<项目>/.stableworker/commands/*.md` 与全局 userData/skills 双作用域，同名项目覆盖全局（对齐 Claude Code 项目级 .claude/commands）；设置页列表带作用域标签、新建可选位置；Skill 工具与 /触发自动感知
+- [x] **侧栏展开状态持久化**：项目树展开/折叠存入 config.sidebarExpanded（启动时恢复；从未记录过的项目默认展开）
 - [ ] **调试面板增强**：历史记录"加载更多"、按会话 / 按模型过滤、导出单条记录
 - [x] **生产 CSP**：electron.vite.config.ts 的 csp-inject 插件（打包时注入 meta，dev 不注入保 HMR）
 - [ ] **每项目覆盖**：工具开关 / 批准模式 / 模型允许项目级差异

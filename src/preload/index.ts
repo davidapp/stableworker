@@ -26,6 +26,7 @@ import type {
   ContextInfo,
   ContextOpResult,
   BalanceResult,
+  SkillMeta,
 } from '../shared/types'
 
 /**
@@ -46,6 +47,9 @@ const api = {
     ipcRenderer.invoke('config:setThinkingEffort', effort),
   setSidebarWidth: (width: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setSidebarWidth', width),
+  /** 侧栏项目节点的展开状态（整体替换持久化） */
+  setSidebarExpanded: (map: Record<string, boolean>): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setSidebarExpanded', map),
   setContextLimit: (limit: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setContextLimit', limit),
   setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>
@@ -147,11 +151,12 @@ const api = {
   clearSessionContextById: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:clearById', projectId, sessionId),
 
-  // ---- 斜杠命令（skills） ----
-  listSkills: (): Promise<{ name: string; content: string }[]> => ipcRenderer.invoke('skills:list'),
-  saveSkill: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('skills:save', name, content),
-  deleteSkill: (name: string): Promise<boolean> => ipcRenderer.invoke('skills:delete', name),
+  // ---- 斜杠命令（skills）：scope 'global' = userData/skills，'project' = <项目>/.stableworker/commands（同名项目优先） ----
+  listSkills: (): Promise<SkillMeta[]> => ipcRenderer.invoke('skills:list'),
+  saveSkill: (name: string, content: string, scope: SkillMeta['scope'] = 'global'): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('skills:save', name, content, scope),
+  deleteSkill: (name: string, scope: SkillMeta['scope'] = 'global'): Promise<boolean> =>
+    ipcRenderer.invoke('skills:delete', name, scope),
 
   // ---- MCP 服务器 ----
   getMcpAll: (): Promise<{ servers: MCPServerConfig[]; status: McpServerStatus[] }> =>

@@ -238,6 +238,13 @@ export interface McpServerStatus {
   toolCount: number
 }
 
+/** 一条斜杠命令（scope = 存放位置：全局 userData 或项目 .stableworker/commands） */
+export interface SkillMeta {
+  name: string
+  content: string
+  scope: 'global' | 'project'
+}
+
 /** MCP 资源元数据（resources/list） */
 export interface McpResourceMeta {
   uri: string
@@ -277,6 +284,8 @@ export interface ConfigView {
   permissionRules: PermissionRules
   /** MCP 服务器列表（其工具以 mcp__服务器__工具 并入工具池） */
   mcpServers: MCPServerConfig[]
+  /** 侧栏项目节点的展开状态（projectId → 是否展开，持久化） */
+  sidebarExpanded: Record<string, boolean>
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */
