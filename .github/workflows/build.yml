@@ -151,11 +151,7 @@ jobs:
           draft: true
           fail_on_unmatched_files: true
           body_path: release-body.md
-          files: |
-            artifacts/*.exe
-            artifacts/*.dmg
-            artifacts/*.zip
-            artifacts/*.AppImage
-            artifacts/*.blockmap
-            artifacts/latest*.yml
+          # 上传集合 = verify 刚逐文件校验过的 artifacts 目录全部内容
+          # （平台组合可变：macOS 跳过时无 dmg/zip，不能用逐扩展名通配）
+          files: artifacts/*
           generate_release_notes: true
