@@ -50,7 +50,7 @@ npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等�
 | 办公 | 每个任务独立的本地目录 | 提取资料、创建文档、数据表和演示文稿 | Word / Excel / PPT / PDF |
 
 - 支持导入 DOCX、XLSX、PPTX、PDF、TXT、Markdown、CSV；单文件最多 25 MB。
-- `office_read_document` 提取文本、表格和幻灯片内容，长文档可分段读取。
+- `office_read_document` 提取文本、表格和幻灯片内容，长文档可分段读取；扫描 PDF 自动在本机识别无文字页。
 - `office_create_document` 创建真实 DOCX、XLSX、PPTX、PDF，并重新解析验证后报告成功。
   导入资料位于 `inputs/`，结果位于 `outputs/`；已有文件不覆盖，修改时生成新副本。
 - 右侧 **任务文件** 显示参考资料与生成结果；点击文件预览提取内容，点击打开按钮使用本地应用查看完整排版。
@@ -59,8 +59,23 @@ npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等�
 - 办公任务保存在 `userData/office/sessions/<sessionId>/`，会话文件单独持久化。
   删除办公任务会同时删除该任务的导入副本和生成文件。
 
-当前文档能力适合新建报告、数据表和基础演示文稿；暂未提供复杂原版布局的原地编辑、
-Excel 公式计算或扫描 PDF 的 OCR。基础生成不依赖用户安装 Python 或 LibreOffice。
+**公式计算**：新建表格可用 `{formula:"SUM(B2:B5)"}` 单元格，保存公式及真实计算结果。
+现有表格通过 `office_calculate_spreadsheet` 重算并另存，支持 SUM、AVERAGE、IF、COUNTIF、SUMIF、
+常用数学/查找函数、跨工作表引用和公式依赖。计算在线程中执行，停止时终止线程；
+不支持的函数、外部引用、宏或数组公式会清除旧缓存并明确列出错误，不冒充成功结果。
+
+**扫描 PDF OCR**：随应用附带简体中文与英文模型，在本机识别，文档不上传，首次使用也不需下载语言包。
+自动保留原生文字、识别前 10 个无文字页；可用 `office_ocr_pdf` 的 `pages` 参数继续分批处理，每批最多 30 页。
+返回每页来源与识别置信度，模糊扫描件的数字和文字需要复核。右侧 PDF 文件提供「识别扫描文字」入口。
+
+**保留模板编辑**：`office_inspect_document` 给出原文件的段落和单元格位置，`office_edit_document`
+在指定位置修改内容，并将其他 XML 部件、图片、样式、页眉页脚、图表及合并区域保持原样。
+Word/PPT 支持跨文字片段替换；Excel 支持单元格值或公式修改并重算。右侧文件的编辑按钮可将请求填入输入框。
+所有修改另存新副本，原始资料不覆盖；位置歧义、数字签名、字段/修订、共享公式等不支持的编辑位置会明确拒绝。
+文本长度变化仍可能引起 Word 自然换行或分页，应使用本地 Office 应用检查最终排版。
+
+上述能力不依赖用户安装 Python 或 LibreOffice；未提供 VBA、全套 Excel 专用函数或 PDF 正文重排编辑。
+语言模型来源及许可证见 [本地 OCR 资源](resources/ocr/tessdata/sources.json)。
 
 ## 工具调用（Agent Loop 的核心）
 

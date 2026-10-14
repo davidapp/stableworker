@@ -8,15 +8,18 @@ import { XMLParser } from 'fast-xml-parser'
 import { getPath as pdfWorkerPath } from 'pdf-parse/worker'
 import { PDFParse } from 'pdf-parse'
 import type { OfficeFormat } from '../shared/types'
+import { calculateWorkbook, type FormulaCalculationReport } from './officeFormulas'
 
 PDFParse.setWorker(pdfWorkerPath())
 const MAX_EXTRACTED_CHARS = 100_000
 const MAX_UNPACKED_BYTES = 100 * 1024 * 1024
 
+export type OfficeCell = string | number | boolean | null | { formula: string }
+
 export interface OfficeDocumentInput {
   title: string
   paragraphs: string[]
-  sheets: { name: string; rows: (string | number | boolean | null)[][] }[]
+  sheets: { name: string; rows: OfficeCell[][] }[]
   slides: { title: string; bullets: string[]; notes?: string }[]
 }
 
@@ -54,7 +57,11 @@ export async function extractOfficeDocument(buffer: Buffer, format: OfficeFormat
       const rows: string[] = []
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber > 1000) return
-        rows.push(`${rowNumber}: ${Array.from({ length: Math.min(sheet.columnCount, 50) }, (_, i) => row.getCell(i + 1).text.replace(/\t|\n/g, ' ')).join('\t')}`)
+        rows.push(`${rowNumber}: ${Array.from({ length: Math.min(sheet.columnCount, 50) }, (_, i) => {
+          const cell = row.getCell(i + 1)
+          if (cell.value == null || (cell.isMerged && cell.master.address !== cell.address)) return ''
+          return cell.text.replace(/\t|\n/g, ' ')
+        }).join('\t')}`)
       })
       sections.push(`工作表：${sheet.name}（${sheet.rowCount} 行，${sheet.columnCount} 列）\n${rows.join('\n')}${sheet.rowCount > 1000 ? '\n（仅显示前 1000 行）' : ''}`)
     }
@@ -90,7 +97,7 @@ export async function extractOfficeDocument(buffer: Buffer, format: OfficeFormat
     signal?.addEventListener('abort', onAbort, { once: true })
     try {
       const result = await parser.getText({ first: 200 })
-      text = result.text.trim() ? result.text : '（PDF 没有可提取的文字，可能是扫描件；当前未提供 OCR）'
+      text = result.text.trim() ? result.text : '（PDF 没有可提取的文字，可能是扫描件；可使用本地 OCR 识别文字）'
       // Chromium's CJK font maps can expose Kangxi-radical codepoints for ordinary Han characters.
       text = text.replace(/[\u2f00-\u2fd5]/g, (character) => character.normalize('NFKC'))
       if (result.total > 200) text += '\n（仅提取前 200 页）'
@@ -122,7 +129,7 @@ async function createPdf(input: OfficeDocumentInput, signal?: AbortSignal): Prom
 }
 
 /** Generates actual OOXML/PDF bytes. No system interpreter or office-suite installation is required. */
-export async function createOfficeDocument(format: OfficeFormat, input: OfficeDocumentInput, signal?: AbortSignal): Promise<Buffer> {
+export async function createOfficeDocument(format: OfficeFormat, input: OfficeDocumentInput, signal?: AbortSignal, onCalculated?: (report: FormulaCalculationReport) => void): Promise<Buffer> {
   signal?.throwIfAborted()
   let buffer: Buffer
   if (format === 'docx') {
@@ -133,13 +140,19 @@ export async function createOfficeDocument(format: OfficeFormat, input: OfficeDo
     book.creator = 'StableWorker'
     for (const spec of input.sheets) {
       const sheet = book.addWorksheet(spec.name)
-      sheet.addRows(spec.rows)
+      sheet.addRows(spec.rows.map((row) => row.map((cell) => cell && typeof cell === 'object' ? { formula: cell.formula.replace(/^=/, '') } : cell)))
       sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
       sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5E6AD2' } }
       sheet.columns.forEach((column) => { column.width = 24 })
       sheet.views = [{ state: 'frozen', ySplit: 1 }]
     }
     buffer = Buffer.from(await book.xlsx.writeBuffer())
+    if (input.sheets.some((sheet) => sheet.rows.some((row) => row.some((cell) => cell && typeof cell === 'object')))) {
+      const calculated = await calculateWorkbook(buffer, signal)
+      onCalculated?.(calculated.report)
+      if (calculated.report.unsupported.length) throw new Error(`公式未能计算：${calculated.report.unsupported.join('；')}`)
+      buffer = calculated.buffer
+    }
   } else if (format === 'pptx') {
     const deck = new pptxgen()
     deck.layout = 'LAYOUT_WIDE'

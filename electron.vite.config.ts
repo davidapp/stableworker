@@ -16,7 +16,12 @@ const cspPlugin = {
 // electron-vite 约定三个构建段：main（主进程）、preload（预加载）、renderer（渲染界面）
 // 入口默认取 src/main/index.ts、src/preload/index.ts、src/renderer/index.html
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      externalizeDeps: { exclude: ['fast-formula-parser', 'bahttext', 'bessel', 'chevrotain', 'regexp-to-ast', 'jstat', 'jszip', 'lie', 'immediate', 'pako', 'readable-stream', 'core-util-is', 'inherits', 'isarray', 'process-nextick-args', 'safe-buffer', 'util-deprecate', 'setimmediate', 'fast-xml-parser', '@nodable/entities', 'fast-xml-builder', 'path-expression-matcher', 'xml-naming', 'is-unsafe', 'strnum', 'anynum'] },
+      rollupOptions: { input: { index: 'src/main/index.ts', officeFormulaWorker: 'src/main/officeFormulaWorker.ts' } },
+    },
+  },
   preload: {},
   renderer: {
     plugins: [react(), cspPlugin],

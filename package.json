@@ -19,6 +19,7 @@
     "docx": "^9.11.0",
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
+    "fast-formula-parser": "1.0.19",
     "fast-xml-parser": "^5.11.2",
     "highlight.js": "^11.12.0",
     "jszip": "^3.10.1",
@@ -30,6 +31,7 @@
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
+    "tesseract.js": "7.0.0",
     "undici": "^8.11.2"
   },
   "devDependencies": {
@@ -54,6 +56,13 @@
     },
     "files": [
       "out/**"
+    ],
+    "asarUnpack": [
+      "out/main/**",
+      "node_modules/{tesseract.js,tesseract.js-core,bmp-js,idb-keyval,is-url,node-fetch,whatwg-url,tr46,webidl-conversions,opencollective-postinstall,regenerator-runtime,wasm-feature-detect,zlibjs}/**/*"
+    ],
+    "extraResources": [
+      { "from": "resources/ocr", "to": "ocr" }
     ],
     "win": {
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",

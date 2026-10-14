@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { OfficeFile } from '../../../shared/types'
 import { useApp } from '../store'
 import * as actions from '../actions'
@@ -8,11 +8,17 @@ import { ContextMeter } from './ContextMeter'
 import { CaretIcon } from './CaretIcon'
 import { Icon } from './Icon'
 
-export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void }) {
+export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
   const { llmProfiles, activeLlmId, activeSessionId, taskMode } = useApp()
   const office = taskMode === 'office'
   const [text, setText] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { setText('') }, [activeSessionId, taskMode])
+  useEffect(() => {
+    if (!taskDraft) return
+    setText((previous) => previous.trim() ? `${previous}\n\n${taskDraft.text}` : taskDraft.text)
+    textareaRef.current?.focus()
+  }, [taskDraft])
 
   const submit = (): void => {
     const content = text.trim()
@@ -27,6 +33,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
       <div className="composer-box">
         {office && attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
         <textarea
+          ref={textareaRef}
           aria-label="消息"
           value={text}
           placeholder={office ? '描述要完成的工作，或添加资料开始' : '输入消息，Enter 发送，Shift+Enter 换行'}

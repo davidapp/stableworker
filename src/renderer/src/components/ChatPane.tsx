@@ -56,8 +56,9 @@ export function ChatPane() {
   const [attachments, setAttachments] = useState<OfficeFile[]>([])
   const [fileRefresh, setFileRefresh] = useState(0)
   const [importError, setImportError] = useState('')
+  const [taskDraft, setTaskDraft] = useState<{ id: number; text: string } | null>(null)
   const office = taskMode === 'office'
-  useEffect(() => { setAttachments([]); setImportError('') }, [activeSessionId, taskMode])
+  useEffect(() => { setAttachments([]); setImportError(''); setTaskDraft(null) }, [activeSessionId, taskMode])
   const importFiles = async (): Promise<void> => {
     if (streaming) return
     try {
@@ -269,9 +270,9 @@ export function ChatPane() {
         </div>
       )}
 
-      <Composer disabled={streaming} attachments={office ? attachments : []} onAttach={office ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : undefined} />
+      <Composer disabled={streaming} attachments={office ? attachments : []} onAttach={office ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : undefined} taskDraft={office ? taskDraft : null} />
     </main>
-    {office && <OfficePanel onImport={() => void importFiles()} refreshKey={fileRefresh} />}
+    {office && <OfficePanel onImport={() => void importFiles()} onTask={(text) => setTaskDraft((previous) => ({ id: (previous?.id ?? 0) + 1, text }))} refreshKey={fileRefresh} />}
     </div>
   )
 }

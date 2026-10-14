@@ -84,7 +84,7 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
         <button className="tool-copy-btn" title="复制参数 JSON" onClick={() => void copyArgs()}>
           {copied ? '✓' : '复制'}
         </button>
-        {['write_file', 'edit_file', 'multi_edit', 'office_create_document'].includes(block.name) && block.status === 'done' ? (
+        {['write_file', 'edit_file', 'multi_edit', 'office_create_document', 'office_edit_document', 'office_calculate_spreadsheet'].includes(block.name) && block.status === 'done' ? (
           block.rolledBack ? (
             <span className="tool-status rolled">已回滚</span>
           ) : onRestore ? (
