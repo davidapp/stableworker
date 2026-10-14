@@ -186,3 +186,9 @@ Run `npm run typecheck`, `npm test`, and `npm run build`. Visually inspect the m
 Verified on 2026-10-12: type checking, production build and all 87 existing tests passed. Electron rendering checks with isolated sample data covered all eight settings pages, model editor, empty/chat views, approval/question cards, dialog keyboard focus, 50 scrolling search results, Markdown preview, and all four windows at their minimum sizes. These checks use sample IPC responses and do not validate live model services or operating systems other than macOS.
 
 Preview screenshots (sample data): [main workspace](docs/design/preview-main.png), [settings](docs/design/preview-settings.png).
+### 办公任务界面
+
+编程与办公共用侧栏、标题栏、输入框及设置。侧栏顶部使用双选项切换，办公任务列表无需项目目录。
+办公主区右侧固定任务文件面板，参考资料与生成结果分组；文件提供内容预览和本地打开。
+附件以输入框中的紧凑标签显示，所有移除、打开、关闭按钮保持可见。
+窄窗口为聊天区保留至少 440px，限制侧栏拖拽宽度；预览支持 Esc、键盘焦点限制和关闭后恢复焦点。

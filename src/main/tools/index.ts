@@ -1,9 +1,9 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { dirname } from 'node:path'
+import { spawn } from 'node:child_process'
+import { dirname, relative, resolve } from 'node:path'
 import { ipcMain } from 'electron'
 import { safeResolve } from './paths'
-import { startShellTask, getShellTask, stopShellTask } from './shellTasks'
+import { startShellTask, getShellTask, stopShellTask, killTree } from './shellTasks'
 import { smartDecode } from './smartDecode'
 import { loadSkillContent, listSkillNames } from '../skills'
 import { grepTool, globTool } from './search'
@@ -25,6 +25,8 @@ export interface ToolContext {
   projectPath: string
   /** 可选：当前会话 id（run_command 的 cwd 跨调用保持用） */
   sessionId?: string
+  /** 请求停止或超时时，底层进程/网络也必须停止。 */
+  signal?: AbortSignal
   /** 可选：把执行过程的实时输出（如命令的 stdout 流）推给聊天界面 */
   onOutput?: (text: string) => void
   /** 可选：更新当前会话的任务清单（todo_write 用） */
@@ -116,7 +118,7 @@ const readFileTool: ToolDefinition = {
     const rel = typeof input.path === 'string' ? input.path : ''
     if (!rel) return { content: '缺少 path 参数', isError: true }
     const file = safeResolve(ctx.projectPath, rel)
-    const raw = await readFile(file, 'utf-8')
+    const raw = await readFile(file, { encoding: 'utf-8', signal: ctx.signal })
     fileStateCache.set(file, raw) // 记录读取快照，供 edit_file 校验"先读后改"
     const allLines = raw.split('\n')
     const offset = Math.max(1, typeof input.offset === 'number' ? Math.floor(input.offset) : 1)
@@ -155,7 +157,9 @@ const writeFileTool: ToolDefinition = {
     }
     const file = safeResolve(ctx.projectPath, rel)
     await mkdir(dirname(file), { recursive: true })
-    await writeFile(file, content, 'utf-8')
+    ctx.signal?.throwIfAborted()
+    safeResolve(ctx.projectPath, rel)
+    await writeFile(file, content, { encoding: 'utf-8', signal: ctx.signal })
     const lines = content.split('\n').length
     return { content: `已写入 ${rel}（${lines} 行，${content.length} 字符）` }
   },
@@ -186,7 +190,7 @@ const editFileTool: ToolDefinition = {
     if (!oldText) return { content: '缺少 oldText 参数', isError: true }
 
     const file = safeResolve(ctx.projectPath, rel)
-    const raw = await readFile(file, 'utf-8')
+    const raw = await readFile(file, { encoding: 'utf-8', signal: ctx.signal })
     // "先读后改"校验：Edit 必须基于最近一次 Read 的快照，防止基于猜测的盲改
     const known = fileStateCache.get(file)
     if (known == null) {
@@ -213,7 +217,9 @@ const editFileTool: ToolDefinition = {
     }
 
     const updated = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText)
-    await writeFile(file, updated, 'utf-8')
+    ctx.signal?.throwIfAborted()
+    safeResolve(ctx.projectPath, rel)
+    await writeFile(file, updated, { encoding: 'utf-8', signal: ctx.signal })
     fileStateCache.set(file, updated) // 编辑后同步快照，后续编辑无需重复读取
     const replaced = replaceAll ? count : 1
     return { content: `已编辑 ${rel}（替换 ${replaced} 处，-${oldText.length} +${newText.length} 字符）` }
@@ -253,7 +259,7 @@ const multiEditTool: ToolDefinition = {
     if (!edits || edits.length === 0) return { content: '缺少 edits 参数', isError: true }
 
     const file = safeResolve(ctx.projectPath, rel)
-    let raw = await readFile(file, 'utf-8')
+    let raw = await readFile(file, { encoding: 'utf-8', signal: ctx.signal })
     const applied: string[] = []
     for (let i = 0; i < edits.length; i++) {
       const e = edits[i] as { oldText?: unknown; newText?: unknown; replace_all?: unknown }
@@ -279,19 +285,11 @@ const multiEditTool: ToolDefinition = {
       raw = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText)
       applied.push(`#${i + 1}（-${oldText.length} +${newText.length} 字符）`)
     }
-    await writeFile(file, raw, 'utf-8')
+    ctx.signal?.throwIfAborted()
+    safeResolve(ctx.projectPath, rel)
+    await writeFile(file, raw, { encoding: 'utf-8', signal: ctx.signal })
     return { content: `已编辑 ${rel}（共 ${applied.length} 处：${applied.join('、')}）` }
   },
-}
-
-/** Windows 下终止整个进程树（shell:true 时命令包在 cmd.exe 里，直接 kill 会漏掉子进程） */
-function killTree(child: ChildProcess): void {
-  if (!child.pid) return
-  if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-  } else {
-    child.kill('SIGKILL')
-  }
 }
 
 const RUN_COMMAND_TIMEOUT_MS = 60_000
@@ -318,12 +316,14 @@ const runCommandTool: ToolDefinition = {
 
     // 工作目录：显式 cwd > 会话保持的上次目录 > 项目根（均限制在项目内）
     const persisted = ctx.sessionId ? sessionCwd.get(ctx.sessionId) : undefined
-    const cwd = safeResolve(persisted ?? ctx.projectPath, typeof input.cwd === 'string' && input.cwd ? input.cwd : '.')
+    const candidate = resolve(persisted ?? ctx.projectPath, typeof input.cwd === 'string' && input.cwd ? input.cwd : '.')
+    const cwd = safeResolve(ctx.projectPath, relative(ctx.projectPath, candidate))
+    ctx.signal?.throwIfAborted()
 
     // 后台运行：启动即返回，输出累积在任务注册表里（无超时）
     if (input.run_in_background === true) {
       const id = `bash-${++bgSeq}`
-      startShellTask(id, command, cwd)
+      startShellTask(id, command, cwd, ctx.sessionId, ctx.signal)
       return {
         content: `后台任务已启动（id: ${id}）\n命令: ${command}\n用 task_output 工具查询输出（任务无超时）；用 task_stop 终止。`,
       }
@@ -334,6 +334,7 @@ const runCommandTool: ToolDefinition = {
       const child = spawn(command, {
         cwd,
         shell: true,
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       })
@@ -360,6 +361,10 @@ const runCommandTool: ToolDefinition = {
 
       // 自身超时：杀掉整个进程树并以错误结果收场（先于通用 15s 超时，因为本工具更长）
       let timedOut = false
+      let cancelled = false
+      const onAbort = (): void => { cancelled = true; killTree(child) }
+      ctx.signal?.addEventListener('abort', onAbort, { once: true })
+      if (ctx.signal?.aborted) onAbort()
       const timer = setTimeout(() => {
         timedOut = true
         killTree(child)
@@ -367,16 +372,18 @@ const runCommandTool: ToolDefinition = {
 
       child.on('error', (err) => {
         clearTimeout(timer)
+        ctx.signal?.removeEventListener('abort', onAbort)
         resolvePromise({ content: `命令启动失败：${err.message}`, isError: true })
       })
       child.on('close', (code) => {
         clearTimeout(timer)
+        ctx.signal?.removeEventListener('abort', onAbort)
         // cwd 保持：命令成功且以 cd 开头时，把会话工作目录更新为 cd 的目标
         if (code === 0 && ctx.sessionId) {
           const cd = command.match(/^\s*cd\s+"?([^"&|\n]+?)"?\s*(?:&&|$)/i)
           if (cd) {
             try {
-              const next = safeResolve(cwd, cd[1].trim())
+              const next = safeResolve(ctx.projectPath, relative(ctx.projectPath, resolve(cwd, cd[1].trim())))
               sessionCwd.set(ctx.sessionId, next)
             } catch {
               // 越界目标忽略，保持原目录
@@ -385,12 +392,13 @@ const runCommandTool: ToolDefinition = {
         }
         const notes = [
           timedOut ? '命令超时 60 秒，已强制终止进程树' : '',
+          cancelled ? '用户已停止，进程树已终止' : '',
           truncated ? `输出过长，已截断到 ${MAX_OUTPUT_CHARS} 字符` : '',
         ].filter(Boolean)
         const decoded = smartDecode(Buffer.concat(chunks)).slice(0, MAX_OUTPUT_CHARS + 1000)
         resolvePromise({
           content: truncate(`退出码: ${code ?? 'N/A'}\n${decoded}${notes.length ? `\n${notes.join('；')}` : ''}`),
-          isError: timedOut || (code !== 0 && code !== null),
+          isError: cancelled || timedOut || code !== 0,
         })
       })
     })
@@ -592,13 +600,18 @@ export async function executeToolCall(
   const started = Date.now()
   const tool = opts.definition?.name === name ? opts.definition : registry.get(name)
   const timeoutMs = tool?.timeoutMs ?? TOOL_TIMEOUT_MS
+  const controller = new AbortController()
+  const abortUnderlying = (): void => controller.abort(opts.signal?.reason ?? new Error('用户已停止，操作中断'))
+  if (opts.signal?.aborted) abortUnderlying()
+  else opts.signal?.addEventListener('abort', abortUnderlying, { once: true })
   const run = async (): Promise<ToolOutput> => {
-    if (opts.signal?.aborted) return { content: '用户已停止，操作中断', isError: true }
+    if (controller.signal.aborted) return { content: '用户已停止，操作中断', isError: true }
     if (!projectPath) return { content: '当前没有激活的项目目录，无法使用文件工具', isError: true }
     if (!tool) return { content: `未知工具：${name}`, isError: true }
     return tool.execute(input, {
       projectPath,
       sessionId: opts.sessionId,
+      signal: controller.signal,
       onOutput: opts.onOutput,
       onTodos: opts.onTodos,
       onAskUser: opts.onAskUser,
@@ -617,7 +630,11 @@ export async function executeToolCall(
   if (Number.isFinite(timeoutMs)) {
     race.push(
       new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
+        timeout = setTimeout(() => {
+          const error = new Error(`工具执行超时（${Math.round(timeoutMs / 1000)}s）`)
+          reject(error)
+          controller.abort(error)
+        }, timeoutMs)
         timeout.unref()
       }),
     )
@@ -643,6 +660,7 @@ export async function executeToolCall(
     .finally(() => {
       if (timeout) clearTimeout(timeout)
       if (onAbort) opts.signal?.removeEventListener('abort', onAbort)
+      opts.signal?.removeEventListener('abort', abortUnderlying)
     })
   return { content: truncate(out.content), isError: Boolean(out.isError), durationMs: Date.now() - started }
 }
@@ -680,8 +698,8 @@ export interface ToolMeta {
 }
 
 export function registerToolHandlers(): void {
-  ipcMain.handle('tools:list', (): ToolMeta[] =>
-    getToolDefinitions().map((d) => ({
+  ipcMain.handle('tools:list', async (): Promise<ToolMeta[]> =>
+    [...getToolDefinitions(), ...(await import('./office')).getOfficeToolDefinitions()].map((d) => ({
       name: d.name,
       description: d.description,
       requiresApproval: Boolean(d.requiresApproval),

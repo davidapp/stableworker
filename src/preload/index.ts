@@ -16,9 +16,13 @@ import type {
   McpResourceMeta,
   McpServerStatus,
   ModelPricing,
+  OfficeFile,
+  OfficePreviewResult,
   ProjectInfo,
   PermissionRules,
   Session,
+  SessionChangeEvent,
+  TaskMode,
   SessionLoadResult,
   SessionMeta,
   SessionSaveResult,
@@ -37,6 +41,14 @@ import type {
  */
 
 const api = {
+  // Managed Office task files; imports are restricted to the native file picker.
+  office: {
+    workspace: (): Promise<ConfigView> => ipcRenderer.invoke('office:workspace'),
+    import: (sessionId: string): Promise<OfficeFile[]> => ipcRenderer.invoke('office:import', sessionId),
+    list: (sessionId: string): Promise<OfficeFile[]> => ipcRenderer.invoke('office:list', sessionId),
+    open: (sessionId: string, path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('office:open', sessionId, path),
+    preview: (sessionId: string, path: string): Promise<OfficePreviewResult> => ipcRenderer.invoke('office:preview', sessionId, path),
+  },
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
   refreshModelContext: (id?: string, force = true): Promise<{ ok: boolean; message: string; config: ConfigView }> =>
@@ -79,8 +91,8 @@ const api = {
 
   // ---- 会话 ----
   listSessions: (projectId: string): Promise<SessionMeta[]> => ipcRenderer.invoke('sessions:list', projectId),
-  createSession: (projectId: string, title: string): Promise<Session> =>
-    ipcRenderer.invoke('sessions:create', projectId, title),
+  createSession: (projectId: string, title: string, taskMode?: TaskMode): Promise<Session> =>
+    ipcRenderer.invoke('sessions:create', projectId, title, taskMode),
   loadSession: (projectId: string, sessionId: string): Promise<SessionLoadResult | null> =>
     ipcRenderer.invoke('sessions:load', projectId, sessionId),
   saveSession: (session: Session): Promise<SessionSaveResult> =>
@@ -105,9 +117,9 @@ const api = {
   queryBalance: (): Promise<BalanceResult> => ipcRenderer.invoke('balance:query'),
   /** 会话被外部（上下文管理窗口）修改时触发，主窗口据此从磁盘重载 */
   onSessionsChanged: (
-    callback: (e: { projectId: string; sessionId: string }) => void,
+    callback: (e: SessionChangeEvent) => void,
   ): (() => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { projectId: string; sessionId: string }): void =>
+    const listener = (_e: IpcRendererEvent, payload: SessionChangeEvent): void =>
       callback(payload)
     ipcRenderer.on('sessions:changed', listener)
     return () => ipcRenderer.removeListener('sessions:changed', listener)

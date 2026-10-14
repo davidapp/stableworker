@@ -5,6 +5,8 @@
  * - 输出截断到 2 万字符（HTML 转文本的轻量转换，非完整 markdown 渲染）
  */
 
+import type { ToolContext } from './index'
+
 const MAX_CHARS = 20_000
 const CACHE_TTL = 15 * 60_000
 
@@ -84,7 +86,7 @@ export const webFetchTool = {
   },
   kind: 'read' as const,
   timeoutMs: 30_000,
-  async execute(input: Record<string, unknown>) {
+  async execute(input: Record<string, unknown>, ctx: ToolContext) {
     const url = typeof input.url === 'string' ? input.url : ''
     if (!url) return { content: '缺少 url 参数', isError: true }
 
@@ -102,7 +104,7 @@ export const webFetchTool = {
 
     let res: Response
     try {
-      res = await fetch(u.href, { signal: AbortSignal.timeout(30_000) })
+      res = await fetch(u.href, { signal: ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) })
     } catch (e) {
       return { content: `抓取失败：${e instanceof Error ? e.message : String(e)}`, isError: true }
     }

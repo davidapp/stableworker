@@ -16,6 +16,39 @@ import {
 const serverCmd = `"${process.execPath}" ${path.resolve(__dirname, '../scripts/test-mcp-echo.mjs')}`
 
 describe('MCP stdio 客户端', () => {
+  it('取消发送protocol notification，清理等待且断开拒绝挂起调用', async () => {
+    await connectServer('cancel', { command: serverCmd })
+    const def = getMcpToolDefs().find((d) => d.name === 'mcp__cancel__echo')!
+    const controller = new AbortController()
+    const pending = def.execute({ delay: 5_000 }, { projectPath: '.', signal: controller.signal })
+    const rejected = expect(pending).rejects.toThrow('取消')
+    await new Promise((r) => setTimeout(r, 40))
+    controller.abort()
+    await rejected
+    expect((await def.execute({ cancelCount: true }, { projectPath: '.' })).content).toContain('cancelled=1')
+    const second = def.execute({ delay: 5_000 }, { projectPath: '.' })
+    const disconnected = expect(second).rejects.toThrow('断开')
+    await disconnectServer('cancel')
+    await disconnected
+  })
+  it('配置禁用立即撤销工具，旧定义也不能继续执行', async () => {
+    await ensureMcpConnections([{ name: 'lifecycle', command: serverCmd }])
+    const old = getMcpToolDefs().find((d) => d.name === 'mcp__lifecycle__echo')!
+    await ensureMcpConnections([{ name: 'lifecycle', command: serverCmd, disabled: true }])
+    expect(getMcpToolDefs().filter((d) => d.name.startsWith('mcp__lifecycle__'))).toEqual([])
+    await expect(old.execute({}, { projectPath: '.' })).rejects.toThrow('断开')
+  })
+
+  it('同名配置env变化会重连，并发同步相同配置只建立一个连接', async () => {
+    const cfg = [{ name: 'same-name', command: serverCmd, env: { MCP_TEST_VAR: 'one' } }]
+    await Promise.all([ensureMcpConnections(cfg), ensureMcpConnections(cfg)])
+    const firstPid = mcpConnectionPids()['same-name']
+    await ensureMcpConnections([{ ...cfg[0], env: { MCP_TEST_VAR: 'two' } }])
+    expect(mcpConnectionPids()['same-name']).not.toBe(firstPid)
+    const def = getMcpToolDefs().find((d) => d.name === 'mcp__same-name__echo')!
+    expect((await def.execute({ envKey: 'MCP_TEST_VAR' }, { projectPath: '.' })).content).toContain('env=two')
+    await disconnectServer('same-name')
+  })
   it('握手 + 工具列表 + 工具调用 全链路', async () => {
     await connectServer('test-echo', { command: serverCmd })
     const defs = getMcpToolDefs()

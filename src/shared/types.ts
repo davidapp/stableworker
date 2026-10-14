@@ -91,6 +91,25 @@ export interface ProjectInfo {
 
 export type MessageRole = 'user' | 'assistant'
 
+export type OfficeFormat = 'docx' | 'xlsx' | 'pptx' | 'pdf' | 'txt' | 'md' | 'csv'
+
+/** Managed task files; path is relative to the task directory, never an arbitrary host path. */
+export interface OfficeFile {
+  path: string
+  name: string
+  size: number
+  format: OfficeFormat
+  role: 'input' | 'output'
+  modifiedAt: number
+}
+
+export interface OfficePreviewResult {
+  ok: boolean
+  kind?: 'text' | 'pdf'
+  content?: string
+  error?: string
+}
+
 /** 消息内容块：对齐 LLM API 的原生形状（text / tool_use），工具结果挂在 tool_use 块上 */
 export interface TextBlock {
   type: 'text'
@@ -144,6 +163,8 @@ export interface ChatMessage {
   error?: string
 }
 
+export type TaskMode = 'coding' | 'office'
+
 export interface SessionMeta {
   id: string
   title: string
@@ -151,6 +172,8 @@ export interface SessionMeta {
   updatedAt: number
   /** 会话文件存在损坏行（打开时会有恢复引导） */
   damaged?: boolean
+  /** Legacy records default to coding when loaded. */
+  taskMode?: TaskMode
 }
 
 /** 会话加载结果：session 为 null 表示不存在；damaged 表示文件有损坏行已被跳过 */
@@ -165,6 +188,15 @@ export interface SessionLoadResult {
 export interface SessionSaveResult {
   ok: boolean
   error?: string
+  revision?: number
+  conflict?: boolean
+}
+
+export interface SessionChangeEvent {
+  projectId: string
+  sessionId: string
+  revision?: number
+  change?: 'messages' | 'summary' | 'metadata' | 'deleted'
 }
 
 /** 检查点回滚结果 */
@@ -215,6 +247,8 @@ export interface BalanceResult {
 export interface Session extends SessionMeta {
   projectId: string
   messages: ChatMessage[]
+  /** Compare-and-swap version; old JSONL records load as revision 0. */
+  revision?: number
   /** 最近的摘要压缩记录（会话文件持久化，重启后预填压缩缓存） */
   summary?: { droppedCount: number; text: string; ts: number }
 }
@@ -325,6 +359,7 @@ export interface ChatRequest {
   sessionId: string
   /** 激活项目 id，主进程据此解析工具可访问的目录 */
   projectId: string
+  revision?: number
   messages: ChatHistoryMessage[]
 }
 

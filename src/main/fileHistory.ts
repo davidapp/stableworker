@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { mkdir, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { safeResolve } from './tools/paths'
 import { loadConfig } from './config'
 
@@ -57,17 +58,18 @@ export async function snapshotFilesBeforeChange(
     } catch {
       continue // 越界路径不快照（工具本身也会拒绝执行）
     }
-    let content: string | null = null
+    let content: Buffer | null = null
     try {
-      content = await readFile(abs, 'utf-8')
-    } catch {
+      content = await readFile(abs)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
       content = null // 文件不存在 → 本次是新建
     }
     const entry: SnapshotEntry = { path: rel, backupName: '', existedBefore: content != null, ts: Date.now() }
     if (content != null) {
       entry.backupName = `backup-${n++}`
       await mkdir(dir, { recursive: true })
-      await writeFile(join(dir, entry.backupName), content, 'utf-8')
+      await writeFile(join(dir, entry.backupName), content)
     }
     entries.push(entry)
   }
@@ -111,7 +113,7 @@ export async function restoreSnapshot(
   const dir = join(checkpointsRoot, toolUseId)
   const entries = JSON.parse(await readFile(join(dir, 'index.json'), 'utf-8')) as SnapshotEntry[]
 
-  const undoSnapshotId = `restore-${Date.now()}`
+  const undoSnapshotId = `restore-${Date.now()}-${randomUUID()}`
   await snapshotFilesBeforeChange(
     checkpointsRoot,
     undoSnapshotId,
@@ -124,9 +126,9 @@ export async function restoreSnapshot(
   for (const e of entries) {
     const abs = safeResolve(projectPath, e.path)
     if (e.existedBefore) {
-      const content = await readFile(join(dir, e.backupName), 'utf-8')
+      const content = await readFile(join(dir, e.backupName))
       await mkdir(join(abs, '..'), { recursive: true })
-      await writeFile(abs, content, 'utf-8')
+      await writeFile(abs, content)
       restored.push(e.path)
     } else {
       await rm(abs, { force: true })
@@ -162,7 +164,9 @@ export function registerFileHistoryHandlers(): void {
       toolUseId: string,
     ): Promise<RestoreResult | { error: string } | null> => {
       const cfg = await loadConfig()
-      const projectPath = cfg.projects.find((p) => p.id === projectId)?.path ?? null
+      const projectPath = projectId === 'office-workspace'
+        ? await (await import('./office')).ensureOfficeWorkspace(sessionId)
+        : cfg.projects.find((p) => p.id === projectId)?.path ?? null
       if (!projectPath) return { error: '项目不存在' }
       try {
         return await restoreSnapshot(root(projectId, sessionId), toolUseId, projectPath)

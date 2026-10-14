@@ -8,6 +8,7 @@ import type {
   ModelPricing,
   ProjectInfo,
   SessionMeta,
+  TaskMode,
   SubagentTypeConfig,
   TodoItem,
 } from '../../shared/types'
@@ -27,6 +28,8 @@ export interface AppState {
   /** 侧栏里展开的项目（key = 项目 id） */
   expandedProjects: Record<string, boolean>
   activeSessionId: string | null
+  activeSessionRevision: number
+  taskMode: TaskMode
   /** 当前会话的消息（聊天上下文） */
   messages: ChatMessage[]
   /** 会话文件损坏告警（打开会话时检测到损坏行） */
@@ -93,6 +96,8 @@ export const store = createStore<AppState>({
   sessionsByProject: {},
   expandedProjects: {},
   activeSessionId: null,
+  activeSessionRevision: 0,
+  taskMode: 'coding',
   messages: [],
   sessionWarning: null,
   saveError: null,

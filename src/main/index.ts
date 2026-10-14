@@ -7,6 +7,7 @@ import { registerChatHandlers } from './llm'
 import { registerDebugHandlers, initDebugLog } from './debug'
 import { registerApprovalHandlers } from './approvals'
 import { registerToolHandlers } from './tools'
+import { stopAllShellTasks } from './tools/shellTasks'
 import { registerFileHistoryHandlers } from './fileHistory'
 import { registerContextHandlers } from './contextManage'
 import { registerSkillHandlers } from './skills'
@@ -14,6 +15,7 @@ import { registerMcpHandlers, killAllMcpServers } from './mcp'
 import { setupUpdater } from './updater'
 import { openContextWindow, openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
+import { registerOfficeHandlers } from './office'
 
 /**
  * 主进程入口：创建窗口、注册所有 IPC 处理器。
@@ -73,6 +75,7 @@ app.whenReady().then(async () => {
   registerConfigHandlers()
   registerProjectHandlers()
   registerSessionHandlers()
+  registerOfficeHandlers()
   registerChatHandlers()
   registerDebugHandlers()
   registerApprovalHandlers()
@@ -101,5 +104,6 @@ app.on('window-all-closed', () => {
 
 // 退出前杀掉全部 MCP 服务器子进程，避免残留
 app.on('before-quit', () => {
+  stopAllShellTasks()
   killAllMcpServers()
 })

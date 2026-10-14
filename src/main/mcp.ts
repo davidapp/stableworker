@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { ipcMain } from 'electron'
 import { fetch as undiciFetch } from 'undici'
 import { loadConfig, saveConfig } from './config'
+import { killTree } from './tools/shellTasks'
 import type { ToolDefinition } from './tools/index'
 import type { MCPServerConfig, McpResourceContent, McpResourceMeta, McpServerStatus } from '../shared/types'
 
@@ -46,6 +47,7 @@ interface HttpConn {
   tools: McpTool[]
   status: 'connected' | 'error'
   error?: string
+  controller: AbortController
 }
 
 type Conn = StdioConn | HttpConn
@@ -74,6 +76,20 @@ export function tokenize(command: string): string[] {
 }
 
 const connections = new Map<string, Conn>()
+const fingerprints = new Map<string, string>()
+const generations = new Map<string, number>()
+const generation = (name: string): number => generations.get(name) ?? 0
+function invalidate(name: string): void { generations.set(name, generation(name) + 1) }
+let lifecycleQueue: Promise<unknown> = Promise.resolve()
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const result = lifecycleQueue.then(fn, fn)
+  lifecycleQueue = result.catch(() => {})
+  return result
+}
+function fingerprint(cfg: Pick<MCPServerConfig, 'command' | 'url' | 'headers' | 'env'>): string {
+  const sorted = (kv?: Record<string, string>): [string, string][] => Object.entries(kv ?? {}).sort(([a], [b]) => a.localeCompare(b))
+  return JSON.stringify([cfg.command ?? '', cfg.url ?? '', sorted(cfg.headers), sorted(cfg.env)])
+}
 
 // ---------- 断线自动重连（stdio）：退避 5s/15s/30s，之后每 60s 一次 ----------
 
@@ -115,7 +131,8 @@ function scheduleReconnect(name: string): void {
 // ---------- stdio 传输 ----------
 
 function send(conn: StdioConn, msg: Record<string, unknown>): void {
-  conn.child.stdin?.write(JSON.stringify(msg) + '\n')
+  if (!conn.child.stdin || conn.child.stdin.destroyed || conn.child.killed) throw new Error('MCP 输入流已关闭')
+  conn.child.stdin.write(JSON.stringify(msg) + '\n')
 }
 
 function stdioRequest<T = Record<string, unknown>>(
@@ -123,18 +140,33 @@ function stdioRequest<T = Record<string, unknown>>(
   method: string,
   params: unknown,
   timeoutMs = 15_000,
+  signal?: AbortSignal,
 ): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new Error('MCP 请求已取消'))
+  if (conn.child.killed || connections.get(conn.name) !== conn) return Promise.reject(new Error('MCP 服务器已断开'))
   const id = ++conn.nextId
   return new Promise<T>((resolve, reject) => {
+    let timer: NodeJS.Timeout | undefined
+    const cleanup = (): void => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort) }
+    const cancel = (reason: string): void => {
+      if (!conn.pending.delete(id)) return
+      cleanup()
+      if (method !== 'initialize' && !conn.child.killed) {
+        try { send(conn, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id, reason } }) } catch { /* Closing transport already prevents new requests. */ }
+      }
+      reject(new Error(reason))
+    }
+    const onAbort = (): void => cancel('MCP 请求已取消')
     conn.pending.set(id, {
-      resolve: resolve as (v: Record<string, unknown>) => void,
-      reject,
+      resolve: (value) => { cleanup(); resolve(value as T) },
+      reject: (error) => { cleanup(); reject(error) },
     })
-    send(conn, { jsonrpc: '2.0', id, method, params })
-    const t = setTimeout(() => {
-      if (conn.pending.delete(id)) reject(new Error(`MCP 请求超时：${method}`))
-    }, timeoutMs)
-    t.unref?.()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    timer = setTimeout(() => cancel(`MCP 请求超时：${method}`), timeoutMs)
+    timer.unref?.()
+    try { send(conn, { jsonrpc: '2.0', id, method, params }) }
+    catch (error) { conn.pending.delete(id); cleanup(); reject(error); return }
+    if (signal?.aborted) onAbort()
   })
 }
 
@@ -186,6 +218,7 @@ async function connectStdio(
   const child = spawn(parts[0], parts.slice(1), {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    detached: process.platform !== 'win32',
     env: cfg.env ? { ...process.env, ...cfg.env } : undefined,
   })
   const conn: StdioConn = {
@@ -201,13 +234,19 @@ async function connectStdio(
   connections.set(name, conn)
   wireOutput(conn)
 
-  // spawn 失败（可执行文件不存在等）：拒绝全部挂起请求并标记错误
-  conn.child.on('error', (err: Error) => {
+  // A closed stdin raises EPIPE on Writable, not on ChildProcess.
+  const failConnection = (err: Error): void => {
+    if (connections.get(name) !== conn) return
     conn.status = 'error'
     conn.error = err.message
-    for (const p of conn.pending.values()) p.reject(new Error('MCP 服务器启动失败：' + err.message))
+    conn.tools = []
+    for (const p of conn.pending.values()) p.reject(new Error('MCP 服务器连接失败：' + err.message))
     conn.pending.clear()
-  })
+    killTree(child)
+    scheduleReconnect(name)
+  }
+  conn.child.on('error', failConnection)
+  conn.child.stdin?.on('error', failConnection)
   child.on('exit', () => {
     if (connections.get(name) !== conn) return // 已被 disconnectServer 主动移除
     conn.status = 'error'
@@ -244,11 +283,12 @@ async function* sseData(body: AsyncIterable<Uint8Array>): AsyncGenerator<string>
   for await (const chunk of body) {
     buf += decoder.decode(chunk, { stream: true })
     let idx: number
-    while ((idx = buf.indexOf('\n\n')) >= 0) {
+    while ((idx = buf.search(/\r?\n\r?\n/)) >= 0) {
+      const separator = buf.slice(idx).match(/^\r?\n\r?\n/)![0]
       const raw = buf.slice(0, idx)
-      buf = buf.slice(idx + 2)
+      buf = buf.slice(idx + separator.length)
       const data = raw
-        .split('\n')
+        .split(/\r?\n/)
         .filter((l) => l.startsWith('data:'))
         .map((l) => l.slice(5).trimStart())
         .join('\n')
@@ -268,9 +308,23 @@ async function httpExchange(
   conn: HttpConn,
   msg: Record<string, unknown>,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown> | null> {
+  signal?.throwIfAborted()
+  conn.controller.signal.throwIfAborted()
   const ac = new AbortController()
-  const timer = setTimeout(() => ac.abort(), timeoutMs)
+  let sent = false
+  const cancel = (reason: string): void => {
+    if (!ac.signal.aborted && sent && msg.id != null && msg.method !== 'initialize') {
+      void httpExchange(conn, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: msg.id, reason } }, 2_000).catch(() => {})
+    }
+    ac.abort(new Error(reason))
+  }
+  const onAbort = (): void => cancel('MCP 请求已取消')
+  const onDisconnect = (): void => ac.abort(new Error('MCP 服务器已断开'))
+  signal?.addEventListener('abort', onAbort, { once: true })
+  conn.controller.signal.addEventListener('abort', onDisconnect, { once: true })
+  const timer = setTimeout(() => cancel('MCP 请求超时'), timeoutMs)
   timer.unref?.()
   try {
     const headers: Record<string, string> = {
@@ -279,6 +333,7 @@ async function httpExchange(
       ...conn.headers,
     }
     if (conn.sessionId) headers['mcp-session-id'] = conn.sessionId
+    sent = true
     const res = await undiciFetch(conn.url, {
       method: 'POST',
       headers,
@@ -311,10 +366,13 @@ async function httpExchange(
       throw new Error('MCP SSE 流在返回响应前结束')
     }
     const body = (await res.json()) as RpcResult
+    if (msg.id != null && body.id !== msg.id) throw new Error('MCP 返回了不匹配的请求 id')
     if (body.error) throw new Error(body.error.message ?? 'MCP 服务器返回错误')
     return body.result ?? {}
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+    conn.controller.signal.removeEventListener('abort', onDisconnect)
   }
 }
 
@@ -323,11 +381,12 @@ function httpRpc<T = Record<string, unknown>>(
   method: string,
   params: unknown,
   timeoutMs = 15_000,
+  signal?: AbortSignal,
 ): Promise<T> {
   const id = ++conn.nextId
   const msg: Record<string, unknown> = { jsonrpc: '2.0', id, method }
   if (params !== undefined) msg.params = params
-  return httpExchange(conn, msg, timeoutMs) as Promise<T>
+  return httpExchange(conn, msg, timeoutMs, signal) as Promise<T>
 }
 
 async function connectHttp(name: string, cfg: Pick<MCPServerConfig, 'url' | 'headers'>): Promise<void> {
@@ -339,6 +398,7 @@ async function connectHttp(name: string, cfg: Pick<MCPServerConfig, 'url' | 'hea
     nextId: 0,
     tools: [],
     status: 'error',
+    controller: new AbortController(),
   }
   connections.set(name, conn)
   try {
@@ -366,17 +426,43 @@ export async function connectServer(
   name: string,
   cfg: Pick<MCPServerConfig, 'command' | 'url' | 'headers' | 'env'>,
 ): Promise<void> {
-  await disconnectServer(name)
-  if (cfg.url) return connectHttp(name, cfg)
-  return connectStdio(name, cfg)
+  const expected = generation(name)
+  return serialize(() => connectServerNow(name, cfg, expected))
+}
+
+async function connectServerNow(name: string, cfg: Pick<MCPServerConfig, 'command' | 'url' | 'headers' | 'env'>, expected = generation(name)): Promise<void> {
+  const check = (): void => { if (shuttingDown || expected !== generation(name)) throw new Error('MCP 连接配置已失效') }
+  check()
+  await disconnectServerNow(name)
+  check()
+  fingerprints.set(name, fingerprint(cfg))
+  if (cfg.url) await connectHttp(name, cfg)
+  else await connectStdio(name, cfg)
+  if (shuttingDown || expected !== generation(name)) {
+    await disconnectServerNow(name)
+    throw new Error('MCP 连接配置已失效')
+  }
 }
 
 export async function disconnectServer(name: string): Promise<void> {
+  invalidate(name)
+  await disconnectServerNow(name)
+}
+
+async function disconnectServerNow(name: string): Promise<void> {
   clearReconnect(name)
   failCounts.delete(name)
   const conn = connections.get(name)
   if (!conn) return
   connections.delete(name)
+  fingerprints.delete(name)
+  conn.status = 'error'
+  conn.tools = []
+  if (conn.kind === 'http') conn.controller.abort()
+  else {
+    for (const p of conn.pending.values()) p.reject(new Error('MCP 服务器已断开'))
+    conn.pending.clear()
+  }
   if (conn.kind === 'stdio' && !conn.child.killed) killTree(conn.child)
 }
 
@@ -384,24 +470,34 @@ export async function disconnectServer(name: string): Promise<void> {
 export async function ensureMcpConnections(
   configs: MCPServerConfig[],
 ): Promise<void> {
-  currentConfigs = configs
-  for (const cfg of configs) {
-    if (cfg.disabled) continue
-    // 已有健康连接跳过；死连接/残留错误连接由 connectServer 内部先清理再重连
-    const existing = connections.get(cfg.name)
-    if (existing?.status === 'connected') continue
-    try {
-      await connectServer(cfg.name, cfg)
-      failCounts.delete(cfg.name)
-    } catch {
-      // 连接失败保持 error 状态；挂自动重连定时器（即使没有任何对话也会恢复）
-      failCounts.set(cfg.name, (failCounts.get(cfg.name) ?? 0) + 1)
-      scheduleReconnect(cfg.name)
-    }
+  const snapshot = structuredClone(configs)
+  const previous = currentConfigs
+  for (const cfg of snapshot) {
+    const old = previous.find((c) => c.name === cfg.name)
+    if (!old || old.disabled !== cfg.disabled || fingerprint(old) !== fingerprint(cfg)) invalidate(cfg.name)
   }
+  for (const old of previous) if (!snapshot.some((c) => c.name === old.name)) invalidate(old.name)
+  currentConfigs = snapshot
+  // Stop removed/disabled servers immediately, even while another handshake waits.
   for (const name of [...connections.keys()]) {
-    if (!configs.some((c) => c.name === name)) await disconnectServer(name)
+    if (!snapshot.some((c) => c.name === name && !c.disabled && fingerprints.get(name) === fingerprint(c))) await disconnectServer(name)
   }
+  return serialize(async () => {
+    if (shuttingDown) return
+    for (const cfg of snapshot) {
+      if (!currentConfigs.some((c) => c.name === cfg.name && !c.disabled && fingerprint(c) === fingerprint(cfg))) continue
+      if (cfg.disabled) continue
+      const existing = connections.get(cfg.name)
+      if (existing?.status === 'connected' && fingerprints.get(cfg.name) === fingerprint(cfg)) continue
+      try {
+        await connectServerNow(cfg.name, cfg)
+        failCounts.delete(cfg.name)
+      } catch {
+        failCounts.set(cfg.name, (failCounts.get(cfg.name) ?? 0) + 1)
+        scheduleReconnect(cfg.name)
+      }
+    }
+  })
 }
 
 /** 统一的请求入口：按连接类型分发 */
@@ -410,10 +506,11 @@ function request<T = Record<string, unknown>>(
   method: string,
   params: unknown,
   timeoutMs = 15_000,
+  signal?: AbortSignal,
 ): Promise<T> {
   return conn.kind === 'stdio'
-    ? stdioRequest<T>(conn, method, params, timeoutMs)
-    : httpRpc<T>(conn, method, params, timeoutMs)
+    ? stdioRequest<T>(conn, method, params, timeoutMs, signal)
+    : httpRpc<T>(conn, method, params, timeoutMs, signal)
 }
 
 /** 收集所有已连接服务器的工具（mcp__服务器__工具 命名，需批准、无超时） */
@@ -428,8 +525,9 @@ export function getMcpToolDefs(): ToolDefinition[] {
         inputSchema: (t.inputSchema ?? { type: 'object' }) as Record<string, unknown>,
         timeoutMs: Number.POSITIVE_INFINITY,
         requiresApproval: true,
-        async execute(input: Record<string, unknown>) {
-          const res = await request(conn, 'tools/call', { name: t.name, arguments: input }, 180_000)
+        async execute(input, ctx) {
+          if (connections.get(conn.name) !== conn || conn.status !== 'connected') throw new Error('MCP 连接已更新或断开，请重新获取工具')
+          const res = await request(conn, 'tools/call', { name: t.name, arguments: input }, 180_000, ctx.signal)
           const parts = (res.content as Array<{ type?: string; text?: string }> | undefined) ?? []
           const text = parts
             .filter((p) => p.type === 'text')
@@ -482,17 +580,14 @@ export function killAllMcpServers(): void {
   shuttingDown = true
   for (const name of [...reconnectTimers.keys()]) clearReconnect(name)
   for (const conn of connections.values()) {
-    if (conn.kind === 'stdio') killTree(conn.child)
+    if (conn.kind === 'stdio') {
+      for (const p of conn.pending.values()) p.reject(new Error('应用正在退出'))
+      conn.pending.clear()
+      killTree(conn.child)
+    } else conn.controller.abort()
   }
-}
-
-function killTree(child: ChildProcess): void {
-  if (!child.pid) return
-  if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-  } else {
-    child.kill('SIGKILL')
-  }
+  connections.clear()
+  fingerprints.clear()
 }
 
 /** 测试与诊断用：各 stdio 服务器的子进程 pid */

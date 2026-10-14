@@ -1,29 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { OfficeFile } from '../../../shared/types'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import { ApprovalModeMenu } from './ApprovalModeMenu'
 import { ThinkingEffortMenu } from './ThinkingEffortMenu'
 import { ContextMeter } from './ContextMeter'
 import { CaretIcon } from './CaretIcon'
+import { Icon } from './Icon'
 
-export function Composer({ disabled }: { disabled: boolean }) {
-  const { llmProfiles, activeLlmId } = useApp()
+export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void }) {
+  const { llmProfiles, activeLlmId, activeSessionId, taskMode } = useApp()
+  const office = taskMode === 'office'
   const [text, setText] = useState('')
+  useEffect(() => { setText('') }, [activeSessionId, taskMode])
 
   const submit = (): void => {
     const content = text.trim()
-    if (!content || disabled) return
+    if ((!content && attachments.length === 0) || disabled) return
     setText('')
-    void actions.sendChat(content)
+    if (onSend) onSend(content || '请阅读这些资料，并整理主要内容。')
+    else void actions.sendChat(content)
   }
 
   return (
     <footer className="composer">
       <div className="composer-box">
+        {office && attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
         <textarea
           aria-label="消息"
           value={text}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+          placeholder={office ? '描述要完成的工作，或添加资料开始' : '输入消息，Enter 发送，Shift+Enter 换行'}
           rows={3}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -35,6 +41,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
           }}
         />
         <div className="composer-row">
+          {office && <button className="icon-btn-lg" title="添加办公资料" disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
           <ApprovalModeMenu />
           <div className="spacer" />
           <ContextMeter />
@@ -70,7 +77,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
           <button
             className="composer-send"
             title="发送（Enter）"
-            disabled={!text.trim()}
+            disabled={!text.trim() && attachments.length === 0}
             onClick={submit}
           >
             <svg
@@ -91,7 +98,7 @@ export function Composer({ disabled }: { disabled: boolean }) {
         )}
         </div>
       </div>
-      <div className="composer-hint"><span>结合项目文件与你协作</span><span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span></div>
+      <div className="composer-hint"><span>{office ? '资料仅导入当前任务 · 生成结果可预览和打开' : '结合项目文件与你协作'}</span><span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span></div>
     </footer>
   )
 }

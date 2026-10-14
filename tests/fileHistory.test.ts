@@ -19,6 +19,14 @@ afterEach(async () => {
 })
 
 describe('文件检查点', () => {
+  it('办公二进制文件回滚按字节恢复，不经过UTF-8解码', async () => {
+    const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x80, 0xfe, 0x01])
+    await writeFile(join(project, 'report.docx'), bytes)
+    await snapshotFilesBeforeChange(root, 'office-doc', project, ['report.docx'])
+    await writeFile(join(project, 'report.docx'), Buffer.from('changed'))
+    await restoreSnapshot(root, 'office-doc', project)
+    expect(await readFile(join(project, 'report.docx'))).toEqual(bytes)
+  })
   it('快照 → 修改 → 回滚恢复原文', async () => {
     await snapshotFilesBeforeChange(root, 'tu-1', project, ['a.txt'])
     await writeFile(join(project, 'a.txt'), '被 AI 改过的内容')

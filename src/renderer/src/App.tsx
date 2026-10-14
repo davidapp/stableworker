@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { useApp, store } from './store'
 import * as actions from './actions'
@@ -10,8 +10,16 @@ const MIN_SIDEBAR = 180
 const MAX_SIDEBAR = 480
 
 export default function App() {
-  const { booted, settingsOpen, sidebarWidth } = useApp()
+  const { booted, settingsOpen, sidebarWidth, taskMode } = useApp()
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth)
   const draggingRef = useRef(false)
+  const maxSidebar = taskMode === 'office' ? Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, viewportWidth - (viewportWidth <= 1100 ? 220 : 256) - 440 - 6)) : MAX_SIDEBAR
+  const displayedSidebarWidth = Math.min(sidebarWidth, maxSidebar)
+  useEffect(() => {
+    const resized = (): void => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', resized)
+    return () => window.removeEventListener('resize', resized)
+  }, [])
 
   useEffect(() => {
     void actions.boot()
@@ -38,7 +46,7 @@ export default function App() {
   }
   const onSplitterMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (!draggingRef.current) return
-    const width = Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, e.clientX))
+    const width = Math.min(maxSidebar, Math.max(MIN_SIDEBAR, e.clientX))
     store.setState({ sidebarWidth: width })
   }
   const onSplitterUp = (): void => {
@@ -50,7 +58,7 @@ export default function App() {
   }
 
   return (
-    <div className="app" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
+    <div className="app" style={{ '--sidebar-width': `${displayedSidebarWidth}px` } as CSSProperties}>
       <Sidebar />
       <div
         className="splitter"

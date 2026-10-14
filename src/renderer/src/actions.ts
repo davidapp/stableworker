@@ -14,6 +14,7 @@ import type {
   Session,
   SessionMeta,
   ToolUseBlock,
+  TaskMode,
 } from '../../shared/types'
 
 /**
@@ -45,12 +46,64 @@ function applyConfig(cfg: ConfigView): void {
 }
 
 function toMeta(session: Session): SessionMeta {
-  return { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt }
+  return { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt, taskMode: session.taskMode ?? 'coding' }
+}
+
+let lastCodingProjectId: string | null = null
+
+/** Office owns a managed workspace; it does not require choosing a code folder. */
+export async function switchTaskMode(mode: TaskMode): Promise<void> {
+  const before = store.getState()
+  if (before.taskMode === mode && (mode === 'coding' || before.activeProjectId === 'office-workspace')) return
+  await stopActiveChatForNavigation()
+  if (before.taskMode === 'coding') lastCodingProjectId = before.activeProjectId
+  let cfg = mode === 'office' ? await window.api.office.workspace() : await window.api.getConfig()
+  const projectId = mode === 'office' ? 'office-workspace' : cfg.projects.find((p) => p.id === lastCodingProjectId && p.id !== 'office-workspace')?.id ?? cfg.projects.find((p) => p.id !== 'office-workspace')?.id ?? null
+  if (projectId) cfg = await window.api.setActiveProject(projectId)
+  applyConfig(cfg)
+  store.setState({ taskMode: mode, activeProjectId: projectId, activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
+  if (projectId) {
+    await refreshProjectSessions(projectId)
+    const first = store.getState().sessionsByProject[projectId]?.[0]
+    if (first) await loadSessionIntoView(projectId, first.id)
+  }
+}
+
+export async function newOfficeTask(): Promise<void> {
+  await stopActiveChatForNavigation()
+  await switchTaskMode('office')
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
+  try { await ensureOfficeSession() }
+  catch (error) {
+    if (store.getState().taskMode === 'office') store.setState({ sessionWarning: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+let creatingOfficeSession: Promise<string> | null = null
+export async function ensureOfficeSession(): Promise<string> {
+  if (creatingOfficeSession) return creatingOfficeSession
+  const create = async (): Promise<string> => {
+    if (store.getState().taskMode !== 'office') await switchTaskMode('office')
+    const state = store.getState()
+    if (state.activeSessionId) return state.activeSessionId
+    const epoch = sessionEditEpoch
+    const session = await window.api.createSession('office-workspace', '新办公任务', 'office')
+    const current = store.getState()
+    if (epoch !== sessionEditEpoch || current.taskMode !== 'office' || current.activeProjectId !== 'office-workspace') {
+      throw new Error('创建任务期间已切换工作区，请在当前任务中重新操作')
+    }
+    store.setState((prev) => ({ activeProjectId: 'office-workspace', activeSessionId: session.id, activeSessionRevision: session.revision ?? 0,
+      taskMode: 'office', sessionsByProject: { ...prev.sessionsByProject, 'office-workspace': [toMeta(session), ...(prev.sessionsByProject['office-workspace'] ?? [])] } }))
+    return session.id
+  }
+  creatingOfficeSession = create()
+  try { return await creatingOfficeSession } finally { creatingOfficeSession = null }
 }
 
 export async function boot(): Promise<void> {
   const cfg = await window.api.getConfig()
   applyConfig(cfg)
+  store.setState({ taskMode: cfg.activeProjectId === 'office-workspace' ? 'office' : 'coding' })
   const map = await reloadAllSessions(cfg.projects)
   const ap = cfg.activeProjectId
   if (ap) {
@@ -85,7 +138,7 @@ async function refreshProjectSessions(projectId: string): Promise<void> {
 async function loadSessionIntoView(projectId: string, sessionId: string): Promise<void> {
   const res = await window.api.loadSession(projectId, sessionId)
   if (!res || !res.session) {
-    store.setState({ activeSessionId: null, messages: [], sessionWarning: null, compactedNote: null, statusText: null, todos: [] })
+    store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, compactedNote: null, statusText: null, todos: [] })
     return
   }
   // 清理上次中断留下的流式/运行中状态
@@ -104,14 +157,17 @@ async function loadSessionIntoView(projectId: string, sessionId: string): Promis
     ? `⚠ 该会话文件存在损坏：${res.corruptLines}/${res.totalLines} 行无法解析（通常是写入中断或磁盘故障），` +
       `已尽力恢复出 ${messages.length} 条消息。建议尽快导出重要内容；也可以在文件夹中查看原始文件，或删除本会话重建。`
     : null
-  store.setState({ activeProjectId: projectId, activeSessionId: res.session.id, messages, sessionWarning: warning })
+  store.setState({ activeProjectId: projectId, activeSessionId: res.session.id, activeSessionRevision: res.session.revision ?? 0,
+    taskMode: res.session.taskMode ?? 'coding', messages, sessionWarning: warning })
 }
 
 export async function addProject(): Promise<void> {
+  await stopActiveChatForNavigation()
   const cfg = await window.api.addProject()
   if (!cfg) return // 用户取消了目录选择
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, messages: [], compactedNote: null, statusText: null, todos: [] })
+  store.setState({ taskMode: 'coding' })
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
   await reloadAllSessions(cfg.projects)
   if (cfg.activeProjectId) {
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [cfg.activeProjectId as string]: true } }))
@@ -119,9 +175,11 @@ export async function addProject(): Promise<void> {
 }
 
 export async function selectProject(id: string): Promise<void> {
+  await stopActiveChatForNavigation()
   const cfg = await window.api.setActiveProject(id)
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, messages: [], compactedNote: null, statusText: null, todos: [] })
+  store.setState({ taskMode: id === 'office-workspace' ? 'office' : 'coding' })
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
   store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [id]: true } }))
   await refreshProjectSessions(id)
 }
@@ -136,9 +194,10 @@ export function toggleProjectExpanded(projectId: string): void {
 }
 
 export async function removeProject(id: string): Promise<void> {
+  await stopActiveChatForNavigation()
   const cfg = await window.api.removeProject(id)
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, messages: [], compactedNote: null, statusText: null, todos: [] })
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
   store.setState((prev) => {
     const sessionsByProject = { ...prev.sessionsByProject }
     delete sessionsByProject[id]
@@ -150,29 +209,34 @@ export async function removeProject(id: string): Promise<void> {
 
 /** 在指定项目下新建会话：切到该项目并清空视图；真正落盘发生在首条消息发出时 */
 export async function newSessionInProject(projectId: string): Promise<void> {
+  await stopActiveChatForNavigation()
   if (store.getState().activeProjectId !== projectId) {
     const cfg = await window.api.setActiveProject(projectId)
     applyConfig(cfg)
   }
   store.setState((prev) => ({
     expandedProjects: { ...prev.expandedProjects, [projectId]: true },
+    taskMode: projectId === 'office-workspace' ? 'office' : 'coding',
     activeSessionId: null,
+    activeSessionRevision: 0,
     messages: [],
     sessionWarning: null,
   }))
 }
 
 export async function selectSession(projectId: string, sessionId: string): Promise<void> {
+  await stopActiveChatForNavigation()
   if (store.getState().activeProjectId !== projectId) {
     const cfg = await window.api.setActiveProject(projectId)
     applyConfig(cfg)
-    store.setState({ activeSessionId: null, messages: [], sessionWarning: null, compactedNote: null, statusText: null, todos: [] })
+    store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, compactedNote: null, statusText: null, todos: [] })
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [projectId]: true } }))
   }
   await loadSessionIntoView(projectId, sessionId)
 }
 
 export async function deleteSession(projectId: string, id: string): Promise<void> {
+  if (store.getState().activeSessionId === id) await stopActiveChatForNavigation()
   await window.api.deleteSession(projectId, id)
   store.setState((prev) => ({
     sessionsByProject: {
@@ -180,7 +244,7 @@ export async function deleteSession(projectId: string, id: string): Promise<void
       [projectId]: (prev.sessionsByProject[projectId] ?? []).filter((s) => s.id !== id),
     },
     ...(prev.activeSessionId === id
-      ? { activeSessionId: null, messages: [], sessionWarning: null, saveError: null }
+      ? { activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null }
       : {}),
   }))
 }
@@ -292,36 +356,89 @@ export async function saveFeatures(features: FeatureEntry[]): Promise<void> {
   applyConfig(cfg)
 }
 
-/** 把当前会话整体写盘，并同步会话列表的 updatedAt 排序 */
-async function persistCurrentSession(): Promise<void> {
+type ChatResponse = { ok: boolean; error?: string; compacted?: number }
+let activeChatRequest: Promise<ChatResponse> | null = null
+let chatGeneration = 0
+let sessionEditEpoch = 0
+const ignoredChatSessions = new Set<string>()
+let sessionSaveQueue: Promise<unknown> = Promise.resolve()
+
+async function settleActiveChat(savePartial: boolean): Promise<void> {
   const s = store.getState()
-  if (!s.activeProjectId || !s.activeSessionId) return
+  if (!s.activeSessionId || (!s.streaming && !activeChatRequest)) return
+  const id = s.activeSessionId
+  chatGeneration++
+  ignoredChatSessions.add(id)
+  const request = activeChatRequest
+  try {
+    await window.api.stopChat(id)
+    await request?.catch(() => {})
+    if (store.getState().activeSessionId !== id) return
+    store.setState((prev) => ({ streaming: false, messages: prev.messages.map((m) => m.streaming ? {
+      ...m, streaming: false, blocks: m.blocks.map((block) => block.type === 'tool_use' &&
+        (block.status === 'running' || block.status === 'pending_approval')
+        ? { ...block, status: 'error' as const, result: block.result ?? '（生成已停止）' } : block),
+    } : m) }))
+    if (savePartial) await persistCurrentSession()
+  } finally {
+    ignoredChatSessions.delete(id)
+  }
+}
+
+/** Finish the previous generation before changing a task or navigation mode. */
+export async function stopActiveChatForNavigation(): Promise<void> {
+  await settleActiveChat(true)
+  await sessionSaveQueue.catch(() => {})
+  sessionEditEpoch++
+}
+
+async function reloadAfterExternalChange(projectId: string, sessionId: string): Promise<void> {
+  sessionEditEpoch++
+  await settleActiveChat(false)
+  const current = store.getState()
+  if (current.activeProjectId !== projectId || current.activeSessionId !== sessionId) return
+  await loadSessionIntoView(projectId, sessionId)
+  await refreshProjectSessions(projectId)
+  store.setState({ streaming: false, statusText: '会话已在其他窗口修改，已载入最新版本；此前生成已停止。' })
+}
+
+/** Queue renderer saves too, so later snapshots use the revision returned by earlier saves. */
+async function persistCurrentSession(): Promise<boolean> {
+  const s = store.getState()
+  if (!s.activeProjectId || !s.activeSessionId) return false
   const meta = (s.sessionsByProject[s.activeProjectId] ?? []).find((m) => m.id === s.activeSessionId)
-  if (!meta) return
+  if (!meta) return false
+  const epoch = sessionEditEpoch
   const session: Session = {
-    id: meta.id,
-    projectId: s.activeProjectId,
-    title: meta.title,
-    createdAt: meta.createdAt,
-    updatedAt: Date.now(),
-    messages: s.messages,
+    id: meta.id, projectId: s.activeProjectId, title: meta.title, createdAt: meta.createdAt,
+    updatedAt: Date.now(), messages: structuredClone(s.messages), taskMode: s.taskMode, revision: s.activeSessionRevision,
   }
-  const res = await window.api.saveSession(session)
-  if (!res.ok) {
-    // 写盘失败：新消息只存在内存里，界面持续告警直到保存成功
-    store.setState({ saveError: res.error ?? '未知写入错误' })
-    return
-  }
-  store.setState({ saveError: null })
-  const newMeta = toMeta(session)
-  const ap = s.activeProjectId
-  store.setState((prev) => {
-    const list = prev.sessionsByProject[ap] ?? []
-    const updated = [newMeta, ...list.filter((m) => m.id !== newMeta.id)].sort(
-      (a, b) => b.updatedAt - a.updatedAt,
-    )
-    return { sessionsByProject: { ...prev.sessionsByProject, [ap]: updated } }
+  const operation = sessionSaveQueue.catch(() => {}).then(async (): Promise<boolean> => {
+    if (epoch !== sessionEditEpoch) return false
+    const current = store.getState()
+    if (current.activeSessionId === session.id && current.activeProjectId === session.projectId) {
+      session.revision = current.activeSessionRevision
+    }
+    const res = await window.api.saveSession(session)
+    if (epoch !== sessionEditEpoch) return res.ok
+    if (!res.ok) {
+      if (res.conflict) await reloadAfterExternalChange(session.projectId, session.id)
+      else store.setState({ saveError: res.error ?? '未知写入错误' })
+      return false
+    }
+    const active = store.getState()
+    if (active.activeSessionId === session.id && active.activeProjectId === session.projectId) {
+      store.setState({ saveError: null, activeSessionRevision: Math.max(active.activeSessionRevision, res.revision ?? session.revision ?? 0) })
+    }
+    const newMeta = toMeta(session)
+    store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject,
+      [session.projectId]: [newMeta, ...(prev.sessionsByProject[session.projectId] ?? []).filter((m) => m.id !== session.id)]
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    } }))
+    return true
   })
+  sessionSaveQueue = operation
+  return operation
 }
 
 /** 保存失败后的手动重试 */
@@ -374,6 +491,7 @@ export async function sendChat(text: string): Promise<void> {
   const s = store.getState()
   let content = text.trim()
   if (!content || s.streaming || !s.activeProjectId) return
+  const generation = ++chatGeneration
   // 斜杠命令：/name args → 展开 skills/<name>.md 模板后作为普通消息发送
   if (content.startsWith('/')) {
     const sp = content.indexOf(' ')
@@ -389,15 +507,18 @@ export async function sendChat(text: string): Promise<void> {
     openSettings() // 没有可用配置档时直接带用户去设置
     return
   }
+  if (generation !== chatGeneration) return
 
   // 无活动会话时先创建（标题取首条消息前 30 字）
   let sessionId = s.activeSessionId
   const ap = s.activeProjectId
   if (!sessionId && ap) {
-    const created = await window.api.createSession(ap, content.slice(0, 30))
+    const created = await window.api.createSession(ap, content.slice(0, 30), s.taskMode)
+    if (generation !== chatGeneration) return
     sessionId = created.id
     store.setState((prev) => ({
       activeSessionId: created.id,
+      activeSessionRevision: created.revision ?? 0,
       sessionsByProject: {
         ...prev.sessionsByProject,
         [ap]: [toMeta(created), ...(prev.sessionsByProject[ap] ?? [])],
@@ -408,6 +529,11 @@ export async function sendChat(text: string): Promise<void> {
   if (!sessionId) {
     // ap 非空时上面必然已创建；这里只做类型收窄
     return
+  }
+
+  if (s.taskMode === 'office' && s.messages.length === 0) {
+    store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject,
+      [ap]: (prev.sessionsByProject[ap] ?? []).map((meta) => meta.id === sessionId && meta.title === '新办公任务' ? { ...meta, title: content.slice(0, 30) } : meta) } }))
   }
 
   const userMsg: ChatMessage = {
@@ -425,7 +551,12 @@ export async function sendChat(text: string): Promise<void> {
   }
   const messages = [...store.getState().messages, userMsg, assistantMsg]
   store.setState({ messages, streaming: true })
-  await persistCurrentSession() // 先把用户消息落盘，防中途崩溃丢失
+  const saved = await persistCurrentSession()
+  if (generation !== chatGeneration) return
+  if (!saved) {
+    store.setState((prev) => ({ streaming: false, messages: prev.messages.map((m) => m.streaming ? { ...m, streaming: false } : m) }))
+    return
+  }
 
   // 发给 LLM 的历史：去掉空占位回复；未完成/未批准的工具调用没有结果，不进历史
   const history: ChatHistoryMessage[] = messages
@@ -441,11 +572,14 @@ export async function sendChat(text: string): Promise<void> {
 
   let res: { ok: boolean; error?: string; compacted?: number }
   try {
-    res = await window.api.sendChat({ sessionId, projectId: ap, messages: history })
+    const request = window.api.sendChat({ sessionId, projectId: ap, messages: history, revision: store.getState().activeSessionRevision })
+    activeChatRequest = request
+    try { res = await request } finally { if (activeChatRequest === request) activeChatRequest = null }
   } catch (err) {
     // 主进程异常（如 emit 到已销毁窗口失败）会让 chat:send 整体拒绝——按错误收尾
     res = { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
+  if (generation !== chatGeneration || store.getState().activeSessionId !== sessionId) return
   // 兜底：主循环已结束，无论 done 事件是否送达，强制收尾流式状态
   if (store.getState().streaming) {
     store.setState((prev) => ({
@@ -463,8 +597,7 @@ export async function sendChat(text: string): Promise<void> {
 }
 
 export async function stopChat(): Promise<void> {
-  const { activeSessionId } = store.getState()
-  if (activeSessionId) await window.api.stopChat(activeSessionId)
+  await settleActiveChat(true)
 }
 
 function updateStreamingAssistant(fn: (m: ChatMessage) => ChatMessage): void {
@@ -508,12 +641,15 @@ function appendReasoningDelta(blocks: MessageBlock[], delta: string): MessageBlo
 /** 订阅外部会话修改（上下文管理窗口的编辑/删除/压缩/清空）：
  * 主窗口自动从磁盘重载对应会话与列表，防止旧内存状态覆盖外部修改 */
 export function subscribeSessionsChanged(): () => void {
-  return window.api.onSessionsChanged(async ({ projectId, sessionId }) => {
+  return window.api.onSessionsChanged(async ({ projectId, sessionId, revision, change }) => {
     const s = store.getState()
-    if (s.streaming) return // 生成中不打断，下次操作前会重载
-    const meta = (s.sessionsByProject[projectId] ?? []).find((m) => m.id === sessionId)
-    if (meta) await selectSession(projectId, sessionId)
-    else if (s.activeProjectId === projectId) await reloadSessionsOf(projectId)
+    if (s.activeProjectId === projectId && s.activeSessionId === sessionId) {
+      if (change === 'summary' && s.streaming) {
+        store.setState({ activeSessionRevision: Math.max(s.activeSessionRevision, revision ?? s.activeSessionRevision) })
+      } else if (change === 'summary') {
+        await loadSessionIntoView(projectId, sessionId)
+      } else await reloadAfterExternalChange(projectId, sessionId)
+    } else if (s.activeProjectId === projectId) await reloadSessionsOf(projectId)
   })
 }
 
@@ -550,7 +686,7 @@ async function maybeAutoCompact(): Promise<void> {
   if (!s.activeProjectId || !s.activeSessionId) return
   if (s.messages.length < AUTO_COMPACT_MIN_MESSAGES) return
   // compactNow 在主进程读磁盘上的会话文件，先确保本轮回复已落盘
-  await persistCurrentSession()
+  if (!await persistCurrentSession()) return
   const list = await window.api.listDebugExchanges()
   const latest = selectContextExchange(list, s.activeSessionId, s.llmProfiles.find((p) => p.id === s.activeLlmId))
   const tokens = latest?.inputTokens
@@ -579,7 +715,7 @@ async function maybeAutoCompact(): Promise<void> {
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {
     const s = store.getState()
-    if (event.sessionId !== s.activeSessionId) return
+    if (event.sessionId !== s.activeSessionId || ignoredChatSessions.has(event.sessionId)) return
     if (event.type === 'delta') {
       store.setState({ statusText: null })
       updateStreamingAssistant((m) => ({ ...m, blocks: appendTextDelta(m.blocks, event.delta) }))

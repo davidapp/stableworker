@@ -4,7 +4,7 @@ import { fetch as undiciFetch } from 'undici'
 import { loadConfig, decryptApiKey } from './config'
 import { getProxyDispatcher } from './llm'
 import { appendSummaryLine, loadSessionAny, saveSessionInternal, emitSessionsChanged } from './sessions'
-import { summarizeWithModel, invalidateCompactCache, setCachedCompact } from './compact'
+import { summarizeWithModel, invalidateCompactCache } from './compact'
 import { estimateTokens } from '../shared/tokens'
 import type {
   BalanceResult,
@@ -61,9 +61,8 @@ export function registerContextHandlers(): void {
       const messageCount = r.session?.messages.length ?? 0
       // 编辑已有摘要保持其覆盖范围不变；新建摘要默认覆盖全部消息
       const droppedCount = r.session?.summary?.droppedCount ?? messageCount
-      await appendSummaryLine(projectId, sessionId, droppedCount, trimmed)
-      setCachedCompact(sessionId, droppedCount, trimmed)
-      emitSessionsChanged(projectId, sessionId)
+      const saved = await appendSummaryLine(projectId, sessionId, droppedCount, trimmed, r.session?.revision)
+      if (!saved.ok) return { ok: false, error: saved.error }
       return { ok: true }
     },
   )
@@ -72,9 +71,8 @@ export function registerContextHandlers(): void {
   ipcMain.handle(
     'context:deleteSummary',
     async (_e, projectId: string, sessionId: string): Promise<ContextOpResult> => {
-      await appendSummaryLine(projectId, sessionId, 0, '')
-      setCachedCompact(sessionId, 0, '')
-      emitSessionsChanged(projectId, sessionId)
+      const saved = await appendSummaryLine(projectId, sessionId, 0, '')
+      if (!saved.ok) return { ok: false, error: saved.error }
       return { ok: true }
     },
   )
@@ -96,9 +94,8 @@ export function registerContextHandlers(): void {
           signal: AbortSignal.timeout(60_000),
         })
         const droppedCount = r.session.messages.length
-        await appendSummaryLine(projectId, sessionId, droppedCount, summary)
-        setCachedCompact(sessionId, droppedCount, summary)
-        emitSessionsChanged(projectId, sessionId)
+        const saved = await appendSummaryLine(projectId, sessionId, droppedCount, summary, r.session.revision)
+        if (!saved.ok) return { ok: false, error: saved.error }
         return { ok: true, droppedCount, summaryText: summary }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -144,10 +141,10 @@ export function registerContextHandlers(): void {
           blocks: [{ type: 'text', text: `[已压缩 ${range.length} 条对话]\n${summary}` }],
         }
         msgs.splice(start, range.length, replacement)
-        invalidateCompactCache(sessionId) // 历史形状变了，旧摘要缓存作废
         const r2 = await saveSessionInternal(r.session)
         if (!r2.ok) return { ok: false, error: r2.error ?? '保存失败' }
-        emitSessionsChanged(projectId, sessionId)
+        invalidateCompactCache(sessionId)
+        emitSessionsChanged(projectId, sessionId, { revision: r2.revision, change: 'messages' })
         return { ok: true, droppedCount: range.length, summaryText: summary }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }

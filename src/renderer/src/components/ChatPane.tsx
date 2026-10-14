@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import { useApp } from '../store'
+import type { OfficeFile } from '../../../shared/types'
+import { useApp, store } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
 import { ToolCallCard } from './ToolCallCard'
 import { TodoPanel } from './TodoPanel'
 import { copyText } from '../clipboard'
 import { Icon } from './Icon'
+import { OfficePanel } from './OfficePanel'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
 function CodeBlock({ children }: { children?: ReactNode }) {
@@ -46,10 +48,32 @@ export function ChatPane() {
     saveError,
     statusText,
     sessionsByProject,
+    taskMode,
   } = useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
+  const [attachments, setAttachments] = useState<OfficeFile[]>([])
+  const [fileRefresh, setFileRefresh] = useState(0)
+  const [importError, setImportError] = useState('')
+  const office = taskMode === 'office'
+  useEffect(() => { setAttachments([]); setImportError('') }, [activeSessionId, taskMode])
+  const importFiles = async (): Promise<void> => {
+    if (streaming) return
+    try {
+      const id = await actions.ensureOfficeSession()
+      const imported = await window.api.office.import(id)
+      if (store.getState().activeSessionId !== id) return
+      setAttachments((prev) => [...prev, ...imported.filter((f) => !prev.some((p) => p.path === f.path))])
+      setFileRefresh((n) => n + 1)
+      setImportError('')
+    } catch (err) { if (store.getState().taskMode === 'office') setImportError(err instanceof Error ? err.message : String(err)) }
+  }
+  const sendOffice = (text: string): void => {
+    const refs = attachments.map((f) => `- ${f.name}: ${f.path}`).join('\n')
+    void actions.sendChat(`${text}${refs ? `\n\n本次参考资料（请使用 office_read_document 读取）：\n${refs}` : ''}`)
+    setAttachments([])
+  }
   // 记录上一次的会话 id：切换会话（含启动恢复）后强制定位到最新消息
   const sessionRef = useRef<string | null>(activeSessionId)
 
@@ -103,11 +127,12 @@ export function ChatPane() {
   }
 
   return (
+    <div className={office ? 'office-workbench' : 'chat-workbench'}>
     <main className="chat-pane">
       <header className="chat-header">
-        <Icon name="folder" />
+        <Icon name={office ? 'briefcase' : 'folder'} />
         <span className="chat-header-project" title={project.path}>
-          {project.name}
+          {office ? '办公' : project.name}
         </span>
         <span className="header-separator">/</span>
         <span className="chat-header-session">{session?.title ?? '新会话'}</span>
@@ -122,6 +147,8 @@ export function ChatPane() {
           </button>
         ) : null}
       </header>
+
+      {importError && <div className="chat-banner error" role="alert">导入失败：{importError}</div>}
 
       {saveError ? (
         <div className="chat-banner error">
@@ -161,12 +188,12 @@ export function ChatPane() {
         </div>
       ) : messages.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-state-icon"><Icon name="chat" size={28} /></span>
-          <span className="empty-state-eyebrow">{project.name}</span>
-          <h2>今天一起完成什么？</h2>
-          <p>提问、排查问题或描述一个想法，助手会结合项目文件与你协作。</p>
+          <span className="empty-state-icon"><Icon name={office ? 'briefcase' : 'chat'} size={28} /></span>
+          <span className="empty-state-eyebrow">{office ? '你的 AI 办公助手' : project.name}</span>
+          <h2>{office ? '把资料变成工作成果' : '今天一起完成什么？'}</h2>
+          <p>{office ? '整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。' : '提问、排查问题或描述一个想法，助手会结合项目文件与你协作。'}</p>
           <div className="conversation-starters">
-            {['介绍这个项目的结构', '检查代码中潜在的问题', '帮我规划下一步开发'].map((prompt) => (
+            {(office ? ['生成一份 Word 项目周报模板', '制作一个 Excel 费用汇总表', '制作一份三页 PPT 工作总结'] : ['介绍这个项目的结构', '检查代码中潜在的问题', '帮我规划下一步开发']).map((prompt) => (
               <button key={prompt} className="btn btn-ghost" onClick={() => void actions.sendChat(prompt)}>{prompt}<Icon name="arrowUp" size={14} /></button>
             ))}
           </div>
@@ -242,7 +269,9 @@ export function ChatPane() {
         </div>
       )}
 
-      <Composer disabled={streaming} />
+      <Composer disabled={streaming} attachments={office ? attachments : []} onAttach={office ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : undefined} />
     </main>
+    {office && <OfficePanel onImport={() => void importFiles()} refreshKey={fileRefresh} />}
+    </div>
   )
 }

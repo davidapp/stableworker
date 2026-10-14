@@ -2278,3 +2278,45 @@ kbd { font: inherit; color: var(--text-dim); }
 .ctx-capacity-source { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-faint); line-height: 1.6; overflow-wrap: anywhere; }
 .ctx-capacity-source a { color: var(--accent-strong); }
 .ctx-popover { width: 360px; max-height: calc(100vh - 160px); overflow-y: auto; }
+
+/* Coding projects and office tasks share one shell and separate work areas. */
+.task-mode-switch { display: flex; padding: 3px; margin: 4px 12px 12px; gap: 3px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.task-mode-switch button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border: none; border-radius: var(--radius-s); color: var(--text-faint); background: transparent; cursor: pointer; font-size: 12px; }
+.task-mode-switch button.active { color: var(--text); background: var(--surface-2); }
+.task-mode-switch button:hover { color: var(--text); }
+.office-task-node .session-list { padding-left: 0; }
+.office-task-node .session-leaf { padding-left: 12px; }
+.chat-workbench, .office-workbench { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.office-panel { flex: 0 0 256px; width: 256px; padding: 20px 14px; overflow-y: auto; border-left: 1px solid var(--border); background: var(--panel); }
+.office-panel-heading { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.office-panel-heading > span { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+.office-panel-intro { color: var(--text-faint); font-size: 11px; line-height: 1.7; margin: 10px 0 16px; }
+.office-file-section { margin-top: 20px; }
+.office-file-section .sidebar-section-label { margin: 0 0 8px; padding: 0; }
+.office-file-empty { color: var(--text-faint); font-size: 11px; line-height: 1.8; padding: 4px 0; }
+.office-file-row { display: flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius-s); margin: 8px 0; background: var(--surface); }
+.office-file-preview { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; padding: 10px 8px; color: var(--text); background: transparent; border: none; text-align: left; cursor: pointer; }
+.office-file-row:hover { border-color: var(--text-faint); }
+.office-file-format { font-size: 9px; font-weight: 600; color: var(--accent-strong); border: 1px solid var(--border); padding: 6px 3px; border-radius: 4px; min-width: 32px; text-align: center; }
+.office-file-info { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.office-file-info strong { font-size: 11px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.office-file-info small { color: var(--text-faint); font-size: 10px; }
+.office-file-row > .icon-btn { margin-right: 6px; flex-shrink: 0; }
+.office-panel .icon-btn, .office-attachment-chips .icon-btn { visibility: visible; }
+.office-preview-overlay { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; }
+.office-preview-backdrop { position: absolute; inset: 0; background: #0008; border: none; cursor: default; }
+.office-preview-dialog { position: relative; display: flex; flex-direction: column; width: min(860px, 90vw); max-height: 85vh; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.office-preview-dialog header { display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.office-preview-dialog header strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.office-preview-dialog pre { margin: 0; padding: 8px 24px 24px; font-family: inherit; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; }
+.office-preview-note { padding: 12px 24px; color: var(--text-faint); font-size: 11px; }
+.office-preview-dialog > .msg-error { padding: 24px; }
+.office-attachment-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0; }
+.office-attachment-chips > span { display: flex; align-items: center; gap: 6px; max-width: 240px; border: 1px solid var(--border); border-radius: var(--radius-s); padding: 2px 6px; color: var(--text-dim); font-size: 11px; }
+.office-attachment-chips > span > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.office-workbench .composer-row { flex-wrap: wrap; gap: 8px; }
+.office-workbench .model-select-wrap { max-width: 200px; min-width: 100px; }
+.office-workbench .empty-state { padding: 28px; }
+.office-workbench .empty-state { min-height: 0; overflow-y: auto; flex-shrink: 1; justify-content: safe center; }
+.office-workbench .empty-state > * { flex-shrink: 0; }
+@media (max-width: 1100px) { .office-panel { flex-basis: 220px; width: 220px; padding: 16px 10px; } .office-workbench .composer-hint > span:first-child { display: none; } }

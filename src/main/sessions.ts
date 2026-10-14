@@ -5,20 +5,21 @@ import { randomUUID } from 'node:crypto'
 import { deleteSessionCheckpoints, deleteProjectCheckpoints } from './fileHistory'
 import { invalidateCompactCache, setCachedCompact } from './compact'
 import { loadConfig } from './config'
-import type { ChatMessage, Session, SessionMeta } from '../shared/types'
+import type { ChatMessage, Session, SessionChangeEvent, SessionMeta, SessionSaveResult, TaskMode } from '../shared/types'
 
 /**
  * 会话存储 v2：append-only JSONL（借鉴 Claude Code 的 sessionStorage）。
  *
- * 每个会话一个 <sessionId>.jsonl，每行一个操作，只追加、永不重写整文件：
+ * 每个会话一个 <sessionId>.jsonl。旧行是一条操作，新行是带 revision 的完整事务：
  *   {"t":"meta","ts":...,"title":"...","createdAt":...}   标题/创建时间（新建、重命名时追加）
  *   {"t":"m","ts":...,"i":3,"m":{...}}                    把第 i 条消息设置为 m（追加或原地替换）
  *   {"t":"clear","ts":...}                                清空消息（🧹 清空上下文）
+ *   {"t":"batch","revision":1,"operations":[...]}          原子回放的版本化修改
  *
  * 为什么这样做：
  * - 写入是 O(新内容) 的尾部追加，不再每次整文件重写
  * - 崩溃时最多损失最后半行——解析失败的行直接跳过，会话其余部分完好
- * - 回放是幂等的（按 index 覆盖），重复行无害
+ * - 回放是幂等的（按 index 覆盖，同 revision 事务跳过），重复行无害
  *
  * 旧版单 JSON 文件（<id>.json）在 list/load 时自动转换成 JSONL 并删除原文件。
  */
@@ -61,7 +62,37 @@ async function readLines(file: string): Promise<string[]> {
 
 async function appendLines(file: string, lines: unknown[]): Promise<void> {
   await mkdir(join(file, '..'), { recursive: true })
-  await appendFile(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf-8')
+  // Separate a possible crash-truncated tail from the next committed JSONL row.
+  await appendFile(file, '\n' + lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf-8')
+}
+
+const writeQueues = new Map<string, Promise<unknown>>()
+const deletedSessions = new Set<string>()
+const cacheKey = (projectId: string, sessionId: string): string => `${projectId}/${sessionId}`
+
+function serializeSession<T>(projectId: string, sessionId: string, operation: () => Promise<T>): Promise<T> {
+  const key = cacheKey(projectId, sessionId)
+  const current = (writeQueues.get(key) ?? Promise.resolve()).catch(() => {}).then(operation)
+  writeQueues.set(key, current)
+  void current.finally(() => { if (writeQueues.get(key) === current) writeQueues.delete(key) }).catch(() => {})
+  return current
+}
+
+interface SessionOperation {
+  t: string
+  ts?: number
+  title?: string
+  createdAt?: number
+  taskMode?: TaskMode
+  i?: number
+  m?: ChatMessage
+  droppedCount?: number
+  text?: string
+}
+
+async function appendTransaction(file: string, revision: number, operations: SessionOperation[]): Promise<void> {
+  // One complete JSON line is a transaction: a crash cannot replay half a clear/rewrite.
+  await appendLines(file, [{ t: 'batch', revision, ts: Date.now(), operations }])
 }
 
 interface ReplayResult {
@@ -74,6 +105,8 @@ interface ReplayResult {
   corruptLines: number
   /** 文件总行数 */
   totalLines: number
+  revision: number
+  taskMode: TaskMode
   /** 最近的摘要压缩记录（clear 之后作废） */
   summary?: { droppedCount: number; text: string; ts: number }
 }
@@ -88,50 +121,47 @@ async function replay(projectId: string, sessionId: string): Promise<ReplayResul
     exists: false,
     corruptLines: 0,
     totalLines: 0,
+    revision: 0,
+    taskMode: 'coding',
   }
   const lines = await readLines(sessionFile(projectId, sessionId))
   if (lines.length === 0) return result
   result.exists = true
   result.totalLines = lines.length
-  for (const line of lines) {
-    let o: {
-      t?: string
-      ts?: number
-      title?: string
-      createdAt?: number
-      i?: number
-      m?: ChatMessage
-      droppedCount?: number
-      text?: string
+  const apply = (o: SessionOperation): void => {
+    const ts = typeof o.ts === 'number' ? o.ts : 0
+    if (ts > result.updatedAt) result.updatedAt = ts
+    if (o.t === 'meta') {
+      if (o.title) result.title = o.title
+      if (o.createdAt && !result.createdAt) result.createdAt = o.createdAt
+      if (o.taskMode === 'office' || o.taskMode === 'coding') result.taskMode = o.taskMode
+    } else if (o.t === 'm' && o.m && Number.isSafeInteger(o.i) && o.i! >= 0) {
+      result.messages[o.i!] = normalizeMessage(o.m)
+    } else if (o.t === 'clear') {
+      result.messages.length = 0
+      result.summary = undefined
+    } else if (o.t === 'summary' && typeof o.droppedCount === 'number' && typeof o.text === 'string') {
+      result.summary = o.text ? { droppedCount: o.droppedCount, text: o.text, ts } : undefined
     }
+  }
+  for (const line of lines) {
+    let o: SessionOperation & { revision?: number; operations?: SessionOperation[] }
     try {
       o = JSON.parse(line)
     } catch {
       result.corruptLines++
       continue
     }
-    const ts = typeof o.ts === 'number' ? o.ts : 0
-    if (ts > result.updatedAt) result.updatedAt = ts
-    if (o.t === 'meta') {
-      if (o.title) result.title = o.title
-      if (o.createdAt && !result.createdAt) result.createdAt = o.createdAt
-    } else if (o.t === 'm' && o.m && typeof o.i === 'number') {
-      result.messages[o.i] = normalizeMessage(o.m)
-    } else if (o.t === 'clear') {
-      result.messages.length = 0
-      result.summary = undefined // 清空后旧摘要不再适用
-    } else if (o.t === 'summary' && typeof o.droppedCount === 'number' && typeof o.text === 'string') {
-      result.summary = { droppedCount: o.droppedCount, text: o.text, ts }
+    if (o.t === 'batch') {
+      if (!Number.isSafeInteger(o.revision) || o.revision! <= result.revision || !Array.isArray(o.operations)) continue
+      o.operations.forEach(apply)
+      result.revision = o.revision!
+    } else {
+      apply(o)
     }
   }
   return result
 }
-
-// ---------- 已知状态缓存：save 时只追加真正变化的消息 ----------
-
-const knownMessages = new Map<string, ChatMessage[]>()
-
-const cacheKey = (projectId: string, sessionId: string): string => `${projectId}/${sessionId}`
 
 // ---------- 旧格式迁移 ----------
 
@@ -139,19 +169,21 @@ async function migrateLegacy(projectId: string, sessionId: string): Promise<Sess
   try {
     const legacy = JSON.parse(await readFile(legacyFile(projectId, sessionId), 'utf-8')) as Session
     const messages = (legacy.messages ?? []).map(normalizeMessage)
-    const lines: unknown[] = [
-      { t: 'meta', ts: legacy.createdAt, title: legacy.title, createdAt: legacy.createdAt },
+    const taskMode = legacy.taskMode ?? 'coding'
+    const lines: SessionOperation[] = [
+      { t: 'meta', ts: legacy.createdAt, title: legacy.title, createdAt: legacy.createdAt, taskMode },
       ...messages.map((m, i) => ({ t: 'm', ts: legacy.updatedAt, i, m })),
+      ...(legacy.summary ? [{ t: 'summary', ...legacy.summary }] : []),
     ]
-    await appendLines(sessionFile(projectId, sessionId), lines)
+    await appendTransaction(sessionFile(projectId, sessionId), 1, lines)
     await rm(legacyFile(projectId, sessionId)) // 转换完成才删旧文件
-    return { ...legacy, messages }
+    return { ...legacy, messages, taskMode, revision: 1 }
   } catch {
     return null
   }
 }
 
-export async function loadSessionAny(
+async function loadSessionUnlocked(
   projectId: string,
   sessionId: string,
 ): Promise<{ session: Session | null; damaged: boolean; corruptLines: number; totalLines: number }> {
@@ -166,18 +198,23 @@ export async function loadSessionAny(
       updatedAt: r.updatedAt,
       messages: r.messages,
       summary: r.summary,
+      revision: r.revision,
+      taskMode: r.taskMode,
     }
-    knownMessages.set(cacheKey(projectId, sessionId), r.messages)
     // 恢复摘要缓存：重启后同会话继续压缩时直接复用，不再花摘要 API 调用
     if (r.summary) setCachedCompact(sessionId, r.summary.droppedCount, r.summary.text)
+    else invalidateCompactCache(sessionId)
     return { session, damaged, corruptLines: r.corruptLines, totalLines: r.totalLines }
   }
   const legacy = await migrateLegacy(projectId, sessionId)
   if (legacy) {
-    knownMessages.set(cacheKey(projectId, sessionId), legacy.messages)
     return { session: legacy, damaged: false, corruptLines: 0, totalLines: 0 }
   }
   return { session: null, damaged: false, corruptLines: 0, totalLines: 0 }
+}
+
+export function loadSessionAny(projectId: string, sessionId: string): ReturnType<typeof loadSessionUnlocked> {
+  return serializeSession(projectId, sessionId, () => loadSessionUnlocked(projectId, sessionId))
 }
 
 // ---------- IPC ----------
@@ -202,6 +239,7 @@ export async function listSessionMetas(projectId: string): Promise<SessionMeta[]
           createdAt: r.session.createdAt,
           updatedAt: r.session.updatedAt,
           damaged: r.damaged || undefined,
+          taskMode: r.session.taskMode,
         })
       }
     }
@@ -219,9 +257,9 @@ export function emitSessionsOpen(projectId: string, sessionId: string): void {
   }
 }
 
-export function emitSessionsChanged(projectId: string, sessionId: string): void {
+export function emitSessionsChanged(projectId: string, sessionId: string, detail: Pick<SessionChangeEvent, 'revision' | 'change'> = {}): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send('sessions:changed', { projectId, sessionId })
+    if (!win.isDestroyed()) win.webContents.send('sessions:changed', { projectId, sessionId, ...detail })
   }
 }
 
@@ -316,7 +354,7 @@ export function registerSessionHandlers(): void {
     return listSessionMetas(projectId)
   })
 
-  ipcMain.handle('sessions:create', async (_e, projectId: string, title: string): Promise<Session> => {
+  ipcMain.handle('sessions:create', async (_e, projectId: string, title: string, taskMode: TaskMode = 'coding'): Promise<Session> => {
     const session: Session = {
       id: randomUUID(),
       projectId,
@@ -324,11 +362,12 @@ export function registerSessionHandlers(): void {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: [],
+      revision: 1,
+      taskMode: taskMode === 'office' ? 'office' : 'coding',
     }
-    await appendLines(sessionFile(projectId, session.id), [
-      { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt },
-    ])
-    knownMessages.set(cacheKey(projectId, session.id), [])
+    await serializeSession(projectId, session.id, () => appendTransaction(sessionFile(projectId, session.id), 1, [
+      { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt, taskMode: session.taskMode },
+    ]))
     return session
   })
 
@@ -346,11 +385,22 @@ export function registerSessionHandlers(): void {
   })
 
   ipcMain.handle('sessions:delete', async (_e, projectId: string, sessionId: string): Promise<boolean> => {
-    await rm(sessionFile(projectId, sessionId), { force: true })
-    await rm(legacyFile(projectId, sessionId), { force: true })
-    await deleteSessionCheckpoints(projectId, sessionId) // 检查点连带清理
-    knownMessages.delete(cacheKey(projectId, sessionId))
-    invalidateCompactCache(sessionId) // 摘要缓存一并失效
+    await serializeSession(projectId, sessionId, async () => {
+      const { session } = await loadSessionUnlocked(projectId, sessionId)
+      let officeRoot: string | undefined
+      if (projectId === 'office-workspace' || session?.taskMode === 'office') {
+        const { ensureOfficeWorkspace } = await import('./office')
+        // Validate every managed directory before deleting either records or files.
+        officeRoot = await ensureOfficeWorkspace(sessionId)
+      }
+      await rm(sessionFile(projectId, sessionId), { force: true })
+      await rm(legacyFile(projectId, sessionId), { force: true })
+      deletedSessions.add(cacheKey(projectId, sessionId))
+      if (officeRoot) await rm(officeRoot, { recursive: true, force: true })
+      await deleteSessionCheckpoints(projectId, sessionId)
+      invalidateCompactCache(sessionId)
+    })
+    emitSessionsChanged(projectId, sessionId, { change: 'deleted' })
     return true
   })
 
@@ -358,8 +408,13 @@ export function registerSessionHandlers(): void {
   ipcMain.handle(
     'sessions:rename',
     async (_e, projectId: string, sessionId: string, title: string): Promise<boolean> => {
-      await appendLines(sessionFile(projectId, sessionId), [{ t: 'meta', ts: Date.now(), title }])
-      return true
+      const result = await serializeSession(projectId, sessionId, async () => {
+        const { session } = await loadSessionUnlocked(projectId, sessionId)
+        if (!session) return { ok: false } as SessionSaveResult
+        return saveSessionUnlocked({ ...session, title, updatedAt: Date.now() })
+      })
+      if (result.ok) emitSessionsChanged(projectId, sessionId, { revision: result.revision, change: 'metadata' })
+      return result.ok
     },
   )
 }
@@ -370,11 +425,23 @@ export async function appendSummaryLine(
   sessionId: string,
   droppedCount: number,
   text: string,
-): Promise<void> {
-  await mkdir(projectDir(projectId), { recursive: true })
-  await appendLines(sessionFile(projectId, sessionId), [
-    { t: 'summary', ts: Date.now(), droppedCount, text },
-  ])
+  expectedRevision?: number,
+): Promise<SessionSaveResult> {
+  return serializeSession(projectId, sessionId, async () => {
+    const { session } = await loadSessionUnlocked(projectId, sessionId)
+    if (!session || deletedSessions.has(cacheKey(projectId, sessionId))) return { ok: false, error: '会话已不存在' }
+    const revision = session.revision ?? 0
+    if (expectedRevision !== undefined && expectedRevision !== revision) return conflict(revision)
+    try {
+      await appendTransaction(sessionFile(projectId, sessionId), revision + 1, [
+        { t: 'summary', ts: Date.now(), droppedCount, text },
+      ])
+      if (text) setCachedCompact(sessionId, droppedCount, text)
+      else invalidateCompactCache(sessionId)
+      emitSessionsChanged(projectId, sessionId, { revision: revision + 1, change: 'summary' })
+      return { ok: true, revision: revision + 1 }
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+  })
 }
 
 /** 供 projects:remove 调用：删掉某项目的全部会话记录 */
@@ -384,74 +451,65 @@ export async function deleteProjectSessions(projectId: string): Promise<void> {
 }
 
 /**
- * 全量保存内部实现：与已知状态 diff 后只追加变化。
+ * 全量保存内部实现：在同会话队列内读取权威版本，CAS 后只追加变化。
  * - 新消息追加；已有消息按 index 覆盖（编辑/删除消息场景）
  * - 消息数变少（中间删除）时追加 clear + 全量重写（保证索引不残留旧消息）
- * - 写入失败重试一次，仍失败把错误带回调用方
+ * - 完整事务作为一个 JSONL 行写入；写入失败重试一次
  */
-export async function saveSessionInternal(session: Session): Promise<{ ok: boolean; error?: string }> {
-  const file = sessionFile(session.projectId, session.id)
+function conflict(revision: number): SessionSaveResult {
+  return { ok: false, conflict: true, revision, error: '会话已在其他窗口修改，请刷新后再保存；旧内容未覆盖新版本' }
+}
+
+async function saveSessionUnlocked(session: Session): Promise<SessionSaveResult> {
   const key = cacheKey(session.projectId, session.id)
-  const known = knownMessages.get(key)
-
-  const attempt = async (): Promise<void> => {
-    await mkdir(projectDir(session.projectId), { recursive: true })
-
-    let lines: unknown[]
-    if (!known) {
-      // 内存里没有该会话的状态（如应用重启后首次保存）：整段补写（回放幂等，结果正确）
-      lines = [
-        { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt },
-        ...session.messages.map((m, i) => ({ t: 'm', ts: session.updatedAt, i, m })),
-      ]
-    } else if (session.messages.length === 0) {
-      lines = known.length > 0 ? [{ t: 'clear', ts: Date.now() }] : []
-      if (lines.length > 0) invalidateCompactCache(session.id) // 清空后旧摘要作废
-    } else if (known.length > session.messages.length) {
-      // 中间删除：clear 后整段重写（回放幂等，结果正确）
-      invalidateCompactCache(session.id)
-      lines = [
-        { t: 'clear', ts: session.updatedAt },
-        { t: 'meta', ts: session.updatedAt, title: session.title },
-        ...session.messages.map((m, i) => ({ t: 'm', ts: session.updatedAt, i, m })),
-      ]
-    } else {
-      lines = []
-      for (let i = 0; i < session.messages.length; i++) {
-        if (!known[i] || JSON.stringify(known[i]) !== JSON.stringify(session.messages[i])) {
-          lines.push({ t: 'm', ts: session.updatedAt, i, m: session.messages[i] })
-        }
-      }
-    }
-    if (lines.length > 0) await appendLines(file, lines)
+  const { session: stored } = await loadSessionUnlocked(session.projectId, session.id)
+  const revision = stored?.revision ?? 0
+  if (deletedSessions.has(key) || (session.revision ?? 0) !== revision) return conflict(revision)
+  const known = stored?.messages ?? []
+  const taskMode = session.taskMode ?? stored?.taskMode ?? 'coding'
+  const ts = session.updatedAt
+  const lines: SessionOperation[] = []
+  if (!stored || stored.title !== session.title || stored.taskMode !== taskMode) {
+    lines.push({ t: 'meta', ts, title: session.title, createdAt: session.createdAt, taskMode })
   }
-
-  const attemptWithRetry = async (): Promise<void> => {
-    try {
-      await attempt()
-    } catch (first) {
-      await new Promise((r) => setTimeout(r, 300)) // 短暂等待后重试一次（同步工具占用等瞬时问题）
-      try {
-        await attempt()
-      } catch (second) {
-        const detail = second instanceof Error ? second.message : String(second)
-        throw new Error(`${detail}（首次错误：${first instanceof Error ? first.message : String(first)}）`)
+  if (known.length > session.messages.length) {
+    lines.push({ t: 'clear', ts }, ...session.messages.map((m, i) => ({ t: 'm', ts, i, m })))
+  } else {
+    for (let i = 0; i < session.messages.length; i++) {
+      if (!known[i] || JSON.stringify(known[i]) !== JSON.stringify(session.messages[i])) {
+        lines.push({ t: 'm', ts, i, m: session.messages[i] })
       }
     }
   }
-
+  const summaryInvalidated = stored?.summary && (
+    known.length > session.messages.length ||
+    known.slice(0, stored.summary.droppedCount).some((m, i) => JSON.stringify(m) !== JSON.stringify(session.messages[i]))
+  )
+  if (summaryInvalidated && !lines.some((line) => line.t === 'clear')) {
+    lines.push({ t: 'summary', ts, droppedCount: 0, text: '' })
+  }
+  if (lines.length === 0) return { ok: true, revision }
   try {
-    await attemptWithRetry()
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    await appendTransaction(sessionFile(session.projectId, session.id), revision + 1, lines)
+  } catch (first) {
+    // Retrying the same revision is idempotent, even if the previous append completed.
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    try { await appendTransaction(sessionFile(session.projectId, session.id), revision + 1, lines) }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   }
-  knownMessages.set(key, session.messages)
-  return { ok: true }
+  if (summaryInvalidated || session.messages.length === 0) invalidateCompactCache(session.id)
+  return { ok: true, revision: revision + 1 }
+}
+
+export function saveSessionInternal(session: Session): Promise<SessionSaveResult> {
+  // Capture caller-owned values before entering the queue; callers may continue editing.
+  const snapshot = structuredClone(session)
+  return serializeSession(snapshot.projectId, snapshot.id, () => saveSessionUnlocked(snapshot))
 }
 
 /** 注册消息编辑 / 删除处理器（上下文管理窗口用） */
 function registerSaveAndEditHandlers(): void {
-  ipcMain.handle('sessions:save', async (_e, session: Session): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle('sessions:save', async (_e, session: Session): Promise<SessionSaveResult> => {
     return saveSessionInternal(session)
   })
 
@@ -474,7 +532,7 @@ function registerSaveAndEditHandlers(): void {
       session.messages[idx] = { ...m, blocks }
       invalidateCompactCache(sessionId) // 内容变了，旧摘要可能过时
       const r = await saveSessionInternal(session)
-      if (r.ok) emitSessionsChanged(projectId, sessionId)
+      if (r.ok) emitSessionsChanged(projectId, sessionId, { revision: r.revision, change: 'messages' })
       return r.ok
     },
   )
@@ -490,7 +548,7 @@ function registerSaveAndEditHandlers(): void {
       session.messages.splice(idx, 1)
       invalidateCompactCache(sessionId)
       const r = await saveSessionInternal(session)
-      if (r.ok) emitSessionsChanged(projectId, sessionId)
+      if (r.ok) emitSessionsChanged(projectId, sessionId, { revision: r.revision, change: 'messages' })
       return r.ok
     },
   )
@@ -505,7 +563,7 @@ function registerSaveAndEditHandlers(): void {
       session.summary = undefined
       invalidateCompactCache(sessionId)
       const r = await saveSessionInternal(session)
-      if (r.ok) emitSessionsChanged(projectId, sessionId)
+      if (r.ok) emitSessionsChanged(projectId, sessionId, { revision: r.revision, change: 'messages' })
       return r.ok
     },
   )

@@ -29,6 +29,9 @@ const paths = {
   refresh: 'M20 7V3l-4 4 M20 7a8 8 0 1 0 0 10',
   download: 'M12 3v12 M7 10l5 5 5-5 M4 16v5h16v-5',
   stop: 'M6 6h12v12H6z',
+  briefcase: 'M8 7V4h8v3 M3 7h18v14H3z M3 12c5 3 13 3 18 0 M10 12h4v4h-4z',
+  file: 'M5 3h9l5 5v13H5z M14 3v6h5 M9 13h6 M9 17h6',
+  attachment: 'M8 12l7-7a4 4 0 0 1 6 6L10 22a6 6 0 0 1-8-8L13 3 M6 16l9-9a2 2 0 0 1 3 3l-9 9',
 } as const
 
 export type IconName = keyof typeof paths

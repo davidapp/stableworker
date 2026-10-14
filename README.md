@@ -1,8 +1,9 @@
 # StableWorker
 
-自研 AI 代理编程软件（Electron 桌面应用，Windows / macOS / Linux）。当前版本 **v0.9.0**：
+自研 AI 编程与办公助手（Electron 桌面应用，Windows / macOS / Linux）。当前开发分支 **v0.9.1**：
 多项目管理、会话树、流式对话（Markdown 渲染）、工具调用代理循环（读 / 写 / 改 / 跑命令）、
-多模型配置档、批准模式、精确计费、上下文管理与水位条、API 调试悬浮窗及更新检查。
+多模型配置档、批准模式、精确计费、上下文管理与水位条、API 调试悬浮窗及更新检查，
+以及独立办公任务、附件导入和真实办公文件生成。
 
 安装包见 [GitHub Releases](https://github.com/davidapp/stableworker/releases)。
 **已发布的 v0.9.0 有已知更新缺陷**：Windows 更新元数据与资产名不一致；macOS 缺少 ZIP 且未签名，
@@ -37,6 +38,30 @@ npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等�
 6. **API 调试** —— 菜单 **窗口 → API 调试**（Ctrl+Alt+D）打开独立悬浮窗口（置顶），
    观察每轮调用的原始请求 / SSE 事件流 / token 用量与费用
 
+## 独立办公模式
+
+侧栏顶部选择 **办公** → **新建办公任务**。无需选择代码目录或建立 Git 仓库。
+配置模型后，可以直接描述工作，或通过输入框的附件按钮、右侧 **添加资料** 导入文件。
+文件会复制到当前任务，原始资料保持在用户原来的位置。
+
+| 模式 | 工作范围 | 主要工具 | 输出 |
+| --- | --- | --- | --- |
+| 编程 | 用户选择的项目目录 | 读写代码、搜索、命令和子代理 | 项目文件 |
+| 办公 | 每个任务独立的本地目录 | 提取资料、创建文档、数据表和演示文稿 | Word / Excel / PPT / PDF |
+
+- 支持导入 DOCX、XLSX、PPTX、PDF、TXT、Markdown、CSV；单文件最多 25 MB。
+- `office_read_document` 提取文本、表格和幻灯片内容，长文档可分段读取。
+- `office_create_document` 创建真实 DOCX、XLSX、PPTX、PDF，并重新解析验证后报告成功。
+  导入资料位于 `inputs/`，结果位于 `outputs/`；已有文件不覆盖，修改时生成新副本。
+- 右侧 **任务文件** 显示参考资料与生成结果；点击文件预览提取内容，点击打开按钮使用本地应用查看完整排版。
+- 两种模式共享模型配置、批准模式、权限规则和 MCP；办公模式默认不提供编码写入和命令工具。
+  规划模式只读，生成文件按现有批准设置执行。产物支持检查点回滚，二进制备份按字节保存。
+- 办公任务保存在 `userData/office/sessions/<sessionId>/`，会话文件单独持久化。
+  删除办公任务会同时删除该任务的导入副本和生成文件。
+
+当前文档能力适合新建报告、数据表和基础演示文稿；暂未提供复杂原版布局的原地编辑、
+Excel 公式计算或扫描 PDF 的 OCR。基础生成不依赖用户安装 Python 或 LibreOffice。
+
 ## 工具调用（Agent Loop 的核心）
 
 这是 StableWorker 从"聊天机器人"变成"代理"的关键机制，代码在 `src/main/tools/` 与 `src/main/llm.ts`：
@@ -65,12 +90,17 @@ npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等�
   实现在 `src/main/approvals.ts`——一个由 IPC 事件 resolve 的 Promise，即"主进程等待用户决策"的模式
 - **实时输出**：命令执行期间 stdout/stderr 逐块推到工具卡片（`tool_output` 事件），
   面板自动滚到最新一行
-- **安全底线**：工具只在主进程执行、渲染进程无执行通道；路径越界直接报错；`run_command`
+- **安全底线**：执行入口严格校验当前允许的工具池，关闭或当前模式不可用的工具不会执行。
+  文件工具在主进程执行，检查真实路径及符号链接越界；`run_command`
   超时强杀整个进程树（Windows 用 taskkill /T）；写入内容上限 500KB；输出截断到 2 万字符；
   异常一律转成错误结果喂回模型（模型能看到失败原因并自行调整）
+- **停止与连接更新**：停止和工具超时传到实际进程/网络请求；命令终止整个进程组，
+  MCP 发出协议取消通知并结束本地等待。MCP 禁用或配置变更会撤销旧工具、断开并按新配置连接；
+  过期的排队重连不会重新启用已禁用的服务器。
 - **流式工具调用解析**：OpenAI 的 `delta.tool_calls` 按 index 分片累积 `arguments`；
   Anthropic 用 `content_block_start` / `input_json_delta` / `content_block_stop` 组装——
   在 API 调试面板里可以看到这些原始事件
+  完整结束信号、内容块和工具参数校验通过后才执行工具；服务错误与提前断流不会当成成功。
 
 ## API 调试面板
 
@@ -112,7 +142,10 @@ src/
 │   ├── menu.ts            #   原生应用菜单（含 API 调试入口）
 │   ├── config.ts          #   全局配置：配置档 / 价格表 / 节假日 / 功能与工具开关
 │   ├── projects.ts        #   项目管理：目录选择，按规范化路径去重
-│   ├── sessions.ts        #   会话存储 v2：append-only JSONL + 旧格式自动迁移
+│   ├── sessions.ts        #   会话存储：JSONL事务 + revision CAS + 旧格式自动迁移
+│   ├── office.ts          #   办公任务目录、附件导入与产物IPC
+│   ├── officeDocuments.ts #   DOCX / XLSX / PPTX / PDF 提取与生成
+│   ├── tools/office.ts    #   办公工具及输入校验
 │   ├── llm.ts             #   LLM 调用（双协议 SSE 流式）+ 代理循环 + 工具调用解析
 │   ├── tools/index.ts     #   工具注册中心：list_files / read_file / write_file / edit_file / run_command
 │   ├── approvals.ts       #   批准门：主进程等待用户决策（Promise + IPC）
@@ -159,9 +192,10 @@ Renderer (React)  ──window.api.xxx()──▶  Preload (contextBridge)  ─�
   记录来源与核实时间，不保存密钥。保存或切换模型会更新当前容量，可在水位详情或 LLM 设置中点击刷新；
   特殊服务也可在模型配置中显式填写手动容量。旧版全局 `contextLimit` 仅归档为 `legacyContextLimit`，不再作为模型真实容量。
   水位只读取当前会话、当前模型配置的主代理请求，旧版没有会话身份的日志不用于计算水位，等待下一次请求获得真实用量。
-- **会话存储（append-only JSONL）**：每会话一个 `.jsonl`，每行一个操作（meta / 按 index 设
-  消息 / clear / summary 摘要压缩记录），只追加不重写——写入 O(新内容)，崩溃最多损失最后半行
-  （解析失败跳过）；旧版单 JSON 自动转换（`src/main/sessions.ts`）
+- **会话存储（append-only JSONL）**：每会话一个 `.jsonl`，单行事务包含 revision 与一组操作，
+  只追加不重写；消息编辑、删除、清空及摘要都有真实持久化。写入按会话串行且校验版本，
+  旧窗口快照不能覆盖新历史。生成期间其他窗口改动历史会停止本轮并重载，避免旧回复复活已清空的内容。
+  截断事务整行跳过，旧 JSON / JSONL 继续兼容（`src/main/sessions.ts`）。
 - **多配置档**：`llmProfiles` + `activeLlmId`，输入框下方随时切换；旧版单配置加载时自动迁移
 - **批准模式**：✋ 变更前确认（所有危险操作询问）/ 🛡️ 自动编辑（`kind: 'edit'` 自动放行）/
   ⚠️ 完全访问（全部自动）；模式持久化，主进程批准门据此决定是否挂起

@@ -18,6 +18,7 @@ import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals, requestUserInput, resolveSessionUserInputs } from './approvals'
 import { snapshotFilesBeforeChange, sessionCheckpointsRoot } from './fileHistory'
 import { getToolDefinitions, runToolUseBlock, type ToolDefinition } from './tools'
+import { stopSessionShellTasks } from './tools/shellTasks'
 import { trimHistory } from './contextTrim'
 import {
   mergeSummaryIntoFirstUser,
@@ -26,7 +27,8 @@ import {
   getCachedCompact,
   setCachedCompact,
 } from './compact'
-import { appendSummaryLine } from './sessions'
+import { appendSummaryLine, loadSessionAny } from './sessions'
+import { officeSystemPrompt, toolsForTaskMode } from './officeMode'
 import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
 import { ensureMcpConnections, getMcpToolDefs } from './mcp'
@@ -150,12 +152,13 @@ function textOfBlocks(blocks: MessageBlock[]): string {
     .join('\n\n')
 }
 
-function parseLooseJson(raw: string): Record<string, unknown> {
+function parseToolInput(raw: string, name: string): Record<string, unknown> {
   try {
-    const v = JSON.parse(raw || '{}') as unknown
-    return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {}
+    const value: unknown = JSON.parse(raw)
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('工具参数必须是 JSON 对象')
+    return value as Record<string, unknown>
   } catch {
-    return {}
+    throw new LLMStreamError(`模型返回的 ${name || '工具'} 参数不完整或不是有效 JSON 对象，工具未执行`, true)
   }
 }
 
@@ -245,7 +248,7 @@ export function buildRequest(
         }
         if (t.text) content.push({ type: 'text', text: t.text })
         for (const c of t.toolCalls) {
-          content.push({ type: 'tool_use', id: c.id, name: c.name, input: parseLooseJson(c.argsJson) })
+          content.push({ type: 'tool_use', id: c.id, name: c.name, input: parseToolInput(c.argsJson, c.name) })
         }
         if (content.length) messages.push({ role: 'assistant', content })
       } else {
@@ -339,35 +342,100 @@ export function buildRequest(
 // ---------- SSE 流式解析 ----------
 
 /** 用结构化类型而非 ReadableStream 具体类型，避免 DOM 与 Node 类型打架 */
-type SSEBody = { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }> } }
+type SSEBody = { getReader(): {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>
+  cancel?(): Promise<unknown>
+  releaseLock?(): void
+} }
 
-async function readSSE(
+export class LLMStreamError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message)
+    this.name = 'LLMStreamError'
+  }
+}
+
+function streamError(json: Record<string, unknown>): LLMStreamError | null {
+  if (json.type !== 'error' && !json.error) return null
+  const detail = json.error && typeof json.error === 'object' ? json.error as Record<string, unknown> : json
+  const type = typeof detail.type === 'string' ? detail.type : typeof detail.code === 'string' ? detail.code : ''
+  const message = typeof detail.message === 'string' ? detail.message.slice(0, 300) : '模型服务返回流式错误'
+  const retryable = /overload|server_error|rate_limit|timeout|internal/i.test(type)
+  return new LLMStreamError(`模型流式响应错误${type ? `（${type}）` : ''}：${message}`, retryable)
+}
+
+export async function readSSE(
   body: SSEBody,
   onEvent: (json: Record<string, unknown> | null, rawData: string) => void,
+  provider: LLMConfig['provider'] = 'openai-compatible',
 ): Promise<void> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let idx: number
-    while ((idx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, idx).trim()
-      buffer = buffer.slice(idx + 1)
-      if (!line.startsWith('data:')) continue
-      const data = line.slice(5).trim()
-      if (data === '[DONE]') {
-        onEvent(null, '[DONE]')
-        return
-      }
-      try {
-        onEvent(JSON.parse(data) as Record<string, unknown>, data)
-      } catch {
-        // 跳过无法解析的行（心跳等）
+  let dataLines: string[] = []
+  let terminal = false
+  let exhausted = false
+  const notify = (json: Record<string, unknown> | null, raw: string): void => {
+    try { onEvent(json, raw) } catch (error) {
+      if (error instanceof LLMStreamError) throw error
+      throw new LLMStreamError(`处理模型流式事件失败：${error instanceof Error ? error.message : String(error)}`, false)
+    }
+  }
+  const dispatch = (): boolean => {
+    if (!dataLines.length) return false // SSE comments/heartbeats have no data payload.
+    const raw = dataLines.join('\n')
+    dataLines = []
+    if (raw.trim() === '[DONE]') {
+      if (provider === 'anthropic') throw new LLMStreamError('Anthropic 响应在 message_stop 前结束，工具未执行', true)
+      notify(null, '[DONE]')
+      terminal = true
+      return true
+    }
+    let parsed: unknown
+    try { parsed = JSON.parse(raw) } catch {
+      throw new LLMStreamError('模型流式事件包含无效或截断的 JSON，工具未执行', true)
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new LLMStreamError('模型流式事件格式无效，工具未执行', true)
+    }
+    const json = parsed as Record<string, unknown>
+    notify(json, raw) // Handler failures must propagate, separately from JSON parsing failures.
+    const error = streamError(json)
+    if (error) throw error
+    if (provider === 'anthropic') {
+      if (json.type === 'message_stop') { terminal = true; return true }
+    } else {
+      const choices = json.choices as Array<{ finish_reason?: unknown }> | undefined
+      if (Array.isArray(choices) && ['stop', 'tool_calls', 'function_call', 'length', 'content_filter'].includes(String(choices[0]?.finish_reason))) {
+        terminal = true
       }
     }
+    return false
+  }
+  const line = (value: string): boolean => {
+    const normalized = value.endsWith('\r') ? value.slice(0, -1) : value
+    if (!normalized) return dispatch()
+    if (normalized.startsWith('data:')) dataLines.push(normalized.slice(5).replace(/^ /, ''))
+    return false
+  }
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) { exhausted = true; buffer += decoder.decode(); break }
+      buffer += decoder.decode(chunk.value, { stream: true })
+      let idx: number
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const value = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 1)
+        if (line(value)) return
+      }
+    }
+    if (buffer && line(buffer)) return
+    if (dispatch()) return
+    if (!terminal) throw new LLMStreamError('模型流式响应在完成标记前中断，工具未执行', true)
+  } finally {
+    if (!exhausted) await reader.cancel?.().catch(() => {})
+    reader.releaseLock?.()
   }
 }
 
@@ -376,7 +444,7 @@ async function readSSE(
  * 一边把本轮回复组装成 MessageBlock[]。
  * sink 参数：事件出口，默认主进程 emit；子代理传入空函数（增量不进主对话）。
  */
-function createStreamCollector(
+export function createStreamCollector(
   provider: LLMConfig['provider'],
   sessionId: string,
   sink: (e: ChatEvent) => void = emit,
@@ -384,25 +452,33 @@ function createStreamCollector(
   // OpenAI 兼容状态：文本一块 + tool_calls 按 index 累积 + 思考内容（reasoning_content）
   let oaText = ''
   let oaReasoning = ''
+  let oaFinishReason: string | undefined
+  let aStopReason: string | undefined
   const oaCalls = new Map<number, { id: string; name: string; args: string }>()
   // Anthropic 状态：content block 按 index 顺序排列
   const aItems: Array<
     | { kind: 'text'; text: string }
     | { kind: 'thinking'; text: string; signature: string }
-    | { kind: 'tool'; id: string; name: string; args: string }
+    | { kind: 'tool'; id: string; name: string; args: string; initialInput: unknown }
   > = []
+  const aClosed = new Set<number>()
 
   const onEvent = (json: Record<string, unknown>): void => {
     if (provider === 'anthropic') {
       const index = typeof json.index === 'number' ? json.index : -1
       if (json.type === 'content_block_start') {
-        const cb = json.content_block as { type?: string; id?: string; name?: string } | undefined
-        if (cb?.type === 'tool_use' && cb.id && cb.name) {
-          aItems[index] = { kind: 'tool', id: cb.id, name: cb.name, args: '' }
+        if (!Number.isSafeInteger(index) || index < 0) throw new LLMStreamError('Anthropic 内容块索引无效', true)
+        const cb = json.content_block as { type?: string; id?: string; name?: string; input?: unknown; text?: string } | undefined
+        aClosed.delete(index)
+        if (cb?.type === 'tool_use') {
+          if (typeof cb.id !== 'string' || !cb.id.trim() || typeof cb.name !== 'string' || !cb.name.trim()) {
+            throw new LLMStreamError('Anthropic 工具调用缺少有效 id 或名称，工具未执行', true)
+          }
+          aItems[index] = { kind: 'tool', id: cb.id, name: cb.name, args: '', initialInput: cb.input }
         } else if (cb?.type === 'thinking') {
           aItems[index] = { kind: 'thinking', text: '', signature: '' }
         } else {
-          aItems[index] = { kind: 'text', text: '' }
+          aItems[index] = { kind: 'text', text: cb?.text ?? '' }
         }
       } else if (json.type === 'content_block_delta') {
         const item = aItems[index]
@@ -426,10 +502,10 @@ function createStreamCollector(
           item.args += delta.partial_json
         }
       } else if (json.type === 'content_block_stop') {
-        const item = aItems[index]
-        if (item && item.kind === 'tool') {
-          sink({ type: 'tool_use', sessionId, toolUseId: item.id, name: item.name, input: parseLooseJson(item.args) })
-        }
+        if (aItems[index]) aClosed.add(index)
+      } else if (json.type === 'message_delta') {
+        const reason = (json.delta as { stop_reason?: unknown } | undefined)?.stop_reason
+        if (typeof reason === 'string') aStopReason = reason
       }
       return
     }
@@ -437,6 +513,7 @@ function createStreamCollector(
     // OpenAI 兼容
     const choices = json.choices as
       | Array<{
+          finish_reason?: string | null
           delta?: {
             content?: string
             reasoning_content?: string
@@ -446,6 +523,7 @@ function createStreamCollector(
         }>
       | undefined
     const delta = choices?.[0]?.delta
+    if (choices?.[0]?.finish_reason) oaFinishReason = choices[0].finish_reason
     // 推理模型（如 DeepSeek）的思考内容：累积为 reasoning 块，随历史回传（thinking 模式强制要求）
     const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning
     if (reasoningDelta) {
@@ -470,7 +548,9 @@ function createStreamCollector(
     if (provider === 'anthropic') {
       let reasoning = ''
       const blocks: MessageBlock[] = []
-      for (const item of aItems) {
+      for (const [index, item] of aItems.entries()) {
+        if (!item) continue
+        if (!aClosed.has(index)) throw new LLMStreamError(`Anthropic 内容块 ${index} 未完成，工具未执行`, true)
         if (item.kind === 'text') {
           blocks.push({ type: 'text', text: item.text })
         } else if (item.kind === 'thinking') {
@@ -487,21 +567,31 @@ function createStreamCollector(
             type: 'tool_use',
             id: item.id,
             name: item.name,
-            input: parseLooseJson(item.args),
+            input: parseToolInput(item.args || JSON.stringify(item.initialInput) || '', item.name),
             status: 'running',
           })
         }
       }
+      if (blocks.some((block) => block.type === 'tool_use') && aStopReason !== 'tool_use') {
+        throw new LLMStreamError(`Anthropic 工具响应未正常结束（${aStopReason ?? '缺少停止原因'}），工具未执行`, !aStopReason || aStopReason === 'max_tokens')
+      }
+      for (const block of blocks) if (block.type === 'tool_use') {
+        sink({ type: 'tool_use', sessionId, toolUseId: block.id, name: block.name, input: block.input })
+      }
       return { blocks, reasoning }
+    }
+    if (oaCalls.size && (oaFinishReason === 'length' || oaFinishReason === 'content_filter')) {
+      throw new LLMStreamError('模型的工具响应被输出上限或内容过滤截断，工具未执行', oaFinishReason === 'length')
     }
     const callBlocks: MessageBlock[] = [...oaCalls.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([idx, c]): MessageBlock => {
-        const id = c.id || `call_${idx}`
-        const input = parseLooseJson(c.args)
-        sink({ type: 'tool_use', sessionId, toolUseId: id, name: c.name, input })
-        return { type: 'tool_use', id, name: c.name, input, status: 'running' }
+      .map(([, c]): ToolUseBlock => {
+        if (typeof c.id !== 'string' || !c.id.trim() || typeof c.name !== 'string' || !c.name.trim()) throw new LLMStreamError('模型返回的工具调用缺少 id 或名称，工具未执行', true)
+        return { type: 'tool_use', id: c.id, name: c.name, input: parseToolInput(c.args, c.name), status: 'running' }
       })
+    for (const block of callBlocks) if (block.type === 'tool_use') {
+      sink({ type: 'tool_use', sessionId, toolUseId: block.id, name: block.name, input: block.input })
+    }
     const blocks: MessageBlock[] = []
     if (oaReasoning) blocks.push({ type: 'reasoning', text: oaReasoning })
     if (oaText) blocks.push({ type: 'text', text: oaText })
@@ -534,14 +624,12 @@ interface ToolExecCtx {
  */
 async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise<void> {
   const def = ctx.tools.find((d) => d.name === tu.name)
-  // 文件编辑类工具：执行前把目标文件快照进检查点（回滚用）
-  if (def?.kind === 'edit' && ctx.projectPath && typeof tu.input.path === 'string') {
-    await snapshotFilesBeforeChange(
-      sessionCheckpointsRoot(ctx.projectId, ctx.sessionId),
-      tu.id,
-      ctx.projectPath,
-      [tu.input.path],
-    )
+  if (!def) {
+    const note = `工具 ${tu.name} 不在本次允许的工具列表中（已禁用、当前模式不可用或名称未知），操作未执行`
+    tu.status = 'error'
+    tu.result = note
+    ctx.emit({ type: 'tool_result', sessionId: ctx.sessionId, toolUseId: tu.id, content: note, isError: true })
+    return
   }
   const verdict = evaluateRules(ctx.permissionRules, tu.name, tu.input)
   if (verdict === 'deny') {
@@ -572,6 +660,11 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
       return
     }
   }
+  ctx.signal.throwIfAborted()
+  // Snapshot only operations that passed the permission gate, including binary artifacts.
+  if (def.kind === 'edit' && ctx.projectPath && typeof tu.input.path === 'string') {
+    await snapshotFilesBeforeChange(sessionCheckpointsRoot(ctx.projectId, ctx.sessionId), tu.id, ctx.projectPath, [tu.input.path])
+  }
   const result = await runToolUseBlock(tu, ctx.projectPath, {
     definition: def,
     sessionId: ctx.sessionId,
@@ -595,19 +688,53 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
   })
 }
 
+/** Connections are shared with settings; cancel this task's wait without disabling them. */
+async function waitForPreparation<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const aborted = (): void => { cleanup(); reject(signal.reason) }
+    const cleanup = (): void => signal.removeEventListener('abort', aborted)
+    signal.addEventListener('abort', aborted, { once: true })
+    pending.then((value) => { cleanup(); resolve(value) }, (error) => { cleanup(); reject(error) })
+    if (signal.aborted) aborted()
+  })
+}
+
 async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string; compacted?: number }> {
+  if (aborters.has(req.sessionId)) return { ok: false, error: '这个会话已有任务运行，请先停止或等待完成' }
+  const controller = new AbortController()
+  aborters.set(req.sessionId, controller)
+  try { return await chatSendInternal(req, controller) }
+  catch (error) {
+    if (controller.signal.aborted) {
+      emit({ type: 'done', sessionId: req.sessionId })
+      return { ok: true }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    emit({ type: 'error', sessionId: req.sessionId, message })
+    return { ok: false, error: message }
+  } finally { if (aborters.get(req.sessionId) === controller) aborters.delete(req.sessionId) }
+}
+
+async function chatSendInternal(req: ChatRequest, controller: AbortController): Promise<{ ok: boolean; error?: string; compacted?: number }> {
   const cfg = await loadConfig()
+  controller.signal.throwIfAborted()
   const llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
   if (!llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中添加配置档' }
   const apiKey = decryptApiKey(llm.apiKey)
   if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
 
-  const projectPath = cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
+  const office = req.projectId === 'office-workspace'
+  const storedSession = office || req.revision !== undefined ? (await loadSessionAny(req.projectId, req.sessionId))?.session : null
+  if (office && (!storedSession || storedSession.taskMode !== 'office')) return { ok: false, error: '办公任务不存在，请新建办公任务后继续' }
+  if (req.revision !== undefined && req.revision !== storedSession?.revision) return { ok: false, error: '会话已被修改，请重新加载后继续' }
+  const projectPath = office ? await (await import('./office')).ensureOfficeWorkspace(req.sessionId) : cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
   // MCP 服务器：对话开始时按配置 diff 连接（新连/断开已移除的），其工具并入下面的工具池
-  await ensureMcpConnections(cfg.mcpServers ?? [])
-  // 工具开关：被禁用的工具不随请求发给模型（模型不知道 = 不会调用）
+  await waitForPreparation(ensureMcpConnections(cfg.mcpServers ?? []), controller.signal)
+  controller.signal.throwIfAborted()
+  // 工具池同时用于请求定义与执行门禁；被禁用的工具即使被模型请求也不会执行。
   // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
-  let tools = [...getToolDefinitions(), ...getMcpToolDefs()].filter((d) => cfg.toolSwitches?.[d.name] !== false)
+  const officeTools = office ? (await import('./tools/office')).getOfficeToolDefinitions() : []
+  let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs()].filter((d) => cfg.toolSwitches?.[d.name] !== false)
   const approvalMode = cfg.approvalMode ?? 'confirm'
   if (approvalMode === 'plan') {
     tools = tools.filter((d) => !d.requiresApproval)
@@ -618,24 +745,21 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   // 上下文构成明细用：系统提示词与工具定义是我们自己的固定文本，可本地估算；
   // messages 部分用服务端总量减去这两项得出余量。
   // AGENTS.md（项目约定）在每轮对话开始时读取，存在则注入系统提示词。
-  const agentsMd = projectPath ? await loadAgentsMd(projectPath) : ''
-  let systemText = buildSystemPrompt(projectPath, agentsMd)
+  const agentsMd = !office && projectPath ? await loadAgentsMd(projectPath) : ''
+  let systemText = office ? officeSystemPrompt(projectPath!) : buildSystemPrompt(projectPath, agentsMd)
   // 规划模式的系统提示：告知模型当前只读约束
   if (approvalMode === 'plan') {
     systemText +=
       '\n\n当前处于【规划模式】：所有修改类工具（写文件 / 编辑 / 执行命令）均不可用。请只做研究和制定计划：' +
-      '阅读相关代码、理解现状，然后在回复中输出一份完整、可执行的改造计划（含要修改的文件与步骤），等待用户批准。用户批准并切换批准模式后，再按计划执行。'
+      (office ? '阅读相关资料并给出办公任务计划，等待用户切换批准模式后生成文件。' : '阅读相关代码、理解现状，然后在回复中输出一份完整、可执行的改造计划（含要修改的文件与步骤），等待用户批准。用户批准并切换批准模式后，再按计划执行。')
   }
   const toolsText = JSON.stringify(
     tools.map((d) => ({ name: d.name, description: d.description, input_schema: d.inputSchema })),
   )
 
-  const controller = new AbortController()
-  aborters.set(req.sessionId, controller)
-
   // 子代理（task 工具）：独立上下文里跑完整的"请求→工具→再请求"循环，
   // 进度实时挂到 task 工具卡片的"实时输出"区，最终报告作为 tool 结果回主对话。
-  const subSystemPrompt = buildSubagentSystemPrompt(
+  const subSystemPrompt = office ? systemText : buildSubagentSystemPrompt(
     'general-purpose',
     `项目目录：${projectPath ?? '（无项目）'}${agentsMd ? `\n\n项目约定（AGENTS.md）：\n${agentsMd}` : ''}`,
   )
@@ -701,8 +825,13 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         if (!json) return
         recordUsageEvent(exchange, json)
         collector.onEvent(json)
-      })
+      }, llm.provider)
       const fin = collector.finish()
+      for (const block of fin.blocks) {
+        if (block.type === 'tool_use' && !roundTools.some((tool) => tool.name === block.name)) {
+          throw new LLMStreamError(`子代理请求了不在本轮允许列表中的工具 ${block.name}，操作未执行`, false)
+        }
+      }
       recordToolCalls(
         exchange,
         fin.blocks
@@ -725,7 +854,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
     callRound: subCallRound,
     executeTool: (tu) => executeToolWithGates(tu, subExecCtx),
   })
-  tools = [...tools, taskTool]
+  if (cfg.toolSwitches?.task !== false) tools = [...tools, taskTool]
 
   // 发送前裁剪：估算超过上下文上限的 70%（预留输出与估算误差）时，
   // 从最旧的整组开始丢弃。只影响请求体；会话文件与界面历史保持完整。
@@ -757,11 +886,17 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         })
         requestMessages = mergeSummaryIntoFirstUser(working, summary)
         compactedCount = trim.trimmedCount
-        setCachedCompact(req.sessionId, trim.trimmedCount, summary)
         // 摘要落盘：随会话文件持久化，重启后无需重新花一次摘要 API 调用
-        void appendSummaryLine(req.projectId, req.sessionId, trim.trimmedCount, summary).catch((e) => {
-          console.error('[compact] 摘要落盘失败（内存缓存仍有效）:', e)
-        })
+        const saved = await appendSummaryLine(req.projectId, req.sessionId, trim.trimmedCount, summary, req.revision)
+        if (!saved.ok && saved.conflict) {
+          const message = '压缩期间会话历史已被其他操作修改，本轮已停止；请重新加载会话后继续'
+          controller.abort()
+          aborters.delete(req.sessionId)
+          emit({ type: 'error', sessionId: req.sessionId, message })
+          return { ok: false, error: message }
+        }
+        if (!saved.ok) console.error('[compact] 摘要未能落盘（本轮仍使用内存摘要）:', saved.error)
+        setCachedCompact(req.sessionId, trim.trimmedCount, summary)
       } catch {
         // 摘要失败：静默回退为直接裁剪，不影响本轮对话
       }
@@ -815,7 +950,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         if (!json) return // [DONE] 结束标记
         recordUsageEvent(exchange, json)
         collector.onEvent(json)
-      })
+      }, llm.provider)
       const fin = collector.finish()
       recordToolCalls(
         exchange,
@@ -877,7 +1012,7 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
         fn: () => attemptRound(round, finalRound ? [] : tools),
         shouldRetry: (err) =>
           !isAbortError(err) &&
-          (err instanceof HttpError ? RETRYABLE_STATUS.has(err.status) : true),
+          (err instanceof LLMStreamError ? err.retryable : err instanceof HttpError ? RETRYABLE_STATUS.has(err.status) : true),
         onRetry: async (info) => {
           emit({
             type: 'retry',
@@ -952,6 +1087,7 @@ export function registerChatHandlers(): void {
 
   ipcMain.handle('chat:stop', (_e, sessionId: string) => {
     aborters.get(sessionId)?.abort()
+    stopSessionShellTasks(sessionId)
     resolveSessionApprovals(sessionId) // 挂起中的批准按"已停止"处理，循环随即收尾
     resolveSessionUserInputs(sessionId) // 挂起中的提问按"已停止"收尾
     return true

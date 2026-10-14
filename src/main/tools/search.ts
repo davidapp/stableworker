@@ -33,7 +33,8 @@ const MAX_GREP_MATCHES = 150
 const MAX_GLOB_RESULTS = 300
 
 /** 递归收集文本文件（忽略目录 / 二进制扩展名 / 大文件），返回绝对路径列表 */
-async function walkFiles(dir: string, out: string[]): Promise<void> {
+async function walkFiles(dir: string, out: string[], signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
   if (out.length >= MAX_FILES_SCANNED) return
   let entries
   try {
@@ -43,11 +44,12 @@ async function walkFiles(dir: string, out: string[]): Promise<void> {
   }
   entries.sort((a, b) => a.name.localeCompare(b.name))
   for (const e of entries) {
+    signal?.throwIfAborted()
     if (out.length >= MAX_FILES_SCANNED) return
     const full = join(dir, e.name)
     if (e.isDirectory()) {
       if (IGNORED_DIRS.has(e.name)) continue
-      await walkFiles(full, out)
+      await walkFiles(full, out, signal)
     } else if (e.isFile()) {
       if (BINARY_EXT.test(e.name)) continue
       const st = await stat(full).catch(() => null)
@@ -81,11 +83,12 @@ export function globToRegExp(glob: string): RegExp {
 async function collectTextFiles(
   projectPath: string,
   path: unknown,
+  signal?: AbortSignal,
 ): Promise<{ files: string[]; root: string } | { error: string }> {
   try {
     const root = safeResolve(projectPath, typeof path === 'string' && path ? path : '.')
     const files: string[] = []
-    await walkFiles(root, files)
+    await walkFiles(root, files, signal)
     return { files, root }
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) }
@@ -121,7 +124,7 @@ export const grepTool = {
     }
     const includeRe = typeof input.include === 'string' && input.include ? globToRegExp(input.include) : null
 
-    const collected = await collectTextFiles(ctx.projectPath, input.path)
+    const collected = await collectTextFiles(ctx.projectPath, input.path, ctx.signal)
     if ('error' in collected) return { content: collected.error, isError: true }
     const { files, root } = collected
 
@@ -130,6 +133,7 @@ export const grepTool = {
     let fileCount = 0
     let truncated = false
     for (const file of files) {
+      ctx.signal?.throwIfAborted()
       if (matchCount >= MAX_GREP_MATCHES) {
         truncated = true
         break
@@ -138,7 +142,8 @@ export const grepTool = {
       if (includeRe && !includeRe.test(rel)) continue
       let raw: string
       try {
-        raw = await readFile(file, 'utf-8')
+        safeResolve(ctx.projectPath, relative(ctx.projectPath, file))
+        raw = await readFile(file, { encoding: 'utf-8', signal: ctx.signal })
       } catch {
         continue
       }
@@ -184,7 +189,7 @@ export const globTool = {
     if (!pattern) return { content: '缺少 pattern 参数', isError: true }
     const re = globToRegExp(pattern)
 
-    const collected = await collectTextFiles(ctx.projectPath, input.path)
+    const collected = await collectTextFiles(ctx.projectPath, input.path, ctx.signal)
     if ('error' in collected) return { content: collected.error, isError: true }
     const { files, root } = collected
 
