@@ -10,6 +10,7 @@ import { SkillsPage } from './settings/SkillsPage'
 import { McpPage } from './settings/McpPage'
 import { SubagentTypesPage } from './settings/SubagentTypesPage'
 import { HooksPage } from './settings/HooksPage'
+import { MemoryPage } from './settings/MemoryPage'
 import { Icon } from './Icon'
 
 /**
@@ -26,6 +27,7 @@ const PAGES = [
   { id: 'mcp', label: 'MCP 服务器', icon: 'server' },
   { id: 'subagents', label: '子代理类型', icon: 'code' },
   { id: 'hooks', label: 'Hooks', icon: 'terminal' },
+  { id: 'memory', label: '记忆', icon: 'brain' },
   { id: 'features', label: '功能开关', icon: 'settings' },
 ] as const
 
@@ -135,6 +137,9 @@ export function SettingsDialog() {
           </div>
           <div hidden={active !== 'hooks'}>
             <HooksPage />
+          </div>
+          <div hidden={active !== 'memory'}>
+            <MemoryPage />
           </div>
           <div hidden={active !== 'features'}>
             <FeaturesPage />

@@ -11,6 +11,7 @@ import { stopAllShellTasks } from './tools/shellTasks'
 import { registerFileHistoryHandlers } from './fileHistory'
 import { registerContextHandlers } from './contextManage'
 import { registerSkillHandlers } from './skills'
+import { registerMemoryHandlers } from './agentsMd'
 import { registerMcpHandlers, killAllMcpServers } from './mcp'
 import { setupUpdater } from './updater'
 import { openContextWindow, openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
@@ -85,6 +86,7 @@ app.whenReady().then(async () => {
   registerContextHandlers()
   registerSkillHandlers()
   registerMcpHandlers()
+  registerMemoryHandlers()
   setupUpdater()
   await initDebugLog() // 启动时从磁盘恢复历史 API 调用记录
   createAppMenu(() => openInspectorWindow())

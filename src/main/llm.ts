@@ -125,8 +125,8 @@ export function getProxyDispatcher(proxyURL: string): Dispatcher | undefined {
 
 function buildSystemPrompt(projectPath: string | null, agentsMd: string): string {
   if (!projectPath) return SYSTEM_PROMPT_BASE
-  const agentsBlock = agentsMd ? `\n\n以下是本项目的约定（项目根 AGENTS.md），请严格遵守：\n${agentsMd}` : ''
-  return `${SYSTEM_PROMPT_BASE}\n当前项目目录：${projectPath}\n你可以调用工具查看项目文件：了解目录结构用 list_files，查看文件内容用 read_file。涉及项目内容的问题先查再答，不要凭空猜测。${agentsBlock}`
+  const agentsBlock = agentsMd ? `\n\n以下是分层记忆（全局 → 项目约定，近处优先），请严格遵守：\n${agentsMd}` : ''
+  return `${SYSTEM_PROMPT_BASE}\n当前项目目录：${projectPath}\n你可以调用工具查看项目文件：了解目录结构用 list_files，查看文件内容用 read_file。涉及项目内容的问题先查再答，不要凭空猜测。${agentsBlock}\n你还有 memory 工具：跨会话的长期记忆目录（按项目隔离）。开始新任务前可先读索引；用户表达持久偏好、做出重要决定、踩坑解决后，主动用 memory 记录。`
 }
 
 // ---------- 消息块 → 各协议的消息序列 ----------

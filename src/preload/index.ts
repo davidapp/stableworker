@@ -71,6 +71,12 @@ const api = {
     ipcRenderer.invoke('config:setSubagentTypes', list),
   /** Hooks 生命周期钩子（整体替换） */
   setHooks: (list: HookConfig[]): Promise<ConfigView> => ipcRenderer.invoke('config:setHooks', list),
+  /** 分层记忆：查看各层（全局 → 父目录 → 项目 → 项目本地）原文 */
+  getMemoryLayers: (projectId: string): Promise<{ layers: { label: string; path: string; raw: string | null }[] }> =>
+    ipcRenderer.invoke('memory:getLayers', projectId),
+  /** 保存一层记忆（kind: global=userData/AGENTS.md, project=项目/AGENTS.md, local=项目/AGENTS.local.md） */
+  saveMemoryLayer: (projectId: string, kind: 'global' | 'project' | 'local', content: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('memory:saveLayer', projectId, kind, content),
   setContextLimit: (limit: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setContextLimit', limit),
   setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>
