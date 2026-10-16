@@ -501,8 +501,21 @@ export async function sendChat(text: string): Promise<void> {
     if (r.found && r.content) {
       content = r.content
         .replaceAll('$ARGUMENTS', args)
-        .replaceAll(/\$(\d+)/g, (_, n: string) => args.split(/\s+/)[Number(n) - 1] ?? '')
+        .replaceAll(/\$(\d+)/g, (_, n: number) => args.split(/\s+/)[Number(n) - 1] ?? '')
     }
+  }
+  // @文件引用：把消息里的 @路径 读取为 [引用文件：…] 分节附加（历史即所见）
+  const mentions = [...new Set([...content.matchAll(/(?:^|\s)@([^\s@]+)/g)].map((m) => m[1]))].slice(0, 10)
+  if (mentions.length > 0 && s.activeProjectId) {
+    const files = await window.api.readMentions(s.activeProjectId, mentions)
+    const sections = files
+      .filter((f) => mentions.includes(f.path))
+      .map((f) =>
+        f.missing || f.content == null
+          ? `\n\n[引用文件：${f.path}（未找到或不可读）]`
+          : `\n\n[引用文件：${f.path}${f.truncated ? '，已截断' : ''}]\n${f.content}`,
+      )
+    content = content + sections.join('')
   }
   if (!s.activeLlmId) {
     openSettings() // 没有可用配置档时直接带用户去设置

@@ -77,6 +77,12 @@ const api = {
   /** 保存一层记忆（kind: global=userData/AGENTS.md, project=项目/AGENTS.md, local=项目/AGENTS.local.md） */
   saveMemoryLayer: (projectId: string, kind: 'global' | 'project' | 'local', content: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
     ipcRenderer.invoke('memory:saveLayer', projectId, kind, content),
+  /** @文件引用补全：项目内文本文件按输入片段过滤（≤30 条） */
+  completeFiles: (projectId: string, query: string): Promise<string[]> =>
+    ipcRenderer.invoke('files:complete', projectId, query),
+  /** 读取 @路径 的文件内容（安全解析在项目内；单文件与总预算截断） */
+  readMentions: (projectId: string, paths: string[]): Promise<{ path: string; content: string | null; missing: boolean; truncated: boolean }[]> =>
+    ipcRenderer.invoke('files:readMentions', projectId, paths),
   setContextLimit: (limit: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setContextLimit', limit),
   setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>

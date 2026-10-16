@@ -9,39 +9,119 @@ import { CaretIcon } from './CaretIcon'
 import { Icon } from './Icon'
 
 export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
-  const { llmProfiles, activeLlmId, activeSessionId, taskMode } = useApp()
+  const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId } = useApp()
   const office = taskMode === 'office'
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => { setText('') }, [activeSessionId, taskMode])
+  // @文件引用补全：光标处于 @片段 中时显示项目文件候选
+  const [mention, setMention] = useState<{ start: number; query: string; items: string[]; active: number } | null>(null)
+  useEffect(() => { setText(''); setMention(null) }, [activeSessionId, taskMode])
   useEffect(() => {
     if (!taskDraft) return
     setText((previous) => previous.trim() ? `${previous}\n\n${taskDraft.text}` : taskDraft.text)
     textareaRef.current?.focus()
   }, [taskDraft])
 
+  const refreshMention = (value: string, caret: number): void => {
+    const before = value.slice(0, caret)
+    const m = /(^|\s)@([^\s@]*)$/.exec(before)
+    if (!m || !activeProjectId) {
+      setMention(null)
+      return
+    }
+    const start = caret - m[2].length - 1
+    setMention({ start, query: m[2], items: [], active: 0 })
+    void window.api.completeFiles(activeProjectId, m[2]).then((items) => {
+      setMention((prev) => (prev && prev.start === start ? { ...prev, items } : prev))
+    })
+  }
+
+  const applyMention = (path: string): void => {
+    if (!mention) return
+    const ta = textareaRef.current
+    const caret = ta?.selectionStart ?? mention.start + mention.query.length + 1
+    const next = text.slice(0, mention.start) + '@' + path + ' ' + text.slice(caret)
+    setText(next)
+    setMention(null)
+    requestAnimationFrame(() => {
+      ta?.focus()
+      const pos = mention.start + path.length + 2
+      ta?.setSelectionRange(pos, pos)
+    })
+  }
+
   const submit = (): void => {
     const content = text.trim()
     if ((!content && attachments.length === 0) || disabled) return
     setText('')
+    setMention(null)
     if (onSend) onSend(content || '请阅读这些资料，并整理主要内容。')
     else void actions.sendChat(content)
   }
 
   return (
     <footer className="composer">
-      <div className="composer-box">
+      <div className="composer-box" style={{ position: 'relative' }}>
         {office && attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
+        {mention && mention.items.length > 0 ? (
+          <div
+            role="listbox"
+            aria-label="文件引用候选"
+            style={{ position: 'absolute', left: 10, right: 10, bottom: 'calc(100% - 8px)', zIndex: 20, maxHeight: 200, overflowY: 'auto', background: 'var(--bg-elevated, #1b1d22)', border: '1px solid var(--border, #2c2f36)', borderRadius: 10, padding: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+          >
+            {mention.items.map((p, i) => (
+              <button
+                key={p}
+                role="option"
+                aria-selected={i === mention.active}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 6, fontSize: 12, background: i === mention.active ? 'var(--bg-hover, #26292f)' : 'transparent', color: 'inherit', border: 'none', cursor: 'pointer' }}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  applyMention(p)
+                }}
+                onMouseEnter={() => setMention({ ...mention, active: i })}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <textarea
           ref={textareaRef}
           aria-label="消息"
           value={text}
-          placeholder={office ? '描述要完成的工作，或添加资料开始' : '输入消息，Enter 发送，Shift+Enter 换行'}
+          placeholder={office ? '描述要完成的工作，或添加资料开始' : '输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行'}
           rows={3}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            refreshMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+          }}
           onKeyDown={(e) => {
             // isComposing：中文输入法选词时的 Enter 不应当作发送
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (e.nativeEvent.isComposing) return
+            if (mention && mention.items.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setMention({ ...mention, active: (mention.active + 1) % mention.items.length })
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setMention({ ...mention, active: (mention.active - 1 + mention.items.length) % mention.items.length })
+                return
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault()
+                applyMention(mention.items[mention.active])
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                setMention(null)
+                return
+              }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               submit()
             }
