@@ -29,7 +29,23 @@ const MAX_TASKS = 20
 export function killTree(child: ChildProcess): void {
   if (!child.pid) return
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+    const fire = (): void => {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+      // 杀树失败要有迹可查（如 pid 已复用、权限问题），否则表现为"停不下来"且无日志
+      killer.stderr?.on('data', (d: Buffer) => console.error('[shellTasks] taskkill stderr:', d.toString().trim()))
+      killer.on('close', (code) => {
+        if (code !== 0) console.error(`[shellTasks] taskkill 退出码 ${code}（pid=${child.pid}）`)
+      })
+    }
+    fire()
+    // 二次保险：高负载下 taskkill 的进程快照可能与 pid 复用竞态（报成功但孙进程漏杀），
+    // 200ms 后子进程仍活着就补一枪
+    const t = setTimeout(() => {
+      try {
+        if (!child.killed && child.exitCode == null) fire()
+      } catch { /* 进程对象已失效 */ }
+    }, 200)
+    t.unref?.()
   } else {
     try { process.kill(-child.pid, 'SIGKILL') } catch { child.kill('SIGKILL') }
   }

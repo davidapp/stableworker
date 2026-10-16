@@ -449,6 +449,34 @@ body {
   justify-content: flex-end;
 }
 
+/* 消息级回退：悬停消息时在气泡下方浮现 */
+.msg-rewind {
+  display: flex;
+  justify-content: flex-start;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  margin-top: 4px;
+}
+
+.message:hover .msg-rewind {
+  opacity: 1;
+}
+
+.msg-rewind-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2, #9aa0aa);
+  cursor: pointer;
+}
+
+.msg-rewind-btn:hover {
+  color: var(--text-1, #e6e8eb);
+  border-color: var(--text-2, #9aa0aa);
+}
+
 .bubble {
   max-width: 100%;
   width: 100%;

@@ -150,6 +150,14 @@ const api = {
   },
   deleteSession: (projectId: string, sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:delete', projectId, sessionId),
+  /** 消息级回退：保留 messageId 及之前；restoreFiles 时按检查点把文件恢复到该时点 */
+  rewindTo: (
+    projectId: string,
+    sessionId: string,
+    messageId: string,
+    restoreFiles: boolean,
+  ): Promise<{ ok: boolean; error?: string; removedCount?: number; restoredFiles?: string[] }> =>
+    ipcRenderer.invoke('sessions:rewindTo', projectId, sessionId, messageId, restoreFiles),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:rename', projectId, sessionId, title),
 

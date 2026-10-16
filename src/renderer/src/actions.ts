@@ -725,6 +725,38 @@ async function maybeAutoCompact(): Promise<void> {
   }
 }
 
+/** 消息级回退：删除 messageId 之后的所有消息；范围内有文件修改时询问是否一并恢复文件 */
+export async function rewindToMessage(messageId: string): Promise<void> {
+  const s = store.getState()
+  if (!s.activeProjectId || !s.activeSessionId || s.streaming) return
+  const idx = s.messages.findIndex((m) => m.id === messageId)
+  if (idx < 0 || idx >= s.messages.length - 1) return
+  const removedCount = s.messages.length - idx - 1
+  if (!window.confirm(`回退到这里？其后 ${removedCount} 条消息将被删除（会话文件即时落盘）。`)) return
+  const removed = s.messages.slice(idx + 1)
+  const hasFileEdits = removed.some((m) =>
+    m.blocks.some((b) => b.type === 'tool_use' && ['write_file', 'edit_file', 'multi_edit'].includes(b.name)),
+  )
+  let restoreFiles = false
+  if (hasFileEdits) {
+    restoreFiles = window.confirm(
+      '该范围内有文件修改。是否同时把文件恢复到该时点？\n（当前文件状态会先被快照，回退后可再撤销）',
+    )
+  }
+  const r = await window.api.rewindTo(s.activeProjectId, s.activeSessionId, messageId, restoreFiles)
+  if (!r.ok) {
+    store.setState({ statusText: `回退失败：${r.error ?? '未知原因'}` })
+    return
+  }
+  await loadSessionIntoView(s.activeProjectId, s.activeSessionId)
+  store.setState({
+    statusText: `✅ 已回退（删除 ${r.removedCount ?? 0} 条${r.restoredFiles?.length ? `，恢复 ${r.restoredFiles.length} 个文件` : ''}）`,
+  })
+  setTimeout(() => {
+    if (store.getState().statusText?.startsWith('✅ 已回退')) store.setState({ statusText: null })
+  }, 8000)
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {

@@ -1,3 +1,4 @@
+import { canSymlink } from './helpers'
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -194,7 +195,8 @@ describe('real JSONL session persistence', () => {
     expect((await loadSessionAny('office-workspace', session.id)).session).toBeNull()
   })
 
-  it('refuses linked office task directories before deleting session records or external files', async () => {
+  it('refuses linked office task directories before deleting session records or external files', async (ctx) => {
+    if (!(await canSymlink())) { ctx.skip(); return }
     const session = await invoke<Session>('sessions:create', 'office-workspace', 'Office', 'office')
     const { ensureOfficeWorkspace } = await import('../src/main/office')
     const root = await ensureOfficeWorkspace(session.id)

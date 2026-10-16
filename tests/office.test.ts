@@ -16,6 +16,7 @@ vi.mock('electron', () => ({
 }))
 import { copyOfficeAttachments, ensureOfficeWorkspace, extractOfficeFile, listOfficeFiles, resolveOfficeFile } from '../src/main/office'
 import { createOfficeDocument, escapeOfficeHtml, extractOfficeDocument, type OfficeDocumentInput } from '../src/main/officeDocuments'
+import { canSymlink } from './helpers'
 import { getOfficeToolDefinitions } from '../src/main/tools/office'
 
 /** Valid standalone text PDF fixture, including byte-accurate xref offsets. */
@@ -83,7 +84,8 @@ describe('独立办公任务与文档产物', () => {
     expect(escapeOfficeHtml('&<>"\'')).toBe('&amp;&lt;&gt;&quot;&#39;')
   })
 
-  it('拒绝符号链接、无效格式和将产物写入导入资料', async () => {
+  it('拒绝符号链接、无效格式和将产物写入导入资料', async (ctx) => {
+    if (!(await canSymlink())) { ctx.skip(); return }
     const root = await ensureOfficeWorkspace('safe-task')
     const outside = join(state.root, 'outside.docx')
     await writeFile(outside, 'outside')

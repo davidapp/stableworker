@@ -46,6 +46,9 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **Hooks 生命周期钩子（v1）**：preToolUse（exit 2 或 stdout JSON block 阻止 + 理由；approve 跳过批准门；updatedInput 改写入参）/ postToolUse（additionalContext 追加给模型）/ stop（副作用）三事件 × command 类型；stdin 收 { sessionId, toolName, toolInput, toolResult }；匹配器支持精确名与前缀通配；崩溃/超时 fail-open（日志可查）；注入点在 executeToolWithGates（主循环与子代理共用）；设置 → Hooks 页管理；未做：prompt/agent/http 类型、更多事件、Stop 阻止继续
 - [x] **分层记忆（对齐 CLAUDE.md 层级模型）**：全局（userData/AGENTS.md）→ 项目父目录逐级 → 项目 AGENTS.md → 项目 AGENTS.local.md，近处优先注入；整行 @相对路径 引用（嵌套/深度≤3/环引用安全/预算受限）；设置 → 记忆页可视化管理三层；memory 工具（跨会话记忆目录 userData/memory/<项目>-<hash>/，read/write/delete/list，路径越界防护，索引 MEMORY.md）；系统提示引导模型主动记录偏好/决定/踩坑；未做：自动记忆检索召回（grep 式）、记忆跨项目共享层
 - [x] **@文件引用**：输入框 @ 触发项目文件补全（递归收集、忽略 node_modules/.git/二进制，文件名前缀命中优先，≤30 条，5s 缓存）；发送时把 @路径 读为 [引用文件：…] 分节附加进消息（安全解析在项目内，单文件 20k/总预算 60k，缺失/越界标注）；↑↓/Enter/Tab/Esc 键盘导航；未做：粘贴图片输入（需多模态模型，deepseek-chat 不支持图像，待接入视觉配置）
+- [x] **消息级 rewind**：悬停消息"⏪ 回到这里"——删除其后全部消息（会话文件即时落盘）；范围内有文件修改时询问是否一并按检查点逆序回放恢复到该时点（回退前当前状态先拍 restore- 快照可撤销）；planRewind 纯函数 + 测试
+- [x] **测试平台适配**：symlink 类测试探测能力不支持时跳过（Windows 需开发者模式）；shell 测试跨平台命令（node 替代 POSIX sleep/while）；killTree 双保险补杀 + taskkill 失败日志；OCR 断言路径分隔符归一——全量 267 通过 / 4 跳过 / 0 失败
+- [ ] **Windows 前台命令中止的孤儿进程**：vitest worker 环境下 cmd 可能在 taskkill 启动前自行退出（报"没有找到进程"），孙进程短暂孤儿化（已加 killTree 双保险缓解）；真实应用未复现，如遇"停不下来"按此排查
 - [x] **生产 CSP**：electron.vite.config.ts 的 csp-inject 插件（打包时注入 meta，dev 不注入保 HMR）
 - [ ] **每项目覆盖**：工具开关 / 批准模式 / 模型允许项目级差异
 

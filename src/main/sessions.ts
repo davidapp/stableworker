@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { mkdir, readFile, readdir, rm, appendFile, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { deleteSessionCheckpoints, deleteProjectCheckpoints } from './fileHistory'
+import { deleteSessionCheckpoints, deleteProjectCheckpoints, restoreSnapshot, sessionCheckpointsRoot } from './fileHistory'
 import { invalidateCompactCache, setCachedCompact } from './compact'
 import { loadConfig } from './config'
 import type { ChatMessage, Session, SessionChangeEvent, SessionMeta, SessionSaveResult, TaskMode } from '../shared/types'
@@ -263,6 +263,21 @@ export function emitSessionsChanged(projectId: string, sessionId: string, detail
   }
 }
 
+/** 纯函数：计算回退计划（sessions:rewindTo 与测试共用） */
+export function planRewind(
+  messages: ChatMessage[],
+  messageId: string,
+): { ok: true; keepCount: number; removedCount: number; removedToolUseIds: string[] } | { ok: false; error: string } {
+  const idx = messages.findIndex((m) => m.id === messageId)
+  if (idx < 0) return { ok: false, error: '消息不存在（可能已被删除）' }
+  const removed = messages.slice(idx + 1)
+  const removedToolUseIds: string[] = []
+  for (const m of removed) {
+    for (const b of m.blocks) if (b.type === 'tool_use') removedToolUseIds.push(b.id)
+  }
+  return { ok: true, keepCount: idx + 1, removedCount: removed.length, removedToolUseIds }
+}
+
 export function registerSessionHandlers(): void {
   // 全局搜索：跨项目扫描所有会话消息的文本（大小写不敏感子串），上限 50 条
   ipcMain.handle(
@@ -403,6 +418,55 @@ export function registerSessionHandlers(): void {
     emitSessionsChanged(projectId, sessionId, { change: 'deleted' })
     return true
   })
+
+  // 消息级回退（对齐 Claude Code 的 /rewind）：保留 messageId 及之前，删除其后全部；
+  // restoreFiles 时把被删范围内的文件修改按检查点逆序回放，恢复到该时点之前的状态
+  ipcMain.handle(
+    'sessions:rewindTo',
+    async (
+      _e,
+      projectId: string,
+      sessionId: string,
+      messageId: string,
+      restoreFiles: boolean,
+    ): Promise<{ ok: boolean; error?: string; removedCount?: number; restoredFiles?: string[] }> => {
+      const result = await serializeSession(projectId, sessionId, async () => {
+        const { session } = await loadSessionUnlocked(projectId, sessionId)
+        if (!session) return { ok: false, error: '会话不存在' }
+        const plan = planRewind(session.messages, messageId)
+        if (!plan.ok) return { ok: false, error: plan.error }
+        const removed = session.messages.slice(plan.keepCount)
+        const removedToolUseIds = plan.removedToolUseIds
+        session.messages = session.messages.slice(0, plan.keepCount)
+        session.updatedAt = Date.now()
+        const saved = await saveSessionUnlocked(session)
+        if (!saved.ok) return { ok: false, error: saved.error ?? '会话写入失败' }
+        let restoredFiles: string[] = []
+        if (restoreFiles && removedToolUseIds.length > 0) {
+          const cfg = await loadConfig()
+          const projectPath = cfg.projects.find((p) => p.id === projectId)?.path
+          if (projectPath) {
+            const checkpointsRoot = sessionCheckpointsRoot(projectId, sessionId)
+            // 逆序回放：每步把文件写回"该次修改前"，全部回放完 = 目标消息时点的状态；
+            // 回放前 restoreSnapshot 会先把当前状态拍 restore- 快照，误回退可再撤销
+            for (const toolUseId of [...removedToolUseIds].reverse()) {
+              try {
+                const r = await restoreSnapshot(checkpointsRoot, toolUseId, projectPath)
+                restoredFiles.push(...r.restored, ...r.deleted)
+              } catch {
+                // 该调用无检查点（只读工具 / 未快照 / 已滚动淘汰），跳过
+              }
+            }
+            restoredFiles = [...new Set(restoredFiles)]
+          }
+        }
+        invalidateCompactCache(sessionId) // 上下文变了，旧摘要作废
+        return { ok: true, removedCount: removed.length, restoredFiles }
+      })
+      if (result.ok) emitSessionsChanged(projectId, sessionId)
+      return result
+    },
+  )
 
   // 重命名会话：追加一条 meta（列表排序用的 updatedAt 不变，保持原位）
   ipcMain.handle(

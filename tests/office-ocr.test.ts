@@ -73,6 +73,7 @@ describe('本地扫描 PDF OCR', () => {
     expect(() => pdfOcrRenderScale(Infinity, 100)).toThrow('页面尺寸')
     const scale = pdfOcrRenderScale(8000, 8000)
     expect((8000 * scale) ** 2).toBeLessThanOrEqual(PDF_OCR_LIMITS.pagePixels + 1)
-    expect(resolveOcrAssets().workerPath).toContain('tesseract.js/src/worker-script/node/index.js')
+    // Windows 路径分隔符归一后再断言（resolveOcrAssets 返回本机原生分隔符）
+    expect(resolveOcrAssets().workerPath.replaceAll('\\', '/')).toContain('tesseract.js/src/worker-script/node/index.js')
   })
 })

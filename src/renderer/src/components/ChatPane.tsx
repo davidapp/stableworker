@@ -203,7 +203,7 @@ export function ChatPane() {
       <div className="message-list-wrap">
         <div className="message-list" ref={listRef} onScroll={onScroll}>
           <TodoPanel />
-          {messages.map((m) => (
+          {messages.map((m, idx) => (
               <div key={m.id} className={`message ${m.role}`}>
                 <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
                   {m.role === 'user' ? (
@@ -258,6 +258,17 @@ export function ChatPane() {
                   )}
                   {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
                   {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
+                  {!m.streaming && idx < messages.length - 1 ? (
+                    <div className="msg-rewind">
+                      <button
+                        className="msg-rewind-btn"
+                        title={`删除这条之后的 ${messages.length - idx - 1} 条消息，回退到这里`}
+                        onClick={() => void actions.rewindToMessage(m.id)}
+                      >
+                        ⏪ 回到这里
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
