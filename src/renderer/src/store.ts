@@ -10,6 +10,7 @@ import type {
   SessionMeta,
   TaskMode,
   SubagentTypeConfig,
+  HookConfig,
   TodoItem,
 } from '../../shared/types'
 
@@ -56,6 +57,8 @@ export interface AppState {
   sidebarWidth: number
   /** 自定义子代理类型（task 工具 subagent_type 动态枚举） */
   subagentTypes: SubagentTypeConfig[]
+  /** Hooks 生命周期钩子 */
+  hooks: HookConfig[]
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
   contextInfo: ModelContextInfo | null
@@ -112,6 +115,7 @@ export const store = createStore<AppState>({
   features: [],
   sidebarWidth: 240,
   subagentTypes: [],
+  hooks: [],
   contextLimit: 0,
   contextInfo: null,
   toolSwitches: {},

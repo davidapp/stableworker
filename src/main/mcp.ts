@@ -52,12 +52,18 @@ interface HttpConn {
 
 type Conn = StdioConn | HttpConn
 
-/** 命令行分词：支持双引号包裹含空格的参数 */
+/** 命令行分词：支持双引号包裹含空格的参数；引号内 \" 转义为字面双引号 */
 export function tokenize(command: string): string[] {
   const out: string[] = []
   let cur = ''
   let inQuote = false
-  for (const ch of command.trim()) {
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i]
+    if (ch === '\\' && inQuote && command[i + 1] === '"') {
+      cur += '"'
+      i++
+      continue
+    }
     if (ch === '"') {
       inQuote = !inQuote
       continue

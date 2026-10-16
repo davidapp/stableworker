@@ -43,6 +43,7 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **斜杠命令项目级**：`<项目>/.stableworker/commands/*.md` 与全局 userData/skills 双作用域，同名项目覆盖全局（对齐 Claude Code 项目级 .claude/commands）；设置页列表带作用域标签、新建可选位置；Skill 工具与 /触发自动感知
 - [x] **侧栏展开状态持久化**：项目树展开/折叠存入 config.sidebarExpanded（启动时恢复；从未记录过的项目默认展开）
 - [x] **调试面板增强**：列表"加载更多"（每次 +25，默认 10 上限 500）、按模型过滤已加载记录、导出单条记录为格式化 JSON（保存对话框，密钥保持脱敏）
+- [x] **Hooks 生命周期钩子（v1）**：preToolUse（exit 2 或 stdout JSON block 阻止 + 理由；approve 跳过批准门；updatedInput 改写入参）/ postToolUse（additionalContext 追加给模型）/ stop（副作用）三事件 × command 类型；stdin 收 { sessionId, toolName, toolInput, toolResult }；匹配器支持精确名与前缀通配；崩溃/超时 fail-open（日志可查）；注入点在 executeToolWithGates（主循环与子代理共用）；设置 → Hooks 页管理；未做：prompt/agent/http 类型、更多事件、Stop 阻止继续
 - [x] **生产 CSP**：electron.vite.config.ts 的 csp-inject 插件（打包时注入 meta，dev 不注入保 HMR）
 - [ ] **每项目覆盖**：工具开关 / 批准模式 / 模型允许项目级差异
 

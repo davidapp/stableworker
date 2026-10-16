@@ -302,6 +302,19 @@ export interface SubagentTypeConfig {
   prompt: string
 }
 
+/** Hooks 生命周期钩子（对齐 Claude Code 的 command 类型：本地命令 + stdin JSON + 退出码协议） */
+export interface HookConfig {
+  id: string
+  event: 'preToolUse' | 'postToolUse' | 'stop'
+  /** 工具名匹配器：'' = 全部；精确名；或前缀通配（如 Bash*）。stop 事件忽略 */
+  matcher: string
+  /** 命令行（不经 shell，主进程分词后直接 spawn；stdin 收 JSON，退出码/输出定决策） */
+  command: string
+  /** 超时毫秒，默认 10000；超时/崩溃按 fail-open 处理（不阻塞工具） */
+  timeoutMs?: number
+  disabled?: boolean
+}
+
 /** MCP 资源元数据（resources/list） */
 export interface McpResourceMeta {
   uri: string
@@ -347,6 +360,8 @@ export interface ConfigView {
   sidebarExpanded: Record<string, boolean>
   /** 自定义子代理类型列表（task 工具的 subagent_type 动态枚举） */
   subagentTypes: SubagentTypeConfig[]
+  /** Hooks 生命周期钩子列表 */
+  hooks: HookConfig[]
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */

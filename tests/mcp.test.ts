@@ -11,6 +11,7 @@ import {
   listMcpResources,
   mcpConnectionPids,
   readMcpResource,
+  tokenize,
 } from '../src/main/mcp'
 
 const serverCmd = `"${process.execPath}" ${path.resolve(__dirname, '../scripts/test-mcp-echo.mjs')}`
@@ -211,5 +212,18 @@ describe('MCP Streamable HTTP 客户端', () => {
     } finally {
       await new Promise<void>((done) => srv.server.close(() => done()))
     }
+  })
+})
+
+describe('tokenize 分词', () => {
+  it('引号内反斜杠转义的双引号保留为字面字符；空格分词；引号剥离', () => {
+    // 值中含 \" （反斜杠+引号）：tokenize 应输出字面双引号
+    expect(tokenize('node -e "console.error(\\"x\\");process.exit(2)"')).toEqual([
+      'node',
+      '-e',
+      'console.error("x");process.exit(2)',
+    ])
+    expect(tokenize('cmd "a b"  c')).toEqual(['cmd', 'a b', 'c'])
+    expect(tokenize('')).toEqual([])
   })
 })

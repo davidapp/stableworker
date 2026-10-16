@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
-import type { ApprovalMode, ConfigView, FeatureEntry, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, SubagentTypeConfig } from '../shared/types'
+import type { ApprovalMode, ConfigView, FeatureEntry, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, SubagentTypeConfig } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -59,6 +59,7 @@ interface StoredConfig {
   mcpServers?: MCPServerConfig[]
   sidebarExpanded?: Record<string, boolean>
   subagentTypes?: SubagentTypeConfig[]
+  hooks?: HookConfig[]
 }
 
 let cache: StoredConfig | null = null
@@ -118,6 +119,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.mcpServers === undefined) cache.mcpServers = []
   if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
   if (cache.subagentTypes === undefined) cache.subagentTypes = []
+  if (cache.hooks === undefined) cache.hooks = []
   return cache
 }
 
@@ -185,6 +187,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     mcpServers: cfg.mcpServers ?? [],
     sidebarExpanded: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
+    hooks: cfg.hooks ?? [],
   }
 }
 
@@ -304,6 +307,24 @@ export function registerConfigHandlers(): void {
       }))
       .filter((t) => /^[A-Za-z0-9_-]+$/.test(t.name) && !BUILT_IN.has(t.name) && !seen.has(t.name) && seen.add(t.name))
     cfg.subagentTypes = clean
+    return saveConfig(cfg)
+  })
+
+  // Hooks 生命周期钩子（整体替换；必须有合法事件类型与命令行，id 缺失则补）
+  ipcMain.handle('config:setHooks', async (_e, list: HookConfig[]): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    const EVENTS = new Set(['preToolUse', 'postToolUse', 'stop'])
+    const clean = (Array.isArray(list) ? list : [])
+      .map((h) => ({
+        id: String(h.id ?? '').trim() || randomUUID(),
+        event: h.event as HookConfig['event'],
+        matcher: String(h.matcher ?? '').trim(),
+        command: String(h.command ?? '').trim(),
+        timeoutMs: typeof h.timeoutMs === 'number' && Number.isFinite(h.timeoutMs) && h.timeoutMs > 0 ? Math.round(h.timeoutMs) : undefined,
+        disabled: h.disabled === true,
+      }))
+      .filter((h) => EVENTS.has(h.event) && h.command)
+    cfg.hooks = clean
     return saveConfig(cfg)
   })
 

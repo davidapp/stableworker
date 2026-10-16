@@ -42,6 +42,7 @@ function applyConfig(cfg: ConfigView): void {
     permissionRules: cfg.permissionRules,
     expandedProjects: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
+    hooks: cfg.hooks ?? [],
   })
 }
 

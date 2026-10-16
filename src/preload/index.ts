@@ -32,6 +32,7 @@ import type {
   BalanceResult,
   SkillMeta,
   SubagentTypeConfig,
+  HookConfig,
 } from '../shared/types'
 
 /**
@@ -68,6 +69,8 @@ const api = {
   /** 自定义子代理类型（整体替换，出现在 task 工具的 subagent_type 枚举里） */
   setSubagentTypes: (list: SubagentTypeConfig[]): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setSubagentTypes', list),
+  /** Hooks 生命周期钩子（整体替换） */
+  setHooks: (list: HookConfig[]): Promise<ConfigView> => ipcRenderer.invoke('config:setHooks', list),
   setContextLimit: (limit: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setContextLimit', limit),
   setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>

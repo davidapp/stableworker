@@ -33,6 +33,7 @@ import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
 import { ensureMcpConnections, getMcpToolDefs } from './mcp'
 import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe } from './subagent'
+import { runPreToolUseHooks, runPostToolUseHooks, runStopHooks } from './hooks'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
@@ -41,6 +42,7 @@ import type {
   ChatEvent,
   ChatRequest,
   ChatHistoryMessage,
+  HookConfig,
   LLMConfig,
   LLMTestPayload,
   MessageBlock,
@@ -604,11 +606,12 @@ export function createStreamCollector(
 
 // ---------- 代理循环 ----------
 
-/** 工具执行的门禁上下文：主循环与子代理共用同一套批准/权限/检查点逻辑 */
+/** 工具执行的门禁上下文：主循环与子代理共用同一套钩子/批准/权限/检查点逻辑 */
 interface ToolExecCtx {
   tools: ToolDefinition[]
   permissionRules: PermissionRules
   approvalMode: ApprovalMode
+  hooks?: HookConfig[]
   projectPath: string | null
   projectId: string
   sessionId: string
@@ -631,6 +634,20 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
     ctx.emit({ type: 'tool_result', sessionId: ctx.sessionId, toolUseId: tu.id, content: note, isError: true })
     return
   }
+  // PreToolUse 钩子（先于权限规则）：可改写入参、跳过批准门、阻止执行
+  const pre = await runPreToolUseHooks(ctx.hooks, {
+    sessionId: ctx.sessionId,
+    toolName: tu.name,
+    toolInput: tu.input,
+  })
+  if (pre.updatedInput) tu.input = pre.updatedInput
+  if (pre.blocked) {
+    const note = pre.reason ?? '被 PreToolUse 钩子阻止'
+    tu.status = 'error'
+    tu.result = note
+    ctx.emit({ type: 'tool_result', sessionId: ctx.sessionId, toolUseId: tu.id, content: note, isError: true })
+    return
+  }
   const verdict = evaluateRules(ctx.permissionRules, tu.name, tu.input)
   if (verdict === 'deny') {
     const note = '权限规则（deny）拒绝了此操作'
@@ -640,9 +657,10 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
     return
   }
   // 完全访问 = 全部自动放行；自动编辑 = 文件编辑类自动放行；变更前确认 = 全部询问；
-  // allow 规则强制放行，ask 规则强制询问（优先于模式）
+  // allow 规则强制放行，ask 规则强制询问（优先于模式）；PreToolUse 钩子 approve = 跳过批准门
   const autoApprove =
-    verdict === 'allow' ? true : verdict === 'ask' ? false : ctx.approvalMode === 'fullAccess' || (ctx.approvalMode === 'autoEdit' && def?.kind === 'edit')
+    pre.autoApprove ||
+    (verdict === 'allow' ? true : verdict === 'ask' ? false : ctx.approvalMode === 'fullAccess' || (ctx.approvalMode === 'autoEdit' && def?.kind === 'edit'))
   if (def?.requiresApproval && !autoApprove) {
     // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
     const suggest = def.requiresApproval ? suggestRule(tu.name, tu.input) : undefined
@@ -679,11 +697,19 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
   tu.status = result.isError ? 'error' : 'done'
   tu.result = result.content
   tu.durationMs = result.durationMs
+  // PostToolUse 钩子：可追加上下文（拼在工具结果后一起喂给模型）
+  const hookContext = await runPostToolUseHooks(ctx.hooks, {
+    sessionId: ctx.sessionId,
+    toolName: tu.name,
+    toolInput: tu.input,
+    toolResult: result.content,
+  })
+  if (hookContext) tu.result = `${result.content}\n\n[hooks 附加上下文] ${hookContext}`
   ctx.emit({
     type: 'tool_result',
     sessionId: ctx.sessionId,
     toolUseId: tu.id,
-    content: result.content,
+    content: tu.result,
     isError: result.isError,
   })
 }
@@ -767,6 +793,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
     tools,
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
     approvalMode,
+    hooks: cfg.hooks,
     projectPath,
     projectId: req.projectId,
     sessionId: req.sessionId,
@@ -1031,6 +1058,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
       const toolUses = assistantBlocks.filter((b): b is ToolUseBlock => b.type === 'tool_use')
       pendingTools = toolUses
       if (toolUses.length === 0) {
+        await runStopHooks(cfg.hooks, req.sessionId) // Stop 钩子：副作用型（通知/清理），失败不影响对话
         emit({ type: 'done', sessionId: req.sessionId })
         return { ok: true, compacted: compactedCount > 0 ? compactedCount : undefined }
       }
@@ -1046,6 +1074,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
         tools,
         permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
         approvalMode,
+        hooks: cfg.hooks,
         projectPath,
         projectId: req.projectId,
         sessionId: req.sessionId,
