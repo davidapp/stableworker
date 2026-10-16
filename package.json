@@ -1,6 +1,6 @@
 {
   "name": "stableworker",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "自研 AI 代理编程软件 —— Electron 桌面应用",
   "main": "./out/main/index.js",
   "author": "david",
