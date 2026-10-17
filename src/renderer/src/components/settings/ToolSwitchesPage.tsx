@@ -10,45 +10,62 @@ interface ToolMeta {
   kind: string | undefined
 }
 
+type Mode = 'coding' | 'office'
+
 const KIND_LABEL: Record<string, string> = {
   read: '只读',
   edit: '文件编辑',
   system: '系统',
 }
 
-/** 工具开关页：控制哪些工具随请求发给模型（禁用 = 模型不知道它的存在） */
+/** 工具开关页：Tab 区分编程 / 办公模式，各自的开关独立保存（禁用 = 模型不知道该工具） */
 export function ToolSwitchesPage() {
-  const { toolSwitches } = useApp()
-  const [tools, setTools] = useState<ToolMeta[]>([])
+  const { toolSwitches, officeToolSwitches } = useApp()
+  const [lists, setLists] = useState<{ coding: ToolMeta[]; office: ToolMeta[] }>({ coding: [], office: [] })
+  const [mode, setMode] = useState<Mode>('coding')
   const [saved, setSaved] = useState(false)
 
   const refresh = useCallback((): void => {
-    void window.api.listTools().then(setTools)
+    void Promise.all([window.api.listTools('coding'), window.api.listTools('office')]).then(([coding, office]) =>
+      setLists({ coding, office }),
+    )
   }, [])
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
+  const list = mode === 'office' ? lists.office : lists.coding
+  const switches = mode === 'office' ? officeToolSwitches : toolSwitches
+
   const toggle = async (name: string, enabled: boolean): Promise<void> => {
-    await actions.setToolSwitch(name, enabled)
+    await actions.setToolSwitch(name, enabled, mode)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
 
-  const isEnabled = (name: string): boolean => toolSwitches[name] !== false
-  const enabledCount = tools.filter((t) => isEnabled(t.name)).length
+  const isEnabled = (name: string): boolean => switches[name] !== false
+  const enabledCount = list.filter((t) => isEnabled(t.name)).length
 
   return (
     <div className="settings-page">
       <h2>工具开关</h2>
       <p className="hint-line">
-        控制哪些工具随请求发给模型：被禁用的工具不会出现在 tools 列表里，模型不会调用它。
-        当前启用 {enabledCount} / {tools.length} 个。
+        控制各模式下哪些工具随请求发给模型：被禁用的工具不会出现在 tools 列表里，模型不会调用它。
+        两个模式的开关相互独立。当前（{mode === 'office' ? '办公' : '编程'}）启用 {enabledCount} / {list.length} 个。
       </p>
 
-      {tools.map((t) => (
-        <div className="features-row" key={t.name}>
+      <div className="task-mode-switch" role="group" aria-label="模式" style={{ marginBottom: 12, width: 260 }}>
+        <button aria-pressed={mode === 'coding'} className={mode === 'coding' ? 'active' : ''} onClick={() => setMode('coding')}>
+          编程模式
+        </button>
+        <button aria-pressed={mode === 'office'} className={mode === 'office' ? 'active' : ''} onClick={() => setMode('office')}>
+          办公模式
+        </button>
+      </div>
+
+      {list.map((t) => (
+        <div className="features-row" key={`${mode}:${t.name}`}>
           <div className="features-text">
             <span className="features-label">
               <code className="tool-switch-name">{t.name}</code>

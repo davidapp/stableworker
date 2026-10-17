@@ -102,13 +102,13 @@ const api = {
     ipcRenderer.invoke('files:readMentions', projectId, paths),
   setContextLimit: (limit: number): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setContextLimit', limit),
-  setToolSwitch: (name: string, enabled: boolean): Promise<ConfigView> =>
-    ipcRenderer.invoke('config:setToolSwitch', name, enabled),
+  setToolSwitch: (name: string, enabled: boolean, mode: 'coding' | 'office' = 'coding'): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setToolSwitch', name, enabled, mode),
   setPermissionRules: (rules: PermissionRules): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setPermissionRules', rules),
   addPermissionRule: (rule: string): Promise<ConfigView> => ipcRenderer.invoke('config:addPermissionRule', rule),
-  listTools: (): Promise<{ name: string; description: string; requiresApproval: boolean; kind: string | undefined }[]> =>
-    ipcRenderer.invoke('tools:list'),
+  listTools: (mode: 'coding' | 'office' = 'coding'): Promise<{ name: string; description: string; requiresApproval: boolean; kind: string | undefined }[]> =>
+    ipcRenderer.invoke('tools:list', mode),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
   saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>

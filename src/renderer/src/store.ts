@@ -68,8 +68,10 @@ export interface AppState {
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
   contextInfo: ModelContextInfo | null
-  /** 工具开关：工具名 → 是否启用；未记录的默认启用 */
+  /** 工具开关：工具名 → 是否启用；未记录的默认启用（编程模式） */
   toolSwitches: Record<string, boolean>
+  /** 办公模式的工具开关（独立于编程模式） */
+  officeToolSwitches: Record<string, boolean>
   /** 权限规则（deny > ask > allow） */
   permissionRules: { allow: string[]; ask: string[]; deny: string[] }
   /** 设置对话框当前页 */
@@ -127,6 +129,7 @@ export const store = createStore<AppState>({
   contextLimit: 0,
   contextInfo: null,
   toolSwitches: {},
+  officeToolSwitches: {},
   permissionRules: { allow: [], ask: [], deny: [] },
   settingsPage: 'llm',
   settingsOpen: false,

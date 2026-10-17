@@ -702,12 +702,15 @@ export interface ToolMeta {
 }
 
 export function registerToolHandlers(): void {
-  ipcMain.handle('tools:list', async (): Promise<ToolMeta[]> =>
-    [...getToolDefinitions(), ...(await import('./office')).getOfficeToolDefinitions()].map((d) => ({
+  ipcMain.handle('tools:list', async (_e, mode: 'coding' | 'office' = 'coding'): Promise<ToolMeta[]> => {
+    const { toolsForTaskMode } = await import('../officeMode')
+    const officeTools = mode === 'office' ? (await import('./office')).getOfficeToolDefinitions() : []
+    const pool = mode === 'office' ? toolsForTaskMode('office', getToolDefinitions(), officeTools) : [...getToolDefinitions(), ...officeTools]
+    return pool.map((d) => ({
       name: d.name,
       description: d.description,
       requiresApproval: Boolean(d.requiresApproval),
       kind: d.kind,
-    })),
-  )
+    }))
+  })
 }

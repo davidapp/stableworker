@@ -3,7 +3,7 @@ import type { ToolDefinition } from './tools'
 
 export function toolsForTaskMode(mode: TaskMode, base: ToolDefinition[], office: ToolDefinition[]): ToolDefinition[] {
   if (mode === 'coding') return base
-  const common = new Set(['list_files', 'todo_write', 'ask_user_question', 'web_fetch'])
+  const common = new Set(['list_files', 'todo_write', 'ask_user_question', 'web_fetch', 'memory'])
   return [...base.filter((tool) => common.has(tool.name)), ...office]
 }
 

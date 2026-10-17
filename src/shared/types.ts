@@ -363,8 +363,10 @@ export interface ConfigView {
   contextLimit: number
   /** Capacity of the active profile, with provenance; null means unknown. */
   contextInfo?: ModelContextInfo | null
-  /** 工具开关：工具名 → 是否启用；未记录的工具默认启用 */
+  /** 工具开关：工具名 → 是否启用；未记录的工具默认启用（编程模式） */
   toolSwitches: Record<string, boolean>
+  /** 办公模式的工具开关（独立于编程模式） */
+  officeToolSwitches: Record<string, boolean>
   /** 权限规则（deny > ask > allow） */
   permissionRules: PermissionRules
   /** MCP 服务器列表（其工具以 mcp__服务器__工具 并入工具池） */

@@ -38,14 +38,16 @@ const APPROVAL_MODES: ApprovalMode[] = ['plan', 'confirm', 'autoEdit', 'fullAcce
 
 /** 三项关键设置的有效值（项目覆盖 > 全局；permissionRules 与全局按 deny/ask/allow 分别合并） */
 export function resolveEffectiveSettings(
-  cfg: Pick<StoredConfig, 'toolSwitches' | 'approvalMode' | 'permissionRules' | 'projectOverrides'>,
+  cfg: Pick<StoredConfig, 'toolSwitches' | 'officeToolSwitches' | 'approvalMode' | 'permissionRules' | 'projectOverrides'>,
   projectId: string | null,
+  mode: 'coding' | 'office' = 'coding',
 ): { toolSwitches: Record<string, boolean>; approvalMode: ApprovalMode; permissionRules: PermissionRules } {
   const ov = projectId ? cfg.projectOverrides?.[projectId] : undefined
   const globalRules = cfg.permissionRules ?? { allow: [], ask: [], deny: [] }
+  const baseSwitches = mode === 'office' ? cfg.officeToolSwitches ?? {} : cfg.toolSwitches ?? {}
   return {
     approvalMode: ov?.approvalMode ?? cfg.approvalMode ?? 'confirm',
-    toolSwitches: { ...(cfg.toolSwitches ?? {}), ...(ov?.toolSwitches ?? {}) },
+    toolSwitches: { ...baseSwitches, ...(ov?.toolSwitches ?? {}) },
     permissionRules: ov?.permissionRules
       ? {
           deny: [...globalRules.deny, ...(ov.permissionRules.deny ?? [])],
@@ -76,6 +78,8 @@ interface StoredConfig {
   /** Old unscoped limit retained for migration/auditing, never used as verified model capacity. */
   legacyContextLimit?: number
   toolSwitches?: Record<string, boolean>
+  /** 办公模式的工具开关（独立于编程模式） */
+  officeToolSwitches?: Record<string, boolean>
   permissionRules?: PermissionRules
   mcpServers?: MCPServerConfig[]
   sidebarExpanded?: Record<string, boolean>
@@ -138,6 +142,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   }
   updateContextLimit(cache)
   if (cache.toolSwitches === undefined) cache.toolSwitches = {}
+  if (cache.officeToolSwitches === undefined) cache.officeToolSwitches = {}
   if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
   if (cache.mcpServers === undefined) cache.mcpServers = []
   if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
@@ -206,6 +211,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     contextLimit: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId))?.contextWindow ?? 0,
     contextInfo: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId)),
     toolSwitches: cfg.toolSwitches ?? {},
+    officeToolSwitches: cfg.officeToolSwitches ?? {},
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
     mcpServers: cfg.mcpServers ?? [],
     sidebarExpanded: cfg.sidebarExpanded ?? {},
@@ -304,10 +310,15 @@ export function registerConfigHandlers(): void {
   })
 
   // 设置工具开关（禁用的工具不会随请求发给模型）
-  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean): Promise<ConfigView> => {
+  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean, mode: 'coding' | 'office' = 'coding'): Promise<ConfigView> => {
     const cfg = await loadConfig()
-    cfg.toolSwitches ??= {}
-    cfg.toolSwitches[name] = enabled
+    if (mode === 'office') {
+      cfg.officeToolSwitches ??= {}
+      cfg.officeToolSwitches[name] = enabled
+    } else {
+      cfg.toolSwitches ??= {}
+      cfg.toolSwitches[name] = enabled
+    }
     return saveConfig(cfg)
   })
 

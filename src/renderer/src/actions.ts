@@ -41,6 +41,7 @@ function applyConfig(cfg: ConfigView): void {
     contextLimit: cfg.contextLimit,
     contextInfo: cfg.contextInfo ?? null,
     toolSwitches: cfg.toolSwitches,
+    officeToolSwitches: cfg.officeToolSwitches ?? {},
     permissionRules: cfg.permissionRules,
     expandedProjects: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
@@ -351,8 +352,8 @@ export async function setSidebarWidth(width: number): Promise<void> {
   applyConfig(cfg)
 }
 
-export async function setToolSwitch(name: string, enabled: boolean): Promise<void> {
-  const cfg = await window.api.setToolSwitch(name, enabled)
+export async function setToolSwitch(name: string, enabled: boolean, mode: 'coding' | 'office' = 'coding'): Promise<void> {
+  const cfg = await window.api.setToolSwitch(name, enabled, mode)
   applyConfig(cfg)
 }
 

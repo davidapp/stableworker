@@ -768,7 +768,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   // 工具池同时用于请求定义与执行门禁；被禁用的工具即使被模型请求也不会执行。
   // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
   const officeTools = office ? (await import('./tools/office')).getOfficeToolDefinitions() : []
-  const effSettings = resolveEffectiveSettings(cfg, req.projectId)
+  const effSettings = resolveEffectiveSettings(cfg, req.projectId, office ? 'office' : 'coding')
   let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs()].filter((d) => effSettings.toolSwitches[d.name] !== false)
   const approvalMode = effSettings.approvalMode
   if (approvalMode === 'plan') {
