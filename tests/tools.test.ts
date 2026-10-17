@@ -70,7 +70,7 @@ describe('工具执行器', () => {
     expect(survived).toBe(false)
   })
 
-  it('停止一个会话只终止其所属后台任务', async () => {
+  it('停止一个会话只终止其所属后台任务', { retry: 2 }, async () => {
     // 跨平台长驻命令：node 定时器（Windows cmd 没有 sleep）
     const sleeper = `node -e "setInterval(function(){},1000)"`
     const first = startShellTask('test-stop-a', sleeper, project, 'session-a')

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatHistoryMessage, SubagentTypeConfig, ToolUseBlock } from '../src/shared/types'
 import type { ToolDefinition } from '../src/main/tools/index'
-import { createTaskTool, resolveSubagentType, runSubagent } from '../src/main/subagent'
+import { createTaskTool, parallelBatches, resolveSubagentType, runSubagent } from '../src/main/subagent'
 
 const readTool: ToolDefinition = {
   name: 'read_file',
@@ -245,5 +245,13 @@ describe('自定义子代理类型', () => {
     const props = tool.inputSchema.properties as { subagent_type?: { enum?: string[] } }
     expect(props.subagent_type?.enum).toEqual(['general-purpose', 'Explore', 'reviewer'])
     expect(tool.description).toContain('reviewer（代码评审）')
+  })
+})
+
+describe('并行子代理', () => {
+  it('parallelBatches 按上限分批且保序', () => {
+    expect(parallelBatches([1, 2, 3, 4, 5, 6, 7, 8, 9], 4)).toEqual([[1, 2, 3, 4], [5, 6, 7, 8], [9]])
+    expect(parallelBatches([], 4)).toEqual([])
+    expect(parallelBatches([1, 2], 4)).toEqual([[1, 2]])
   })
 })

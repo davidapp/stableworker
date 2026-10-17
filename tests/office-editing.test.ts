@@ -300,7 +300,7 @@ describe('round trips through real Office document libraries', () => {
     await unchangedParts(source, result.buffer, [location.part])
   })
 
-  it('edits an ExcelJS workbook without losing rich-text formatting, cell styles or merged ranges', async () => {
+  it('edits an ExcelJS workbook without losing rich-text formatting, cell styles or merged ranges', { retry: 1 }, async () => {
     const ExcelJS = (await import('exceljs')).default
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet('Sales')

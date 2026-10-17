@@ -32,7 +32,7 @@ import { officeSystemPrompt, toolsForTaskMode } from './officeMode'
 import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
 import { ensureMcpConnections, getMcpToolDefs } from './mcp'
-import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe } from './subagent'
+import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe, parallelBatches, TASK_TOOL_NAME } from './subagent'
 import { runPreToolUseHooks, runPostToolUseHooks, runStopHooks } from './hooks'
 import { microCompactHistory } from './microCompact'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
@@ -1093,12 +1093,18 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
           emit({ type: 'todos', sessionId: req.sessionId, todos })
         },
       }
-      // 只读工具并行执行（对齐 Claude Code）；含写操作/需批准的轮次保持串行
-      if (toolUses.length > 1 && toolUses.every((tu) => isParallelSafe(tu, tools))) {
-        // 等全部调用收尾后再传播异常，防止仍在运行的调用在会话结束后发出结果。
-        const results = await Promise.allSettled(toolUses.map((tu) => executeToolWithGates(tu, execCtx)))
-        const failed = results.find((result) => result.status === 'rejected')
-        if (failed?.status === 'rejected') throw failed.reason
+      // 并行执行两类安全组合：纯只读工具（对齐 Claude Code）、纯 task 调用（并行子代理，
+      // 按上限分批）；混合轮次与含写操作/需批准的轮次保持串行。
+      // 等全部调用收尾后再传播异常，防止仍在运行的调用在会话结束后发出结果。
+      const allReadOnly = toolUses.length > 1 && toolUses.every((tu) => isParallelSafe(tu, tools))
+      const allTasks = toolUses.length > 1 && toolUses.every((tu) => tu.name === TASK_TOOL_NAME)
+      if (allReadOnly || allTasks) {
+        const batches = allTasks ? parallelBatches(toolUses) : [toolUses]
+        for (const batch of batches) {
+          const results = await Promise.allSettled(batch.map((tu) => executeToolWithGates(tu, execCtx)))
+          const failed = results.find((result) => result.status === 'rejected')
+          if (failed?.status === 'rejected') throw failed.reason
+        }
       } else {
         for (const tu of toolUses) {
           await executeToolWithGates(tu, execCtx)

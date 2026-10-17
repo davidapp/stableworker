@@ -174,6 +174,16 @@ export async function runSubagent(args: RunSubagentArgs): Promise<{ content: str
 
 export const TASK_TOOL_NAME = 'task'
 
+/** 并行子代理上限：一轮里同时跑的 task 数（保护 API 速率与 token 消耗） */
+export const MAX_PARALLEL_TASKS = 4
+
+/** 按 cap 分批（并行子代理用） */
+export function parallelBatches<T>(items: T[], cap = MAX_PARALLEL_TASKS): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += cap) out.push(items.slice(i, i + cap))
+  return out
+}
+
 export interface TaskToolDeps {
   baseTools: ToolDefinition[]
   /** 基础系统提示词（llm.ts 构建；自定义类型的角色设定会追加在它后面） */
@@ -195,7 +205,8 @@ export function createTaskTool(deps: TaskToolDeps): ToolDefinition {
     description:
       '把一个独立任务分派给子代理（subagent）执行。子代理拥有独立上下文与工具，自主完成多轮"读代码/搜索/执行"后' +
       '只把最终报告返回。适用：大范围代码调研（读很多文件但只需一段结论）、独立的小任务、需要隔离中间过程的探索。' +
-      'prompt 必须自包含（子代理看不到主对话历史）；subagent_type 选 Explore（只读研究，更快更安全）或 general-purpose（可用全部工具）。' + customHint,
+      'prompt 必须自包含（子代理看不到主对话历史）；subagent_type 选 Explore（只读研究，更快更安全）或 general-purpose（可用全部工具）。' +
+      '相互独立的多个任务可以在同一轮里发出多个 task 调用并行执行（最多同时 4 个）。' + customHint,
     inputSchema: {
       type: 'object',
       properties: {

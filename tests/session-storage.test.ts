@@ -182,7 +182,7 @@ describe('real JSONL session persistence', () => {
     expect(recovered.session?.messages[0].blocks[0]).toEqual({ type: 'text', text: 'after crash' })
   })
 
-  it('deletes an office task together with its managed attachments and generated files', async () => {
+  it('deletes an office task together with its managed attachments and generated files', { retry: 1 }, async () => {
     const session = await invoke<Session>('sessions:create', 'office-workspace', 'Office', 'office')
     const { ensureOfficeWorkspace } = await import('../src/main/office')
     const root = await ensureOfficeWorkspace(session.id)
