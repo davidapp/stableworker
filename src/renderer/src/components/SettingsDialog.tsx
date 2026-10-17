@@ -11,6 +11,7 @@ import { McpPage } from './settings/McpPage'
 import { SubagentTypesPage } from './settings/SubagentTypesPage'
 import { HooksPage } from './settings/HooksPage'
 import { MemoryPage } from './settings/MemoryPage'
+import { OverridesPage } from './settings/OverridesPage'
 import { Icon } from './Icon'
 
 /**
@@ -28,6 +29,7 @@ const PAGES = [
   { id: 'subagents', label: '子代理类型', icon: 'code' },
   { id: 'hooks', label: 'Hooks', icon: 'terminal' },
   { id: 'memory', label: '记忆', icon: 'brain' },
+  { id: 'overrides', label: '项目覆盖', icon: 'sliders' },
   { id: 'features', label: '功能开关', icon: 'settings' },
 ] as const
 
@@ -140,6 +142,9 @@ export function SettingsDialog() {
           </div>
           <div hidden={active !== 'memory'}>
             <MemoryPage />
+          </div>
+          <div hidden={active !== 'overrides'}>
+            <OverridesPage />
           </div>
           <div hidden={active !== 'features'}>
             <FeaturesPage />

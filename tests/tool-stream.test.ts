@@ -24,7 +24,11 @@ vi.mock('electron', () => ({
   ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => fixture.handlers.set(channel, handler) },
 }))
 vi.mock('undici', () => ({ fetch: fixture.fetch, ProxyAgent: class {} }))
-vi.mock('../src/main/config', () => ({ loadConfig: async () => fixture.cfg, decryptApiKey: () => 'fixture-key' }))
+vi.mock('../src/main/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/config')>()),
+  loadConfig: async () => fixture.cfg,
+  decryptApiKey: () => 'fixture-key',
+}))
 vi.mock('../src/main/debug', () => ({
   beginExchange: () => ({ inputTokens: null }),
   maskHeaders: (headers: unknown) => headers,

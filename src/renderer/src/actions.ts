@@ -43,6 +43,7 @@ function applyConfig(cfg: ConfigView): void {
     expandedProjects: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
+    projectOverrides: cfg.projectOverrides ?? {},
   })
 }
 

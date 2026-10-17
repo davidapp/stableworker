@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
-import type { ApprovalMode, ConfigView, FeatureEntry, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, SubagentTypeConfig } from '../shared/types'
+import type { ApprovalMode, ConfigView, FeatureEntry, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, ProjectOverrides, SubagentTypeConfig } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -35,6 +35,26 @@ const DEFAULT_MODEL_PRICING: ModelPricing[] = [
 
 const APPROVAL_MODES: ApprovalMode[] = ['plan', 'confirm', 'autoEdit', 'fullAccess']
 
+/** 三项关键设置的有效值（项目覆盖 > 全局；permissionRules 与全局按 deny/ask/allow 分别合并） */
+export function resolveEffectiveSettings(
+  cfg: Pick<StoredConfig, 'toolSwitches' | 'approvalMode' | 'permissionRules' | 'projectOverrides'>,
+  projectId: string | null,
+): { toolSwitches: Record<string, boolean>; approvalMode: ApprovalMode; permissionRules: PermissionRules } {
+  const ov = projectId ? cfg.projectOverrides?.[projectId] : undefined
+  const globalRules = cfg.permissionRules ?? { allow: [], ask: [], deny: [] }
+  return {
+    approvalMode: ov?.approvalMode ?? cfg.approvalMode ?? 'confirm',
+    toolSwitches: { ...(cfg.toolSwitches ?? {}), ...(ov?.toolSwitches ?? {}) },
+    permissionRules: ov?.permissionRules
+      ? {
+          deny: [...globalRules.deny, ...(ov.permissionRules.deny ?? [])],
+          ask: [...globalRules.ask, ...(ov.permissionRules.ask ?? [])],
+          allow: [...globalRules.allow, ...(ov.permissionRules.allow ?? [])],
+        }
+      : globalRules,
+  }
+}
+
 /** 一条 LLM 配置档的落盘形态（apiKey 为加密后字符串） */
 type StoredProfile = LLMConfig & { id: string; apiKey: string }
 
@@ -60,6 +80,7 @@ interface StoredConfig {
   sidebarExpanded?: Record<string, boolean>
   subagentTypes?: SubagentTypeConfig[]
   hooks?: HookConfig[]
+  projectOverrides?: Record<string, ProjectOverrides>
 }
 
 let cache: StoredConfig | null = null
@@ -188,6 +209,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     sidebarExpanded: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
+    projectOverrides: cfg.projectOverrides ?? {},
   }
 }
 
@@ -327,6 +349,35 @@ export function registerConfigHandlers(): void {
     cfg.hooks = clean
     return saveConfig(cfg)
   })
+
+  // 项目级设置覆盖（整体替换该项目的覆盖对象；空对象 = 完全继承全局）
+  ipcMain.handle(
+    'config:setProjectOverrides',
+    async (_e, projectId: string, overrides: ProjectOverrides): Promise<ConfigView> => {
+      const cfg = await loadConfig()
+      cfg.projectOverrides ??= {}
+      const clean: ProjectOverrides = {}
+      if (overrides && overrides.approvalMode && APPROVAL_MODES.includes(overrides.approvalMode)) {
+        clean.approvalMode = overrides.approvalMode
+      }
+      if (overrides?.toolSwitches && typeof overrides.toolSwitches === 'object') {
+        const sw: Record<string, boolean> = {}
+        for (const [k, v] of Object.entries(overrides.toolSwitches)) {
+          if (k.trim() && typeof v === 'boolean') sw[k.trim()] = v
+        }
+        if (Object.keys(sw).length > 0) clean.toolSwitches = sw
+      }
+      if (overrides?.permissionRules) {
+        const lines = (arr: unknown): string[] =>
+          Array.isArray(arr) ? arr.map((x) => String(x).trim()).filter(Boolean) : []
+        const rules = { deny: lines(overrides.permissionRules.deny), ask: lines(overrides.permissionRules.ask), allow: lines(overrides.permissionRules.allow) }
+        if (rules.deny.length || rules.ask.length || rules.allow.length) clean.permissionRules = rules
+      }
+      if (Object.keys(clean).length === 0) delete cfg.projectOverrides[projectId]
+      else cfg.projectOverrides[projectId] = clean
+      return saveConfig(cfg)
+    },
+  )
 
   // Explicit capacity override belongs to the active profile; 0 returns to verified metadata.
   ipcMain.handle('config:setContextLimit', async (_e, limit: number): Promise<ConfigView> => {

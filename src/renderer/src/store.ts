@@ -11,6 +11,7 @@ import type {
   TaskMode,
   SubagentTypeConfig,
   HookConfig,
+  ProjectOverrides,
   TodoItem,
 } from '../../shared/types'
 
@@ -59,6 +60,8 @@ export interface AppState {
   subagentTypes: SubagentTypeConfig[]
   /** Hooks 生命周期钩子 */
   hooks: HookConfig[]
+  /** 项目级设置覆盖（projectId → 覆盖项） */
+  projectOverrides: Record<string, ProjectOverrides>
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
   contextInfo: ModelContextInfo | null
@@ -116,6 +119,7 @@ export const store = createStore<AppState>({
   sidebarWidth: 240,
   subagentTypes: [],
   hooks: [],
+  projectOverrides: {},
   contextLimit: 0,
   contextInfo: null,
   toolSwitches: {},

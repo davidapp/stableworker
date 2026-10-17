@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import type { Dispatcher } from 'undici'
-import { loadConfig, decryptApiKey } from './config'
+import { loadConfig, decryptApiKey, resolveEffectiveSettings } from './config'
 import { resolveModelContext } from './modelContexts'
 import {
   beginExchange,
@@ -761,8 +761,9 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   // 工具池同时用于请求定义与执行门禁；被禁用的工具即使被模型请求也不会执行。
   // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
   const officeTools = office ? (await import('./tools/office')).getOfficeToolDefinitions() : []
-  let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs()].filter((d) => cfg.toolSwitches?.[d.name] !== false)
-  const approvalMode = cfg.approvalMode ?? 'confirm'
+  const effSettings = resolveEffectiveSettings(cfg, req.projectId)
+  let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs()].filter((d) => effSettings.toolSwitches[d.name] !== false)
+  const approvalMode = effSettings.approvalMode
   if (approvalMode === 'plan') {
     tools = tools.filter((d) => !d.requiresApproval)
   }
@@ -792,7 +793,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   )
   const subExecCtx: ToolExecCtx = {
     tools,
-    permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
+    permissionRules: effSettings.permissionRules,
     approvalMode,
     hooks: cfg.hooks,
     projectPath,
@@ -882,7 +883,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
     callRound: subCallRound,
     executeTool: (tu) => executeToolWithGates(tu, subExecCtx),
   })
-  if (cfg.toolSwitches?.task !== false) tools = [...tools, taskTool]
+  if (effSettings.toolSwitches.task !== false) tools = [...tools, taskTool]
 
   // 发送前裁剪：估算超过上下文上限的 70%（预留输出与估算误差）时，
   // 从最旧的整组开始丢弃。只影响请求体；会话文件与界面历史保持完整。
@@ -1080,7 +1081,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
       // 执行本轮的每个工具调用（批准门/权限规则/检查点见 executeToolWithGates）
       const execCtx: ToolExecCtx = {
         tools,
-        permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
+        permissionRules: effSettings.permissionRules,
         approvalMode,
         hooks: cfg.hooks,
         projectPath,

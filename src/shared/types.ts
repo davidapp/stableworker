@@ -315,6 +315,13 @@ export interface HookConfig {
   disabled?: boolean
 }
 
+/** 单个项目的设置覆盖（未指定的字段继承全局；permissionRules 与全局合并而非替换） */
+export interface ProjectOverrides {
+  approvalMode?: ApprovalMode
+  toolSwitches?: Record<string, boolean>
+  permissionRules?: PermissionRules
+}
+
 /** MCP 资源元数据（resources/list） */
 export interface McpResourceMeta {
   uri: string
@@ -362,6 +369,8 @@ export interface ConfigView {
   subagentTypes: SubagentTypeConfig[]
   /** Hooks 生命周期钩子列表 */
   hooks: HookConfig[]
+  /** 项目级设置覆盖（projectId → 覆盖项；未指定字段继承全局） */
+  projectOverrides: Record<string, ProjectOverrides>
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */
