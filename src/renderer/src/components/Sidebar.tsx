@@ -119,6 +119,7 @@ export function Sidebar() {
         {!office && visibleProjects.length === 0 ? <li className="sidebar-empty"><Icon name="folder" size={24} /><span>{t('还没有工作区')}</span><small>{t('添加本地目录，开始协作')}</small></li> : null}
       </ul>
 
+      {appearanceOpen ? <div className="popover-backdrop" onClick={() => setAppearanceOpen(false)} /> : null}
       <div className="sidebar-footer">
         {appearanceOpen ? (
           <div className="appearance-menu">
@@ -176,8 +177,6 @@ export function Sidebar() {
           </button>
         </div>
       </div>
-
-      {appearanceOpen ? <div className="popover-backdrop" onClick={() => setAppearanceOpen(false)} /> : null}
 
       {/* 会话叶子的右键菜单 */}
       {menu ? (
