@@ -34,6 +34,7 @@ import { loadAgentsMd } from './agentsMd'
 import { ensureMcpConnections, getMcpToolDefs } from './mcp'
 import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe } from './subagent'
 import { runPreToolUseHooks, runPostToolUseHooks, runStopHooks } from './hooks'
+import { microCompactHistory } from './microCompact'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
@@ -928,6 +929,13 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
         // 摘要失败：静默回退为直接裁剪，不影响本轮对话
       }
     }
+  }
+
+  // micro 压缩：逼近水位时把早期工具结果清成占位符（保留调用结构，无模型调用，幂等）
+  const micro = microCompactHistory(requestMessages, { limit: cfg.contextLimit ?? 0 })
+  if (micro.cleared > 0) {
+    requestMessages = micro.messages
+    console.info(`[microCompact] 已清理 ${micro.cleared} 条早期工具结果（约省 ${micro.charsSaved} 字符）`)
   }
 
   // 单轮请求：构建请求 → 流式读取 → 落调试记录 → 返回本轮 blocks。
