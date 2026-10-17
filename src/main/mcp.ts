@@ -605,6 +605,63 @@ export function mcpConnectionPids(): Record<string, number> {
   return out
 }
 
+/** MCP 资源双工具：让模型能列出/读取已连接服务器的 resources（对齐 Claude Code 的 ListMcpResources / ReadMcpResource） */
+const resourceTools: ToolDefinition[] = [
+  {
+    name: 'mcp_list_resources',
+    description:
+      '列出已连接 MCP 服务器的 resources（资源）。server 省略时列出全部服务器的资源；' +
+      '指定 server 时只列该服务器的。返回 URI / 名称 / 类型 / 描述。拿到 URI 后可用 mcp_read_resource 读取内容。',
+    inputSchema: {
+      type: 'object',
+      properties: { server: { type: 'string', description: '可选：只列这一台服务器（服务器名）' } },
+    },
+    kind: 'read',
+    timeoutMs: 15_000,
+    async execute(input) {
+      const server = typeof input.server === 'string' ? input.server.trim() : ''
+      const names = server ? [server] : getMcpStatus().filter((x) => x.status === 'connected').map((x) => x.name)
+      if (names.length === 0) return { content: server ? `服务器 ${server} 未连接` : '当前没有已连接的 MCP 服务器', isError: true }
+      const lines: string[] = []
+      for (const name of names) {
+        try {
+          const list = await listMcpResources(name)
+          lines.push(list.length === 0 ? `${name}：无资源` : `${name}：\n` + list.map((r) => `- [${r.uri}] ${r.name ?? ''}${r.mimeType ? ` (${r.mimeType})` : ''}${r.description ? ` — ${r.description}` : ''}`).join('\n'))
+        } catch (e) {
+          lines.push(`${name}：列出失败（${e instanceof Error ? e.message : String(e)}）`)
+        }
+      }
+      return { content: lines.join('\n') }
+    },
+  },
+  {
+    name: 'mcp_read_resource',
+    description: '读取一个 MCP 资源的内容（文本部分）。server 为服务器名，uri 用 mcp_list_resources 拿到的资源 URI。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        server: { type: 'string', description: '服务器名' },
+        uri: { type: 'string', description: '资源 URI' },
+      },
+      required: ['server', 'uri'],
+    },
+    kind: 'read',
+    timeoutMs: 15_000,
+    async execute(input) {
+      const server = typeof input.server === 'string' ? input.server.trim() : ''
+      const uri = typeof input.uri === 'string' ? input.uri.trim() : ''
+      if (!server || !uri) return { content: '需要 server 与 uri 参数', isError: true }
+      const contents = await readMcpResource(server, uri)
+      const text = contents.map((c) => c.text).join('; ')
+      return { content: text || '（资源内容为空）' }
+    },
+  },
+]
+
+export function getResourceTools(): ToolDefinition[] {
+  return resourceTools
+}
+
 /** 渲染进程可见的完整视图：配置 + 实时状态 */
 export interface McpAllResult {
   servers: MCPServerConfig[]

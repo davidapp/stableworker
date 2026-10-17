@@ -790,6 +790,11 @@ export async function forkFromMessage(messageId: string): Promise<void> {
   }, 8000)
 }
 
+/** 订阅主进程的配置变更推送（Plan 工具切换批准模式后同步界面菜单） */
+export function subscribeConfigUpdates(): void {
+  window.api.onConfigUpdated((cfg) => applyConfig(cfg))
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {

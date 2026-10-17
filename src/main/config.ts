@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
-import { nativeTheme } from 'electron'
+import { BrowserWindow, nativeTheme } from 'electron'
 import type { ApprovalMode, ConfigView, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, Preferences, SubagentTypeConfig } from '../shared/types'
 
 /**
@@ -209,6 +209,14 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
       officePanelCollapsed: cfg.preferences?.officePanelCollapsed === true,
       filesPanelCollapsed: cfg.preferences?.filesPanelCollapsed === true,
     },
+  }
+}
+
+/** 把最新配置视图广播给全部窗口（主进程改动批准模式等设置后调用，渲染端菜单即时同步） */
+export function broadcastConfigUpdate(cfg: StoredConfig): void {
+  const view = toConfigView(cfg)
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send('config:updated', view)
   }
 }
 

@@ -23,6 +23,7 @@ export default function App() {
 
   useEffect(() => {
     void actions.boot()
+    actions.subscribeConfigUpdates()
     const offChat = actions.subscribeChatEvents()
     const offSessions = actions.subscribeSessionsChanged()
     const offOpen = actions.subscribeSessionsOpen()

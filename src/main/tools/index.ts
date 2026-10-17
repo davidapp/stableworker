@@ -9,6 +9,8 @@ import { loadSkillContent, listSkillNames } from '../skills'
 import { grepTool, globTool } from './search'
 import { webFetchTool } from './webFetch'
 import { memoryTool } from '../memoryDir'
+import { enterPlanModeTool, exitPlanModeTool } from '../planTools'
+import { webSearchTool } from './webSearch'
 import type { TodoItem, ToolUseBlock } from '../../shared/types'
 
 /**
@@ -571,6 +573,9 @@ const registry = new Map<string, ToolDefinition>([
   [askUserQuestionTool.name, askUserQuestionTool],
   [webFetchTool.name, webFetchTool],
   [memoryTool.name, memoryTool],
+  [enterPlanModeTool.name, enterPlanModeTool],
+  [exitPlanModeTool.name, exitPlanModeTool],
+  [webSearchTool.name, webSearchTool],
 ])
 
 /** 当前启用的工具列表（未来可按权限/开关过滤） */

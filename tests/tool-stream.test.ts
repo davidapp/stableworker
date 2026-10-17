@@ -47,7 +47,11 @@ vi.mock('../src/main/fileHistory', () => ({ snapshotFilesBeforeChange: fixture.s
 vi.mock('../src/main/compact', () => ({ mergeSummaryIntoFirstUser: vi.fn(), summarizeWithModel: vi.fn(), worthSummarizing: () => false, getCachedCompact: () => undefined, setCachedCompact: vi.fn() }))
 vi.mock('../src/main/sessions', () => ({ appendSummaryLine: vi.fn(), loadSessionAny: fixture.loadSession }))
 vi.mock('../src/main/agentsMd', () => ({ loadAgentsMd: async () => '' }))
-vi.mock('../src/main/mcp', () => ({ ensureMcpConnections: fixture.ensureMcp, getMcpToolDefs: () => [] }))
+vi.mock('../src/main/mcp', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/mcp')>()),
+  ensureMcpConnections: fixture.ensureMcp,
+  getMcpToolDefs: () => [],
+}))
 
 import { createStreamCollector, LLMStreamError, readSSE, registerChatHandlers } from '../src/main/llm'
 

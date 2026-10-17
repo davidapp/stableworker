@@ -31,7 +31,7 @@ import { appendSummaryLine, loadSessionAny } from './sessions'
 import { officeSystemPrompt, toolsForTaskMode } from './officeMode'
 import { evaluateRules, suggestRule } from './permissions'
 import { loadAgentsMd } from './agentsMd'
-import { ensureMcpConnections, getMcpToolDefs } from './mcp'
+import { ensureMcpConnections, getMcpToolDefs, getResourceTools } from './mcp'
 import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe, parallelBatches, TASK_TOOL_NAME } from './subagent'
 import { runPreToolUseHooks, runPostToolUseHooks, runStopHooks } from './hooks'
 import { microCompactHistory } from './microCompact'
@@ -769,7 +769,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
   const officeTools = office ? (await import('./tools/office')).getOfficeToolDefinitions() : []
   const effSettings = resolveEffectiveSettings(cfg, office ? 'office' : 'coding')
-  let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs()].filter((d) => effSettings.toolSwitches[d.name] !== false)
+  let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs(), ...getResourceTools()].filter((d) => effSettings.toolSwitches[d.name] !== false)
   const approvalMode = effSettings.approvalMode
   if (approvalMode === 'plan') {
     tools = tools.filter((d) => !d.requiresApproval)

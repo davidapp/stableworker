@@ -81,6 +81,13 @@ const api = {
     return () => ipcRenderer.removeListener('win:maximized', listener)
   },
 
+  /** 主进程改了配置（如 Plan 工具切换批准模式）时推送最新视图 */
+  onConfigUpdated: (callback: (cfg: ConfigView) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, cfg: ConfigView): void => callback(cfg)
+    ipcRenderer.on('config:updated', listener)
+    return () => ipcRenderer.removeListener('config:updated', listener)
+  },
+
   /** 界面偏好（语言 / 主题；局部合并，主题同步原生） */
   setPreferences: (patch: { language?: 'zh' | 'en'; theme?: 'dark' | 'light'; officePanelCollapsed?: boolean; filesPanelCollapsed?: boolean }): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setPreferences', patch),
