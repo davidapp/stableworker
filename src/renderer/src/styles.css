@@ -2308,7 +2308,6 @@ button:disabled { cursor: not-allowed; }
 .empty-state > .btn { margin-top: 8px; }
 .conversation-starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px; }
 .conversation-starters .btn { border-color: var(--border); font-size: 12px; gap: 10px; }
-.composer-hint { display: flex; justify-content: space-between; gap: 8px; color: var(--text-faint); font-size: 11px; margin-top: 8px; }
 kbd { font: inherit; color: var(--text-dim); }
 .reasoning-collapse summary svg { margin-right: 4px; }
 .chat-code:focus-within .copy-btn { opacity: 1; }
@@ -2472,4 +2471,4 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-workbench .empty-state { padding: 28px; }
 .office-workbench .empty-state { min-height: 0; overflow-y: auto; flex-shrink: 1; justify-content: safe center; }
 .office-workbench .empty-state > * { flex-shrink: 0; }
-@media (max-width: 1100px) { .office-panel { flex-basis: 220px; width: 220px; padding: 16px 10px; } .office-workbench .composer-hint > span:first-child { display: none; } }
+@media (max-width: 1100px) { .office-panel { flex-basis: 220px; width: 220px; padding: 16px 10px; } }

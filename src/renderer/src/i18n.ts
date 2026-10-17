@@ -34,9 +34,6 @@ const EN: [string, string][] = [
   // 输入框
   ['输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行', 'Type a message, @ to reference files, Enter to send, Shift+Enter for newline'],
   ['描述要完成的工作，或添加资料开始', 'Describe the task or add materials to begin'],
-  ['结合项目文件与你协作', 'Works with your project files'],
-  ['资料仅导入当前任务 · 生成结果可预览和打开', 'Materials are imported into this task · results can be previewed and opened'],
-  ['Enter 发送 · Shift + Enter 换行', 'Enter to send · Shift + Enter for newline'],
   ['添加办公资料', 'Add materials'],
   ['停止生成', 'Stop generating'],
   ['请阅读这些资料，并整理主要内容。', 'Please read these materials and summarize the key points.'],

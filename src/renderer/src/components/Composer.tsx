@@ -186,7 +186,6 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
         )}
         </div>
       </div>
-      <div className="composer-hint"><span>{office ? t('资料仅导入当前任务 · 生成结果可预览和打开') : t('结合项目文件与你协作')}</span><span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span></div>
     </footer>
   )
 }
