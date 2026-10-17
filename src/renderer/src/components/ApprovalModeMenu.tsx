@@ -4,6 +4,7 @@ import * as actions from '../actions'
 import type { ApprovalMode } from '../../../shared/types'
 import { CaretIcon } from './CaretIcon'
 import { Icon, type IconName } from './Icon'
+import { t } from '../i18n'
 
 /** 批准模式选项（对齐 Claude Code 的权限模式） */
 const MODES: { id: ApprovalMode; icon: IconName; label: string; description: string }[] = [
@@ -42,8 +43,8 @@ export function ApprovalModeMenu() {
               >
                 <Icon name={m.icon} />
                 <span className="mode-texts">
-                  <span className="mode-label">{m.label}</span>
-                  <small>{m.description}</small>
+                  <span className="mode-label">{t(m.label)}</span>
+                  <small>{t(m.description)}</small>
                 </span>
                 {m.id === approvalMode ? <span className="mode-check">✓</span> : null}
               </button>

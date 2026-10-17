@@ -2,18 +2,22 @@
  * 界面 i18n（v1）：以中文原文为键，EN 词典提供英文翻译，缺失时回退中文原文。
  * setLanguage 在 applyConfig 时调用；组件通过 useApp() 订阅 store 变化后重渲染，
  * t() 读取模块级当前语言即可获得正确翻译。
- * 覆盖范围：核心框架（侧栏 / 输入框 / 聊天区 / 设置导航）；各设置页内部文案逐步迁移。
+ * 覆盖范围：核心框架 + 主要可见面（侧栏 / 输入框 / 聊天区 / 批准与思考菜单 / 上下文弹层 /
+ * 办公面板 / 设置导航）；各设置页内部文案逐步迁移。
  */
 
 export type Language = 'zh' | 'en'
 
 let current: Language = 'zh'
 
-const EN = new Map<string, string>([
+const EN: [string, string][] = [
   // 侧栏
   ['编程', 'Code'],
   ['办公', 'Office'],
   ['＋ 新建项目', '＋ New Project'],
+  ['新建办公任务', 'New Office Task'],
+  ['办公任务', 'Office Tasks'],
+  ['新建任务，开始整理资料', 'New task — add materials to begin'],
   ['工作区', 'Workspaces'],
   ['还没有工作区', 'No workspaces yet'],
   ['添加本地目录，开始协作', 'Add a local directory to get started'],
@@ -35,6 +39,7 @@ const EN = new Map<string, string>([
   ['Enter 发送 · Shift + Enter 换行', 'Enter to send · Shift + Enter for newline'],
   ['添加办公资料', 'Add materials'],
   ['停止生成', 'Stop generating'],
+  ['请阅读这些资料，并整理主要内容。', 'Please read these materials and summarize the key points.'],
   // 聊天区
   ['思考中…', 'Thinking…'],
   ['思考过程', 'Reasoning'],
@@ -50,6 +55,44 @@ const EN = new Map<string, string>([
   ['提问、排查问题或描述一个想法，助手会结合项目文件与你协作。', 'Ask questions, debug, or describe an idea — the assistant works with your project files.'],
   ['整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。', 'Organize documents, analyze spreadsheets, build decks. Add materials or describe the task to generate real office files.'],
   ['上下文', 'Context'],
+  ['新会话', 'New Session'],
+  ['你的 AI 办公助手', 'Your AI office assistant'],
+  ['把资料变成工作成果', 'Turn materials into deliverables'],
+  ['今天一起完成什么？', 'What shall we get done today?'],
+  // 办公面板
+  ['任务文件', 'Task Files'],
+  ['添加资料', 'Add materials'],
+  ['参考资料', 'Reference materials'],
+  ['生成结果', 'Generated results'],
+  ['导入资料，预览并打开生成的文件。', 'Import materials; preview and open generated files.'],
+  ['支持 Word、Excel、PPT、PDF 和文本', 'Supports Word, Excel, PPT, PDF and text'],
+  ['完成后，文件会出现在这里', 'Completed files will appear here'],
+  // 批准模式 / 思考力度
+  ['规划模式', 'Plan mode'],
+  ['变更前确认', 'Confirm edits'],
+  ['自动编辑', 'Auto-edit'],
+  ['完全访问', 'Full access'],
+  ['只读研究和制定计划。', 'Read-only research and planning.'],
+  ['改文件前先问我。', 'Asks before changing files.'],
+  ['自动编辑文件。', 'Edits files automatically.'],
+  ['减少确认次数。', 'Fewer confirmations.'],
+  ['低', 'Low'],
+  ['中', 'Medium'],
+  ['高', 'High'],
+  ['思考力度（推理模型）', 'Thinking effort (reasoning models)'],
+  // 上下文弹层
+  ['上下文容量', 'Context capacity'],
+  ['服务返回的模型元数据', 'Model metadata from the provider'],
+  ['已核实的官方文档', 'Verified official documentation'],
+  ['手动配置', 'Manually configured'],
+  ['尚未获得该模型的容量', 'Capacity for this model is not known yet'],
+  ['核实于', 'Verified on'],
+  ['查看来源', 'View source'],
+  ['输出上限：', 'Output limit: '],
+  ['当前会话输入用量', 'Session input usage'],
+  ['等待本会话请求完成', "Waiting for this session's request"],
+  ['从服务刷新容量', 'Refresh capacity from provider'],
+  ['正在获取…', 'Fetching…'],
   // 设置导航
   ['LLM 配置', 'LLM Profiles'],
   ['模型价格', 'Model Pricing'],
@@ -63,9 +106,8 @@ const EN = new Map<string, string>([
   ['项目覆盖', 'Project Overrides'],
   ['功能开关', 'Features'],
   ['关闭', 'Close'],
-  // 设置导航
-  ['设置', 'Settings'],
-])
+  ['偏好设置', 'Preferences'],
+]
 
 export function setLanguage(lang: Language): void {
   current = lang
@@ -74,5 +116,6 @@ export function setLanguage(lang: Language): void {
 /** 翻译：以中文原文为键；英文缺失或当前为中文时原样返回 */
 export function t(s: string): string {
   if (current === 'zh') return s
-  return EN.get(s) ?? s
+  const hit = EN.find(([k]) => k === s)
+  return hit ? hit[1] : s
 }

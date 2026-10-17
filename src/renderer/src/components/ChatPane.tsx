@@ -134,10 +134,10 @@ export function ChatPane() {
       <header className="chat-header">
         <Icon name={office ? 'briefcase' : 'folder'} />
         <span className="chat-header-project" title={project.path}>
-          {office ? '办公' : project.name}
+          {office ? t('办公') : project.name}
         </span>
         <span className="header-separator">/</span>
-        <span className="chat-header-session">{session?.title ?? '新会话'}</span>
+        <span className="chat-header-session">{session?.title ?? t('新会话')}</span>
         <div className="spacer" />
         {activeSessionId && messages.length > 0 ? (
           <button
@@ -191,8 +191,8 @@ export function ChatPane() {
       ) : messages.length === 0 ? (
         <div className="empty-state">
           <span className="empty-state-icon"><Icon name={office ? 'briefcase' : 'chat'} size={28} /></span>
-          <span className="empty-state-eyebrow">{office ? '你的 AI 办公助手' : project.name}</span>
-          <h2>{office ? '把资料变成工作成果' : '今天一起完成什么？'}</h2>
+          <span className="empty-state-eyebrow">{office ? t('你的 AI 办公助手') : project.name}</span>
+          <h2>{office ? t('把资料变成工作成果') : t('今天一起完成什么？')}</h2>
           <p>{office ? t('整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。') : t('提问、排查问题或描述一个想法，助手会结合项目文件与你协作。')}</p>
           <div className="conversation-starters">
             {(office ? [t('生成一份 Word 项目周报模板'), t('制作一个 Excel 费用汇总表'), t('制作一份三页 PPT 工作总结')] : [t('介绍这个项目的结构'), t('检查代码中潜在的问题'), t('帮我规划下一步开发')]).map((prompt) => (

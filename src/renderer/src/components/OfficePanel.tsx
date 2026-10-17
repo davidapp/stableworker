@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { OfficeFile, OfficePreviewResult } from '../../../shared/types'
 import { useApp } from '../store'
 import { Icon } from './Icon'
+import { t } from '../i18n'
 
 function fileSize(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -72,16 +73,16 @@ export function OfficePanel({ onImport, onTask, refreshKey = 0 }: { onImport: ()
   }
 
   return (
-    <aside className="office-panel" aria-label="任务文件">
-      <div className="office-panel-heading"><Icon name="file" /><strong>任务文件</strong><span>{files.length}</span></div>
-      <p className="office-panel-intro">导入资料，预览并打开生成的文件。</p>
-      <button className="btn btn-block" disabled={streaming} onClick={onImport}><Icon name="attachment" /> 添加资料</button>
+    <aside className="office-panel" aria-label={t('任务文件')}>
+      <div className="office-panel-heading"><Icon name="file" /><strong>{t('任务文件')}</strong><span>{files.length}</span></div>
+      <p className="office-panel-intro">{t('导入资料，预览并打开生成的文件。')}</p>
+      <button className="btn btn-block" disabled={streaming} onClick={onImport}><Icon name="attachment" /> {t('添加资料')}</button>
       {error && <p className="msg-error" role="alert">{error}</p>}
       {(['input', 'output'] as const).map((role) => {
         const group = files.filter((f) => f.role === role)
         return <section className="office-file-section" key={role}>
-          <div className="sidebar-section-label">{role === 'input' ? '参考资料' : '生成结果'}<span>{group.length}</span></div>
-          {group.length === 0 ? <p className="office-file-empty">{role === 'input' ? '支持 Word、Excel、PPT、PDF 和文本' : '完成后，文件会出现在这里'}</p> : group.map((file) => <div key={file.path} className="office-file-row">
+          <div className="sidebar-section-label">{role === 'input' ? t('参考资料') : t('生成结果')}<span>{group.length}</span></div>
+          {group.length === 0 ? <p className="office-file-empty">{role === 'input' ? t('支持 Word、Excel、PPT、PDF 和文本') : t('完成后，文件会出现在这里')}</p> : group.map((file) => <div key={file.path} className="office-file-row">
             <button className="office-file-preview" title={`预览 ${file.name}`} disabled={loading} onClick={(e) => void showPreview(file, e.currentTarget)}><span className={`office-file-format format-${file.format}`}>{file.format.toUpperCase()}</span><span className="office-file-info"><strong>{file.name}</strong><small>{fileSize(file.size)}</small></span></button>
             <div className="office-file-actions">
               {['docx', 'pptx', 'xlsx'].includes(file.format) && <button className="icon-btn" title={`保留模板编辑 ${file.name}`} disabled={streaming} onClick={() => onTask?.(`请检查文件 ${file.path} 的可编辑位置，并在保留原模板样式和排版的前提下修改内容，另存为新副本。具体修改要求：`)}><Icon name="edit" size={14} /></button>}

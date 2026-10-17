@@ -3,6 +3,7 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 import { CaretIcon } from './CaretIcon'
 import { Icon } from './Icon'
+import { t } from '../i18n'
 
 const LEVELS: { id: 'off' | 'low' | 'medium' | 'high'; label: string }[] = [
   { id: 'off', label: '默认' },
@@ -21,7 +22,7 @@ export function ThinkingEffortMenu() {
 
   return (
     <div className="mode-menu-wrap align-right">
-      <button className="mode-btn" onClick={() => setOpen((v) => !v)} title="思考力度（推理模型）" aria-expanded={open}>
+      <button className="mode-btn" onClick={() => setOpen((v) => !v)} title={t("思考力度（推理模型）")} aria-expanded={open}>
         <Icon name="brain" size={14} /><span>{currentLabel}</span>
         <CaretIcon />
       </button>
@@ -40,7 +41,7 @@ export function ThinkingEffortMenu() {
                 }}
               >
                 <span className="mode-texts">
-                  <span className="mode-label">{l.label}</span>
+                  <span className="mode-label">{t(l.label)}</span>
                 </span>
                 {l.id === current ? <span className="mode-check">✓</span> : null}
               </button>

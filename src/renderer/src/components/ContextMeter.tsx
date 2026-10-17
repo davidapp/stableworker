@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { DebugListItem } from '../../../shared/types'
 import { selectContextExchange } from '../../../shared/contextUsage'
 import { useApp } from '../store'
+import { t } from '../i18n'
 import * as actions from '../actions'
 import { Icon } from './Icon'
 
@@ -51,14 +52,14 @@ export function ContextMeter() {
   const tone = hasRatio ? pct >= 80 ? 'danger' : pct >= 60 ? 'warn' : 'ok' : 'muted'
   const ringR = 6
   const ringC = 2 * Math.PI * ringR
-  const sourceLabel = contextInfo?.source === 'api' ? '服务返回的模型元数据' : contextInfo?.source === 'official-docs' ? '已核实的官方文档' : contextInfo?.source === 'manual' ? '手动配置' : '尚未获得该模型的容量'
+  const sourceLabel = contextInfo?.source === 'api' ? t('服务返回的模型元数据') : contextInfo?.source === 'official-docs' ? t('已核实的官方文档') : contextInfo?.source === 'manual' ? t('手动配置') : t('尚未获得该模型的容量')
   const canLink = contextInfo?.sourceUrl && /^https?:\/\//.test(contextInfo.sourceUrl)
   const tokenLabel = contextTokens != null ? `${fmtNum(contextTokens)} / ${contextLimit ? fmtLimit(contextLimit) : '?'}` : contextLimit ? `上下文 ${fmtLimit(contextLimit)}` : '上限未确认'
 
   return (
     <div className="mode-menu-wrap">
       <button className="mode-btn context-meter-btn" aria-expanded={open}
-        title={`上下文容量：${contextLimit ? `${fmtNum(contextLimit)} tokens` : '未确认'}，点击查看来源与刷新`}
+        title={`上下文容量：${contextLimit ? `${fmtNum(contextLimit)} tokens` : '未确认'}，点击{t('查看来源')}与刷新`}
         onClick={() => setOpen((v) => !v)}>
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
           <circle cx="8" cy="8" r={ringR} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" />
@@ -72,18 +73,18 @@ export function ContextMeter() {
           <div className="popover-backdrop" onClick={() => setOpen(false)} />
           <div className="mode-menu ctx-popover">
             <div className="ctx-title-row">
-              <span>上下文容量</span>
+              <span>{t('上下文容量')}</span>
               <span className="ctx-value">{contextLimit ? `${fmtNum(contextLimit)} tokens` : '上限未确认'}</span>
             </div>
             <div className="ctx-capacity-source">
               <span>{sourceLabel}</span>
-              {contextInfo?.checkedAt ? <span>核实于 {new Date(contextInfo.checkedAt).toLocaleDateString()}</span> : null}
-              {canLink ? <a href={contextInfo.sourceUrl} target="_blank" rel="noreferrer">查看来源 <Icon name="external" size={11} /></a> : null}
-              {contextInfo?.maxOutputTokens ? <span>输出上限：{fmtNum(contextInfo.maxOutputTokens)} tokens</span> : null}
+              {contextInfo?.checkedAt ? <span>{t('核实于')} {new Date(contextInfo.checkedAt).toLocaleDateString()}</span> : null}
+              {canLink ? <a href={contextInfo.sourceUrl} target="_blank" rel="noreferrer">{t('查看来源')} <Icon name="external" size={11} /></a> : null}
+              {contextInfo?.maxOutputTokens ? <span>{t('输出上限：')}{fmtNum(contextInfo.maxOutputTokens)} tokens</span> : null}
             </div>
             <div className="ctx-row">
-              <span className="ctx-label">当前会话输入用量</span>
-              <span className="ctx-value">{contextTokens != null ? `${fmtNum(contextTokens)}${hasRatio ? `（${fmtPct(contextTokens / contextLimit)}）` : ''}` : '等待本会话请求完成'}</span>
+              <span className="ctx-label">{t('当前会话输入用量')}</span>
+              <span className="ctx-value">{contextTokens != null ? `${fmtNum(contextTokens)}${hasRatio ? `（${fmtPct(contextTokens / contextLimit)}）` : ''}` : t('等待本会话请求完成')}</span>
             </div>
             {breakdown ? (
               <>
@@ -109,7 +110,7 @@ export function ContextMeter() {
               const result = await actions.refreshModelContext()
               setNotice(result.message)
               setRefreshing(false)
-            }}><Icon name="refresh" size={14} />{refreshing ? '正在获取…' : '从服务刷新容量'}</button>
+            }}><Icon name="refresh" size={14} />{refreshing ? t('正在获取…') : t('从服务刷新容量')}</button>
             {notice ? <div className="ctx-capacity-source" role="status">{notice}</div> : null}
           </div>
         </>
