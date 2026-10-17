@@ -137,14 +137,14 @@ body {
 .app {
   display: flex;
   height: 100vh;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
 }
 
 /* ============ 侧栏 ============ */
 .sidebar {
   width: var(--sidebar-width, 240px);
-  flex-shrink: 0;
+  min-width: 180px; /* 面板最小宽度：空间不足时先压缩侧栏到此线 */
+  flex-shrink: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2435,8 +2435,9 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-task-node .session-list { padding-left: 0; }
 .office-task-node .session-leaf { padding-left: 12px; }
 .chat-workbench, .office-workbench { display: flex; flex: 1; min-width: 0; min-height: 0; }
-.office-panel { flex: 0 0 256px; width: 256px; padding: 20px 14px; overflow-y: auto; border-left: 1px solid var(--border); background: var(--panel); }
-.office-panel.collapsed { flex: 0 0 48px; width: 48px; padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.office-panel { flex: 0 1 256px; width: 256px; min-width: 200px; padding: 20px 14px; overflow-y: auto; border-left: 1px solid var(--border); background: var(--panel); }
+.office-panel.collapsed { flex: 0 0 48px; min-width: 48px; }
+.office-panel.collapsed { padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .office-panel.collapsed .office-panel-count { font-size: 11px; color: var(--text-faint); }
 .office-panel-heading { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .office-panel-heading > span { margin-left: auto; font-size: 11px; color: var(--text-faint); }

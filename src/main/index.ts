@@ -30,7 +30,7 @@ function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 960,
+    minWidth: 1000,
     minHeight: 600,
     title: 'StableWorker',
     titleBarStyle: 'hidden', // 无原生标题栏：窗口控制移入聊天头部，头部整条可拖拽
