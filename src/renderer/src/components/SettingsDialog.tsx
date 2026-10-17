@@ -3,7 +3,6 @@ import { useApp } from '../store'
 import * as actions from '../actions'
 import { LlmConfigPage } from './settings/LlmConfigPage'
 import { PricingPage } from './settings/PricingPage'
-import { FeaturesPage } from './settings/FeaturesPage'
 import { ToolSwitchesPage } from './settings/ToolSwitchesPage'
 import { RulesPage } from './settings/RulesPage'
 import { SkillsPage } from './settings/SkillsPage'
@@ -11,14 +10,12 @@ import { McpPage } from './settings/McpPage'
 import { SubagentTypesPage } from './settings/SubagentTypesPage'
 import { HooksPage } from './settings/HooksPage'
 import { MemoryPage } from './settings/MemoryPage'
-import { OverridesPage } from './settings/OverridesPage'
 import { Icon } from './Icon'
 import { t } from '../i18n'
 
 /**
  * 统一设置对话框：左侧导航 + 右侧页面。
  * 未来新增功能时，在 PAGES 里加一项并实现对应页面组件即可；
- * 功能入口的显隐由"功能开关"页统一管理（见 src/renderer/src/features.ts）。
  */
 const PAGES = [
   { id: 'llm', label: 'LLM 配置', icon: 'brain' },
@@ -30,8 +27,6 @@ const PAGES = [
   { id: 'subagents', label: '子代理类型', icon: 'code' },
   { id: 'hooks', label: 'Hooks', icon: 'terminal' },
   { id: 'memory', label: '记忆', icon: 'brain' },
-  { id: 'overrides', label: '项目覆盖', icon: 'sliders' },
-  { id: 'features', label: '功能开关', icon: 'settings' },
 ] as const
 
 export function SettingsDialog() {
@@ -143,12 +138,6 @@ export function SettingsDialog() {
           </div>
           <div hidden={active !== 'memory'}>
             <MemoryPage />
-          </div>
-          <div hidden={active !== 'overrides'}>
-            <OverridesPage />
-          </div>
-          <div hidden={active !== 'features'}>
-            <FeaturesPage />
           </div>
         </section>
       </div>

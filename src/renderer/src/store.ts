@@ -2,7 +2,6 @@ import { useSyncExternalStore } from 'react'
 import type {
   ApprovalMode,
   ChatMessage,
-  FeatureEntry,
   LLMProfileView,
   ModelContextInfo,
   ModelPricing,
@@ -11,7 +10,6 @@ import type {
   TaskMode,
   SubagentTypeConfig,
   HookConfig,
-  ProjectOverrides,
   Preferences,
   TodoItem,
 } from '../../shared/types'
@@ -54,7 +52,6 @@ export interface AppState {
   /** 中国法定节假日（北京时间日期） */
   holidays: string[]
   /** 功能入口的显隐状态 */
-  features: FeatureEntry[]
   /** 侧栏宽度（拖拽分隔条调整，持久化） */
   sidebarWidth: number
   /** 自定义子代理类型（task 工具 subagent_type 动态枚举） */
@@ -62,7 +59,6 @@ export interface AppState {
   /** Hooks 生命周期钩子 */
   hooks: HookConfig[]
   /** 项目级设置覆盖（projectId → 覆盖项） */
-  projectOverrides: Record<string, ProjectOverrides>
   /** 界面偏好（语言 / 主题） */
   preferences: Preferences
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
@@ -120,11 +116,9 @@ export const store = createStore<AppState>({
   approvalMode: 'confirm',
   modelPricing: [],
   holidays: [],
-  features: [],
   sidebarWidth: 240,
   subagentTypes: [],
   hooks: [],
-  projectOverrides: {},
   preferences: { language: 'zh', theme: 'dark' },
   contextLimit: 0,
   contextInfo: null,

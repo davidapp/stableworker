@@ -7,7 +7,6 @@ import type {
   ChatHistoryMessage,
   ChatMessage,
   ConfigView,
-  FeatureEntry,
   LLMConfig,
   MessageBlock,
   ModelPricing,
@@ -36,7 +35,6 @@ function applyConfig(cfg: ConfigView): void {
     approvalMode: cfg.approvalMode,
     modelPricing: cfg.modelPricing,
     holidays: cfg.holidays,
-    features: cfg.features,
     sidebarWidth: cfg.sidebarWidth,
     contextLimit: cfg.contextLimit,
     contextInfo: cfg.contextInfo ?? null,
@@ -46,7 +44,6 @@ function applyConfig(cfg: ConfigView): void {
     expandedProjects: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
-    projectOverrides: cfg.projectOverrides ?? {},
     preferences: cfg.preferences ?? { language: 'zh', theme: 'dark' },
   })
   applyPreferences(cfg.preferences ?? { language: 'zh', theme: 'dark' })
@@ -369,11 +366,6 @@ export async function savePricing(pricing: ModelPricing[]): Promise<void> {
 
 export async function saveHolidays(holidays: string[]): Promise<void> {
   const cfg = await window.api.saveHolidays(holidays)
-  applyConfig(cfg)
-}
-
-export async function saveFeatures(features: FeatureEntry[]): Promise<void> {
-  const cfg = await window.api.saveFeatures(features)
   applyConfig(cfg)
 }
 

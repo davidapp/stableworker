@@ -7,7 +7,6 @@ import type {
   ConfigView,
   DebugDetail,
   DebugListItem,
-  FeatureEntry,
   LLMConfig,
   LLMProfileView,
   LLMTestPayload,
@@ -72,9 +71,6 @@ const api = {
     ipcRenderer.invoke('config:setSubagentTypes', list),
   /** Hooks 生命周期钩子（整体替换） */
   setHooks: (list: HookConfig[]): Promise<ConfigView> => ipcRenderer.invoke('config:setHooks', list),
-  /** 项目级设置覆盖（整体替换该项目的覆盖对象；空对象 = 完全继承全局） */
-  setProjectOverrides: (projectId: string, overrides: import('../shared/types').ProjectOverrides): Promise<ConfigView> =>
-    ipcRenderer.invoke('config:setProjectOverrides', projectId, overrides),
   // ---- 窗口控制（隐藏标题栏） ----
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('win:minimize'),
   maximizeToggleWindow: (): Promise<void> => ipcRenderer.invoke('win:maximizeToggle'),
@@ -111,8 +107,6 @@ const api = {
     ipcRenderer.invoke('tools:list', mode),
   savePricing: (pricing: ModelPricing[]): Promise<ConfigView> => ipcRenderer.invoke('config:savePricing', pricing),
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
-  saveFeatures: (features: FeatureEntry[]): Promise<ConfigView> =>
-    ipcRenderer.invoke('config:saveFeatures', features),
   testLlm: (payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('llm:test', payload),
 

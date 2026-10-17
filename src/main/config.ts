@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
 import { nativeTheme } from 'electron'
-import type { ApprovalMode, ConfigView, FeatureEntry, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, ProjectOverrides, Preferences, SubagentTypeConfig } from '../shared/types'
+import type { ApprovalMode, ConfigView, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, Preferences, SubagentTypeConfig } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -38,23 +38,13 @@ const APPROVAL_MODES: ApprovalMode[] = ['plan', 'confirm', 'autoEdit', 'fullAcce
 
 /** 三项关键设置的有效值（项目覆盖 > 全局；permissionRules 与全局按 deny/ask/allow 分别合并） */
 export function resolveEffectiveSettings(
-  cfg: Pick<StoredConfig, 'toolSwitches' | 'officeToolSwitches' | 'approvalMode' | 'permissionRules' | 'projectOverrides'>,
-  projectId: string | null,
+  cfg: Pick<StoredConfig, 'toolSwitches' | 'officeToolSwitches' | 'approvalMode' | 'permissionRules'>,
   mode: 'coding' | 'office' = 'coding',
 ): { toolSwitches: Record<string, boolean>; approvalMode: ApprovalMode; permissionRules: PermissionRules } {
-  const ov = projectId ? cfg.projectOverrides?.[projectId] : undefined
-  const globalRules = cfg.permissionRules ?? { allow: [], ask: [], deny: [] }
-  const baseSwitches = mode === 'office' ? cfg.officeToolSwitches ?? {} : cfg.toolSwitches ?? {}
   return {
-    approvalMode: ov?.approvalMode ?? cfg.approvalMode ?? 'confirm',
-    toolSwitches: { ...baseSwitches, ...(ov?.toolSwitches ?? {}) },
-    permissionRules: ov?.permissionRules
-      ? {
-          deny: [...globalRules.deny, ...(ov.permissionRules.deny ?? [])],
-          ask: [...globalRules.ask, ...(ov.permissionRules.ask ?? [])],
-          allow: [...globalRules.allow, ...(ov.permissionRules.allow ?? [])],
-        }
-      : globalRules,
+    approvalMode: cfg.approvalMode ?? 'confirm',
+    toolSwitches: mode === 'office' ? cfg.officeToolSwitches ?? {} : cfg.toolSwitches ?? {},
+    permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
   }
 }
 
@@ -72,7 +62,6 @@ interface StoredConfig {
   approvalMode?: ApprovalMode
   modelPricing?: ModelPricing[]
   holidays?: string[]
-  features?: FeatureEntry[]
   sidebarWidth?: number
   contextLimit?: number
   /** Old unscoped limit retained for migration/auditing, never used as verified model capacity. */
@@ -85,7 +74,6 @@ interface StoredConfig {
   sidebarExpanded?: Record<string, boolean>
   subagentTypes?: SubagentTypeConfig[]
   hooks?: HookConfig[]
-  projectOverrides?: Record<string, ProjectOverrides>
   preferences?: Partial<Preferences>
 }
 
@@ -132,7 +120,6 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.approvalMode === undefined) cache.approvalMode = 'confirm'
   if (cache.modelPricing === undefined) cache.modelPricing = DEFAULT_MODEL_PRICING
   if (cache.holidays === undefined) cache.holidays = DEFAULT_HOLIDAYS
-  if (cache.features === undefined) cache.features = []
   if (cache.sidebarWidth === undefined) cache.sidebarWidth = 240
   cache.sidebarWidth = Math.min(480, Math.max(180, cache.sidebarWidth))
   // The old global value may have been initialized before any model existed.
@@ -206,7 +193,6 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     approvalMode: cfg.approvalMode ?? 'confirm',
     modelPricing: cfg.modelPricing ?? [],
     holidays: cfg.holidays ?? [],
-    features: cfg.features ?? [],
     sidebarWidth: cfg.sidebarWidth ?? 240,
     contextLimit: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId))?.contextWindow ?? 0,
     contextInfo: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId)),
@@ -217,7 +203,6 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     sidebarExpanded: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
-    projectOverrides: cfg.projectOverrides ?? {},
     preferences: { language: cfg.preferences?.language ?? 'zh', theme: cfg.preferences?.theme ?? 'dark' },
   }
 }
@@ -364,35 +349,6 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
-  // 项目级设置覆盖（整体替换该项目的覆盖对象；空对象 = 完全继承全局）
-  ipcMain.handle(
-    'config:setProjectOverrides',
-    async (_e, projectId: string, overrides: ProjectOverrides): Promise<ConfigView> => {
-      const cfg = await loadConfig()
-      cfg.projectOverrides ??= {}
-      const clean: ProjectOverrides = {}
-      if (overrides && overrides.approvalMode && APPROVAL_MODES.includes(overrides.approvalMode)) {
-        clean.approvalMode = overrides.approvalMode
-      }
-      if (overrides?.toolSwitches && typeof overrides.toolSwitches === 'object') {
-        const sw: Record<string, boolean> = {}
-        for (const [k, v] of Object.entries(overrides.toolSwitches)) {
-          if (k.trim() && typeof v === 'boolean') sw[k.trim()] = v
-        }
-        if (Object.keys(sw).length > 0) clean.toolSwitches = sw
-      }
-      if (overrides?.permissionRules) {
-        const lines = (arr: unknown): string[] =>
-          Array.isArray(arr) ? arr.map((x) => String(x).trim()).filter(Boolean) : []
-        const rules = { deny: lines(overrides.permissionRules.deny), ask: lines(overrides.permissionRules.ask), allow: lines(overrides.permissionRules.allow) }
-        if (rules.deny.length || rules.ask.length || rules.allow.length) clean.permissionRules = rules
-      }
-      if (Object.keys(clean).length === 0) delete cfg.projectOverrides[projectId]
-      else cfg.projectOverrides[projectId] = clean
-      return saveConfig(cfg)
-    },
-  )
-
   // 界面偏好（局部合并）；主题切换同步原生主题（对话框 / 原生滚动条跟随）
   ipcMain.handle(
     'config:setPreferences',
@@ -452,10 +408,4 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
-  // 保存功能入口的显隐状态
-  ipcMain.handle('config:saveFeatures', async (_e, features: FeatureEntry[]): Promise<ConfigView> => {
-    const cfg = await loadConfig()
-    cfg.features = features
-    return saveConfig(cfg)
-  })
 }

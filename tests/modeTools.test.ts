@@ -43,21 +43,11 @@ describe('工具开关按模式生效', () => {
   }
 
   it('编程模式读 toolSwitches，办公模式读 officeToolSwitches', () => {
-    const coding = resolveEffectiveSettings(cfg, null, 'coding')
+    const coding = resolveEffectiveSettings(cfg, 'coding')
     expect(coding.toolSwitches.read_file).toBe(false)
     expect(coding.toolSwitches.list_files).toBeUndefined() // 未记录 = 默认启用；办公的开关不影响编程
-    const office = resolveEffectiveSettings(cfg, null, 'office')
+    const office = resolveEffectiveSettings(cfg, 'office')
     expect(office.toolSwitches.list_files).toBe(false)
     expect(office.toolSwitches.read_file).toBeUndefined()
-  })
-
-  it('项目覆盖仍按键合并到当前模式的开关上', () => {
-    const withOverride = {
-      ...cfg,
-      projectOverrides: { p1: { toolSwitches: { run_command: false } } },
-    }
-    const office = resolveEffectiveSettings(withOverride, 'p1', 'office')
-    expect(office.toolSwitches.run_command).toBe(false)
-    expect(office.toolSwitches.list_files).toBe(false)
   })
 })

@@ -253,13 +253,6 @@ export interface Session extends SessionMeta {
   summary?: { droppedCount: number; text: string; ts: number }
 }
 
-/** 功能入口的显示/隐藏状态（配置里没有该条目时默认显示） */
-export interface FeatureEntry {
-  id: string
-  label: string
-  hidden: boolean
-}
-
 /** 一台 MCP 服务器的配置（stdio 与 Streamable HTTP 两种传输，command / url 二选一） */
 export interface MCPServerConfig {
   name: string
@@ -323,13 +316,6 @@ export interface Preferences {
   officePanelCollapsed?: boolean
 }
 
-/** 单个项目的设置覆盖（未指定的字段继承全局；permissionRules 与全局合并而非替换） */
-export interface ProjectOverrides {
-  approvalMode?: ApprovalMode
-  toolSwitches?: Record<string, boolean>
-  permissionRules?: PermissionRules
-}
-
 /** MCP 资源元数据（resources/list） */
 export interface McpResourceMeta {
   uri: string
@@ -357,8 +343,6 @@ export interface ConfigView {
   modelPricing: ModelPricing[]
   /** 中国法定节假日（北京时间 YYYY-MM-DD），用于高峰/空闲判定 */
   holidays: string[]
-  /** 功能入口的显隐状态 */
-  features: FeatureEntry[]
   /** 侧栏宽度（可拖拽调整，持久化） */
   sidebarWidth: number
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
@@ -379,8 +363,6 @@ export interface ConfigView {
   subagentTypes: SubagentTypeConfig[]
   /** Hooks 生命周期钩子列表 */
   hooks: HookConfig[]
-  /** 项目级设置覆盖（projectId → 覆盖项；未指定字段继承全局） */
-  projectOverrides: Record<string, ProjectOverrides>
   /** 界面偏好（语言 / 主题） */
   preferences: Preferences
 }
