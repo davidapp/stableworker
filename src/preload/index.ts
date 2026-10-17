@@ -121,6 +121,10 @@ const api = {
   saveHolidays: (holidays: string[]): Promise<ConfigView> => ipcRenderer.invoke('config:saveHolidays', holidays),
   testLlm: (payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('llm:test', payload),
+  listModels: (
+    payload?: { id?: string; provider?: 'openai-compatible' | 'anthropic'; name?: string; baseURL?: string; model?: string; proxyURL?: string; apiKey?: string },
+  ): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string }> =>
+    ipcRenderer.invoke('llm:listModels', payload),
 
   // ---- 项目 ----
   addProject: (): Promise<ConfigView | null> => ipcRenderer.invoke('projects:add'),

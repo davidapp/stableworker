@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApp } from '../../store'
 import * as actions from '../../actions'
 import type { LLMProfileView, ProviderType } from '../../../../shared/types'
@@ -104,6 +104,8 @@ const PROVIDER_OPTIONS: {
 
 const stripSlash = (s: string): string => s.replace(/\/+$/, '')
 
+/** 从服务商 /models 接口拉取可用模型列表（OpenAI 兼容；Anthropic 官方无此接口会返回明确错误） */
+
 /** 按 baseURL + provider 反查预设，匹配不上算自定义 */
 function detectPresetId(llm: LLMProfileView | null): string {
   if (!llm) return 'custom'
@@ -164,11 +166,46 @@ function blankDraft(): ProfileDraft {
 export function LlmConfigPage() {
   const { llmProfiles, activeLlmId } = useApp()
   const [editing, setEditing] = useState<ProfileDraft | null>(null)
+  const [fetchedModels, setFetchedModels] = useState<{ id: string; name?: string }[] | null>(null)
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [fetchNotice, setFetchNotice] = useState('')
   const [testing, setTesting] = useState(false)
   const [refreshingContext, setRefreshingContext] = useState<string | null>(null)
   const [contextNotice, setContextNotice] = useState<SettingsNoticeValue | null>(null)
   const [testResult, setTestResult] = useState<SettingsNoticeValue | null>(null)
   const [saved, setSaved] = useState(false)
+
+  // 切换编辑对象 / 换服务商时清掉上一次拉取的模型列表
+  useEffect(() => {
+    setFetchedModels(null)
+    setFetchNotice('')
+  }, [editing?.baseURL, editing?.id])
+
+  const fetchModelList = async (): Promise<void> => {
+    if (!editing || fetchingModels) return
+    setFetchingModels(true)
+    setFetchNotice('')
+    try {
+      const r = await window.api.listModels({
+        id: editing.id ?? undefined,
+        provider: editing.provider,
+        name: editing.name,
+        baseURL: editing.baseURL,
+        model: editing.model,
+        proxyURL: editing.proxyURL,
+        apiKey: editing.apiKey.trim() || undefined,
+      })
+      if (!r.ok) {
+        setFetchedModels(null)
+        setFetchNotice(`❌ ${r.error ?? '获取失败'}`)
+      } else {
+        setFetchedModels(r.models)
+        setFetchNotice(`✅ 获取到 ${r.models.length} 个模型`)
+      }
+    } finally {
+      setFetchingModels(false)
+    }
+  }
 
   const startNew = (): void => {
     setTestResult(null)
@@ -315,10 +352,24 @@ export function LlmConfigPage() {
             onChange={(e) => setEditing({ ...editing, model: e.target.value })}
           />
           <datalist id="model-suggestions">
-            {preset.models.map((m) => (
-              <option key={m} value={m} />
+            {(fetchedModels ?? preset.models.map((m) => ({ id: m, name: undefined }))).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name ?? ''}
+              </option>
             ))}
           </datalist>
+          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              className="btn"
+              disabled={fetchingModels || !editing.baseURL.trim()}
+              title="从服务商拉取可用模型列表（OpenAI 兼容 /models 接口；需要已填 API Key）"
+              onClick={() => void fetchModelList()}
+            >
+              {fetchingModels ? '获取中…' : '⟳ 获取模型列表'}
+            </button>
+            {fetchNotice ? <span className="saved-hint">{fetchNotice}</span> : null}
+          </div>
         </label>
 
         <label className="field">

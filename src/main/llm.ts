@@ -1180,6 +1180,51 @@ export function registerChatHandlers(): void {
         headers: maskHeaders(headers),
         body,
       })
+  // 拉取服务商模型列表（OpenAI 兼容 GET /models；key 解析规则与 llm:test 一致）
+  ipcMain.handle(
+    'llm:listModels',
+    async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string }> => {
+      try {
+        const cfg = await loadConfig()
+        const profiles = cfg.llmProfiles ?? []
+        const byId = payload?.id ? profiles.find((p) => p.id === payload.id) : undefined
+        const active = profiles.find((p) => p.id === cfg.activeLlmId) ?? profiles[0]
+        const source = byId ?? active
+        const baseURL = (payload?.baseURL ?? source?.baseURL ?? '').trim()
+        const apiKey = payload?.apiKey?.trim() || decryptApiKey(byId?.apiKey ?? active?.apiKey ?? '')
+        if (!baseURL) return { ok: false, models: [], error: 'Base URL 为空' }
+        if (!apiKey) return { ok: false, models: [], error: 'API Key 为空' }
+        const { headers } = buildRequest(
+          {
+            provider: payload?.provider ?? source?.provider ?? 'openai-compatible',
+            name: payload?.name ?? 'list',
+            baseURL,
+            model: payload?.model ?? '',
+            proxyURL: payload?.proxyURL ?? source?.proxyURL ?? '',
+          },
+          apiKey,
+          [{ kind: 'user', text: 'ping' }],
+          [],
+          false,
+          '',
+        )
+        const dispatcher = getProxyDispatcher(payload?.proxyURL ?? source?.proxyURL ?? '')
+        const res = await undiciFetch(joinURL(baseURL, '/models'), { headers, dispatcher, signal: AbortSignal.timeout(20_000) })
+        if (!res.ok) {
+          const detail = (await res.text().catch(() => '')).slice(0, 200)
+          return { ok: false, models: [], error: `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}（该服务商可能不支持 /models 接口）` }
+        }
+        const data = (await res.json()) as { data?: Array<{ id?: string; name?: string }> }
+        const models = (data.data ?? [])
+          .map((m) => ({ id: String(m.id ?? ''), name: m.name ? String(m.name) : undefined }))
+          .filter((m) => m.id)
+        return { ok: true, models }
+      } catch (e) {
+        return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) }
+      }
+    },
+  )
+
       const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
       const res = await undiciFetch(url, {
         method: 'POST',
