@@ -757,6 +757,25 @@ export async function rewindToMessage(messageId: string): Promise<void> {
   }, 8000)
 }
 
+/** 会话分叉：从某条消息复制出新会话并切换过去，原会话保持不变 */
+export async function forkFromMessage(messageId: string): Promise<void> {
+  const s = store.getState()
+  if (!s.activeProjectId || !s.activeSessionId) return
+  if (s.messages.findIndex((m) => m.id === messageId) < 0) return
+  if (!window.confirm('从此处分叉一个新会话？当前会话保持不变，新会话包含这条消息及之前的全部内容。')) return
+  const r = await window.api.forkSession(s.activeProjectId, s.activeSessionId, messageId)
+  if (!r.ok || !r.newSessionId) {
+    store.setState({ statusText: `分叉失败：${r.error ?? '未知原因'}` })
+    return
+  }
+  await refreshProjectSessions(s.activeProjectId)
+  await selectSession(s.activeProjectId, r.newSessionId)
+  store.setState({ statusText: '✅ 已分叉新会话（原会话未改动）' })
+  setTimeout(() => {
+    if (store.getState().statusText?.startsWith('✅ 已分叉')) store.setState({ statusText: null })
+  }, 8000)
+}
+
 /** 订阅主进程的流式事件（App 挂载时调用一次，返回取消订阅函数） */
 export function subscribeChatEvents(): () => void {
   return window.api.onChatEvent((event: ChatEvent) => {

@@ -452,6 +452,7 @@ body {
 /* 消息级回退：悬停消息时在气泡下方浮现 */
 .msg-rewind {
   display: flex;
+  gap: 8px;
   justify-content: flex-start;
   opacity: 0;
   transition: opacity 0.15s ease;

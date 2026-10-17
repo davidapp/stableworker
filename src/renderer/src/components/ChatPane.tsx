@@ -267,8 +267,27 @@ export function ChatPane() {
                       >
                         ⏪ 回到这里
                       </button>
+                      <button
+                        className="msg-rewind-btn"
+                        title="复制这条及之前的消息为一个新会话（原会话不变）"
+                        onClick={() => void actions.forkFromMessage(m.id)}
+                      >
+                        🍴 从这里分叉
+                      </button>
                     </div>
-                  ) : null}
+                  ) : (
+                    !m.streaming ? (
+                      <div className="msg-rewind">
+                        <button
+                          className="msg-rewind-btn"
+                          title="复制全部消息为一个新会话（原会话不变）"
+                          onClick={() => void actions.forkFromMessage(m.id)}
+                        >
+                          🍴 从这里分叉
+                        </button>
+                      </div>
+                    ) : null
+                  )}
                 </div>
               </div>
             ))}

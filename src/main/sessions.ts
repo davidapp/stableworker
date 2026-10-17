@@ -278,6 +278,33 @@ export function planRewind(
   return { ok: true, keepCount: idx + 1, removedCount: removed.length, removedToolUseIds }
 }
 
+/**
+ * 纯函数：构建分叉会话（sessions:fork 与测试共用）。
+ * 复制 messageId 及之前的全部消息为新会话（深拷贝，互不影响）；
+ * 摘要不继承（可能引用被截掉的内容），标题加"· 分叉"后缀。
+ */
+export function buildForkSession(
+  session: Session,
+  messageId: string,
+): { ok: true; session: Session } | { ok: false; error: string } {
+  const plan = planRewind(session.messages, messageId)
+  if (!plan.ok) return { ok: false, error: plan.error }
+  const now = Date.now()
+  return {
+    ok: true,
+    session: {
+      ...session,
+      id: randomUUID(),
+      title: `${session.title} · 分叉`,
+      createdAt: now,
+      updatedAt: now,
+      damaged: undefined,
+      summary: undefined, // 摘要可能引用分叉点之后被截掉的内容，不继承
+      messages: JSON.parse(JSON.stringify(session.messages.slice(0, plan.keepCount))) as ChatMessage[],
+    },
+  }
+}
+
 export function registerSessionHandlers(): void {
   // 全局搜索：跨项目扫描所有会话消息的文本（大小写不敏感子串），上限 50 条
   ipcMain.handle(
@@ -465,6 +492,31 @@ export function registerSessionHandlers(): void {
       })
       if (result.ok) emitSessionsChanged(projectId, sessionId)
       return result
+    },
+  )
+
+  // 会话分叉：复制 messageId 及之前的消息为新会话，原会话保持不变
+  ipcMain.handle(
+    'sessions:fork',
+    async (
+      _e,
+      projectId: string,
+      sessionId: string,
+      messageId: string,
+    ): Promise<{ ok: boolean; error?: string; newSessionId?: string }> => {
+      const forked = await serializeSession(projectId, sessionId, async () => {
+        const { session } = await loadSessionUnlocked(projectId, sessionId)
+        if (!session) return { ok: false, error: '会话不存在' }
+        const built = buildForkSession(session, messageId)
+        if (!built.ok) return built
+        const saved = await saveSessionInternal(built.session)
+        if (!saved.ok) return { ok: false, error: saved.error ?? '分叉会话写入失败' }
+        return { ok: true, newSessionId: built.session.id }
+      })
+      if (forked.ok && forked.newSessionId) {
+        emitSessionsChanged(projectId, forked.newSessionId, { change: 'metadata' })
+      }
+      return forked
     },
   )
 

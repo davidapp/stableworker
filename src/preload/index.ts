@@ -158,6 +158,9 @@ const api = {
     restoreFiles: boolean,
   ): Promise<{ ok: boolean; error?: string; removedCount?: number; restoredFiles?: string[] }> =>
     ipcRenderer.invoke('sessions:rewindTo', projectId, sessionId, messageId, restoreFiles),
+  /** 会话分叉：复制 messageId 及之前的消息为新会话，原会话不变，返回新会话 id */
+  forkSession: (projectId: string, sessionId: string, messageId: string): Promise<{ ok: boolean; error?: string; newSessionId?: string }> =>
+    ipcRenderer.invoke('sessions:fork', projectId, sessionId, messageId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:rename', projectId, sessionId, title),
 

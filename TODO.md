@@ -33,7 +33,8 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **MCP 工具接入**：Model Context Protocol 客户端（手写 JSON-RPC 2.0；stdio + Streamable HTTP 双传输，SSE 流式响应解析）；服务器在设置页管理（env 环境变量 / http 请求头编辑、资源浏览器、启停、重连），stdio 进程意外退出自动退避重连（5s/15s/30s→60s）；工具以 `mcp__服务器__工具` 并入工具池（默认需批准、无超时、规划模式排除）；未做：prompts、sampling、resources 分页与订阅
 - [x] **子代理（task 工具）**：独立上下文的完整代理循环（src/main/subagent.ts，callRound/executeTool 依赖注入可纯逻辑测试）；general-purpose（继承工具池）与 Explore（只读）两种类型；进度实时挂到 task 工具卡片"实时输出"区，最终报告作为 tool 结果回主对话；带门禁执行器 executeToolWithGates（批准卡/权限规则/检查点）与主循环共用；轮次上限后强制收尾汇总
 - [x] **子代理增强**：①只读工具并行执行（纯 kind:'read' 轮 Promise.all 并行，含写/需批准的轮次保持串行；主循环与子代理循环共用同一策略，对齐 Claude Code 的并行工具）②自定义代理类型（设置 → 子代理类型：名称/说明/工具范围/角色设定，动态注入 task 工具 subagent_type 枚举与描述，下一轮对话生效；config:setSubagentTypes 校验名称与内置冲突）③子代理内 todo_write 经 onTodos 转发主界面 Todo 面板（实现 task 工具时已通）
-- [ ] **子代理再增强**：并行子代理（模型一轮发多个 task 调用——受限于 task 非只读，需专用通道）、代理类型项目级、子代理输出折叠卡片
+- [x] **子代理再增强**：并行子代理已随"并行子代理"条目完成（见微压缩条目之后）；剩余：代理类型项目级、子代理输出折叠卡片
+- [x] **会话分叉**：悬停消息"🍴 从这里分叉"（最后一条也有 = 复制整个会话）——复制该消息及之前的全部内容为新会话（标题加"· 分叉"、摘要不继承、深拷贝互不影响），原会话不动并自动切换到新会话；buildForkSession 纯函数 + 测试
 - [ ] **WebSearch**：需接搜索 API（Brave/Serper 等，要 API key；WebFetch 已完成）
 - [ ] **run_command 增强**：ANSI 颜色渲染、命令白名单（后台长驻进程已随 task_output/task_stop 完成）
 - [ ] **本地 token 估算精度**：接入真正的 tokenizer（当前为启发式估算，仅用于比例与裁剪触发）
