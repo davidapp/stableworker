@@ -400,7 +400,9 @@ export function registerConfigHandlers(): void {
       const cfg = await loadConfig()
       const language: Preferences['language'] = patch.language === 'en' ? 'en' : 'zh'
       const theme: Preferences['theme'] = patch.theme === 'light' ? 'light' : patch.theme === 'dark' ? 'dark' : 'dark'
-      cfg.preferences = { language, theme }
+      const officePanelCollapsed =
+        typeof patch.officePanelCollapsed === 'boolean' ? patch.officePanelCollapsed : cfg.preferences?.officePanelCollapsed ?? false
+      cfg.preferences = { language, theme, officePanelCollapsed }
       nativeTheme.themeSource = theme
       return saveConfig(cfg)
     },

@@ -10,6 +10,7 @@ const paths = {
   code: 'M8 6l-6 6 6 6 M16 6l6 6-6 6 M14 3l-4 18',
   close: 'M6 6l12 12 M6 18L18 6',
   chevronRight: 'M9 5l7 7-7 7',
+  chevronLeft: 'M14 6l-6 6 6 6',
   chevronDown: 'M5 9l7 7 7-7',
   arrowDown: 'M12 4v16 M5 13l7 7 7-7',
   arrowUp: 'M12 20V4 M5 11l7-7 7 7',

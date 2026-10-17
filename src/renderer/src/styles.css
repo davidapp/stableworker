@@ -2436,6 +2436,8 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-task-node .session-leaf { padding-left: 12px; }
 .chat-workbench, .office-workbench { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .office-panel { flex: 0 0 256px; width: 256px; padding: 20px 14px; overflow-y: auto; border-left: 1px solid var(--border); background: var(--panel); }
+.office-panel.collapsed { flex: 0 0 48px; width: 48px; padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.office-panel.collapsed .office-panel-count { font-size: 11px; color: var(--text-faint); }
 .office-panel-heading { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .office-panel-heading > span { margin-left: auto; font-size: 11px; color: var(--text-faint); }
 .office-panel-intro { color: var(--text-faint); font-size: 11px; line-height: 1.7; margin: 10px 0 16px; }

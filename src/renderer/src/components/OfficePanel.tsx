@@ -9,7 +9,7 @@ function fileSize(bytes: number): string {
 }
 
 /** The office task keeps imported material and generated deliverables together. */
-export function OfficePanel({ onImport, onTask, refreshKey = 0 }: { onImport: () => void; onTask?: (text: string) => void; refreshKey?: number }) {
+export function OfficePanel({ onImport, onTask, refreshKey = 0, collapsed = false, onToggleCollapsed }: { onImport: () => void; onTask?: (text: string) => void; refreshKey?: number; collapsed?: boolean; onToggleCollapsed?: () => void }) {
   const { activeSessionId, messages, streaming } = useApp()
   const [files, setFiles] = useState<OfficeFile[]>([])
   const [error, setError] = useState('')
@@ -72,9 +72,40 @@ export function OfficePanel({ onImport, onTask, refreshKey = 0 }: { onImport: ()
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
   }
 
+  if (collapsed) {
+    return (
+      <aside className="office-panel collapsed" aria-label={t('任务文件')}>
+        <button
+          className="icon-btn"
+          title={t('展开任务文件面板')}
+          aria-label={t('展开任务文件面板')}
+          onClick={() => onToggleCollapsed?.()}
+        >
+          <Icon name="chevronLeft" size={14} />
+        </button>
+        <button className="icon-btn" title={t('任务文件')} aria-label={t('任务文件')} onClick={() => onToggleCollapsed?.()}>
+          <Icon name="file" size={16} />
+        </button>
+        <span className="office-panel-count">{files.length}</span>
+      </aside>
+    )
+  }
+
   return (
     <aside className="office-panel" aria-label={t('任务文件')}>
-      <div className="office-panel-heading"><Icon name="file" /><strong>{t('任务文件')}</strong><span>{files.length}</span></div>
+      <div className="office-panel-heading">
+        <Icon name="file" />
+        <strong>{t('任务文件')}</strong>
+        <span>{files.length}</span>
+        <button
+          className="icon-btn"
+          title={t('收起任务文件面板')}
+          aria-label={t('收起任务文件面板')}
+          onClick={() => onToggleCollapsed?.()}
+        >
+          <Icon name="chevronRight" size={14} />
+        </button>
+      </div>
       <p className="office-panel-intro">{t('导入资料，预览并打开生成的文件。')}</p>
       <button className="btn btn-block" disabled={streaming} onClick={onImport}><Icon name="attachment" /> {t('添加资料')}</button>
       {error && <p className="msg-error" role="alert">{error}</p>}

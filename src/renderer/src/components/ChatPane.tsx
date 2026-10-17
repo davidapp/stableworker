@@ -50,6 +50,7 @@ export function ChatPane() {
     statusText,
     sessionsByProject,
     taskMode,
+    preferences,
   } = useApp()
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
@@ -321,7 +322,15 @@ export function ChatPane() {
 
       <Composer disabled={streaming} attachments={office ? attachments : []} onAttach={office ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : undefined} taskDraft={office ? taskDraft : null} />
     </main>
-    {office && <OfficePanel onImport={() => void importFiles()} onTask={(text) => setTaskDraft((previous) => ({ id: (previous?.id ?? 0) + 1, text }))} refreshKey={fileRefresh} />}
+    {office && (
+          <OfficePanel
+            collapsed={preferences.officePanelCollapsed === true}
+            onToggleCollapsed={() => void actions.setPreferences({ officePanelCollapsed: !(preferences.officePanelCollapsed === true) })}
+            onImport={() => void importFiles()}
+            onTask={(text) => setTaskDraft((previous) => ({ id: (previous?.id ?? 0) + 1, text }))}
+            refreshKey={fileRefresh}
+          />
+        )}
     </div>
   )
 }

@@ -34,6 +34,8 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **子代理（task 工具）**：独立上下文的完整代理循环（src/main/subagent.ts，callRound/executeTool 依赖注入可纯逻辑测试）；general-purpose（继承工具池）与 Explore（只读）两种类型；进度实时挂到 task 工具卡片"实时输出"区，最终报告作为 tool 结果回主对话；带门禁执行器 executeToolWithGates（批准卡/权限规则/检查点）与主循环共用；轮次上限后强制收尾汇总
 - [x] **子代理增强**：①只读工具并行执行（纯 kind:'read' 轮 Promise.all 并行，含写/需批准的轮次保持串行；主循环与子代理循环共用同一策略，对齐 Claude Code 的并行工具）②自定义代理类型（设置 → 子代理类型：名称/说明/工具范围/角色设定，动态注入 task 工具 subagent_type 枚举与描述，下一轮对话生效；config:setSubagentTypes 校验名称与内置冲突）③子代理内 todo_write 经 onTodos 转发主界面 Todo 面板（实现 task 工具时已通）
 - [x] **子代理再增强**：并行子代理已随"并行子代理"条目完成（见微压缩条目之后）；剩余：代理类型项目级、子代理输出折叠卡片
+- [x] **办公模式 memory 工具**：办公白名单加入 memory（跨会话记忆对办公助手可用，可记"周报模板"类偏好）
+- [x] **工具开关按模式分 Tab**：设置 → 工具开关页分 编程模式 / 办公模式 两个 Tab，各自独立开关（config.toolSwitches / config.officeToolSwitches）；tools:list 按模式返回各自的池（办公 = 通用白名单 + office 工具）；resolveEffectiveSettings 按 mode 取基础开关，项目覆盖仍按键合并；modeTools 测试 4 用例
 - [x] **会话分叉**：悬停消息"🍴 从这里分叉"（最后一条也有 = 复制整个会话）——复制该消息及之前的全部内容为新会话（标题加"· 分叉"、摘要不继承、深拷贝互不影响），原会话不动并自动切换到新会话；buildForkSession 纯函数 + 测试
 - [ ] **WebSearch**：需接搜索 API（Brave/Serper 等，要 API key；WebFetch 已完成）
 - [ ] **run_command 增强**：ANSI 颜色渲染、命令白名单（后台长驻进程已随 task_output/task_stop 完成）

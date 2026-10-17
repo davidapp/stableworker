@@ -319,6 +319,8 @@ export interface HookConfig {
 export interface Preferences {
   language: 'zh' | 'en'
   theme: 'dark' | 'light'
+  /** 办公模式右侧任务文件面板是否收起 */
+  officePanelCollapsed?: boolean
 }
 
 /** 单个项目的设置覆盖（未指定的字段继承全局；permissionRules 与全局合并而非替换） */

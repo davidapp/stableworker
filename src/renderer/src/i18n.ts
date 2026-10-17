@@ -67,6 +67,8 @@ const EN: [string, string][] = [
   ['导入资料，预览并打开生成的文件。', 'Import materials; preview and open generated files.'],
   ['支持 Word、Excel、PPT、PDF 和文本', 'Supports Word, Excel, PPT, PDF and text'],
   ['完成后，文件会出现在这里', 'Completed files will appear here'],
+  ['展开任务文件面板', 'Expand task files panel'],
+  ['收起任务文件面板', 'Collapse task files panel'],
   // 批准模式 / 思考力度
   ['规划模式', 'Plan mode'],
   ['变更前确认', 'Confirm edits'],

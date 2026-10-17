@@ -86,7 +86,7 @@ const api = {
   },
 
   /** 界面偏好（语言 / 主题；局部合并，主题同步原生） */
-  setPreferences: (patch: { language?: 'zh' | 'en'; theme?: 'dark' | 'light' }): Promise<ConfigView> =>
+  setPreferences: (patch: { language?: 'zh' | 'en'; theme?: 'dark' | 'light'; officePanelCollapsed?: boolean }): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setPreferences', patch),
   /** 分层记忆：查看各层（全局 → 父目录 → 项目 → 项目本地）原文 */
   getMemoryLayers: (projectId: string): Promise<{ layers: { label: string; path: string; raw: string | null }[] }> =>
