@@ -137,7 +137,8 @@ body {
 .app {
   display: flex;
   height: 100vh;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 /* ============ 侧栏 ============ */
@@ -337,7 +338,7 @@ body {
 /* ============ 聊天区 ============ */
 .chat-pane {
   flex: 1;
-  min-width: 0;
+  min-width: 560px; /* 输入行单行排布的最小宽度；窗口过窄时挤压侧栏/面板而不是折叠输入栏 */
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -793,7 +794,7 @@ body {
   align-items: center;
   gap: 4px;
   padding: 6px 8px 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .composer-send {
@@ -2466,7 +2467,7 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-attachment-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0; }
 .office-attachment-chips > span { display: flex; align-items: center; gap: 6px; max-width: 240px; border: 1px solid var(--border); border-radius: var(--radius-s); padding: 2px 6px; color: var(--text-dim); font-size: 11px; }
 .office-attachment-chips > span > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.office-workbench .composer-row { flex-wrap: wrap; gap: 8px; }
+.office-workbench .composer-row { gap: 8px; }
 .office-workbench .model-select-wrap { max-width: 200px; min-width: 100px; }
 .office-workbench .empty-state { padding: 28px; }
 .office-workbench .empty-state { min-height: 0; overflow-y: auto; flex-shrink: 1; justify-content: safe center; }
