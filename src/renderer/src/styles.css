@@ -516,7 +516,7 @@ body {
   left: 12px;
   right: 12px;
   bottom: calc(100% + 8px);
-  z-index: 30;
+  z-index: 200; /* 高于全屏关闭遮罩（190），否则点击被遮罩吃掉 */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -716,6 +716,10 @@ body {
   transition: border-color 0.15s, box-shadow 0.15s;
   border-color: var(--border);
   transition: border-color 0.15s;
+  /* 编程 / 办公两种模式下输入盒宽度一致（容器宽度不同，这里统一封顶居中） */
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
 }
 
 .composer-box:focus-within {
