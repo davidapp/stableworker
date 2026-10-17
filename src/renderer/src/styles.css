@@ -730,10 +730,10 @@ body {
   border: none;
   background: transparent;
   color: var(--text);
-  padding: 14px 16px 4px;
+  padding: 14px 18px 10px;
   font: inherit;
   line-height: 1.5;
-  min-height: 80px;
+  min-height: 72px; /* 2 行文本 + 上下内边距；80px 会顶回 3 行 */
 }
 
 .composer-box textarea:focus {
