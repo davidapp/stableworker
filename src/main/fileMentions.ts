@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { loadConfig } from './config'
@@ -121,6 +121,38 @@ export function registerFileMentionHandlers(): void {
       completeCache.set(projectPath, { at: Date.now(), paths: relPaths })
     }
     return filterPaths(relPaths, String(query ?? ''))
+  })
+
+  // 工作目录文件树（扁平相对路径列表，客户端组树；忽略规则与 @补全一致）
+  ipcMain.handle('files:tree', async (_e, projectId: string): Promise<string[]> => {
+    const cfg = await loadConfig()
+    const projectPath = cfg.projects.find((p) => p.id === projectId)?.path
+    if (!projectPath) return []
+    const cached = completeCache.get(projectPath)
+    if (cached && Date.now() - cached.at < 5_000) return cached.paths
+    const abs: string[] = []
+    await walkRel(projectPath, projectPath, abs)
+    completeCache.set(projectPath, { at: Date.now(), paths: abs })
+    return abs
+  })
+
+  // 在系统资源管理器中打开（rel 省略 = 打开工作目录本身）
+  ipcMain.handle('files:openPath', async (_e, projectId: string, rel?: string): Promise<{ ok: boolean; error?: string }> => {
+    const cfg = await loadConfig()
+    const projectPath = cfg.projects.find((p) => p.id === projectId)?.path
+    if (!projectPath) return { ok: false, error: '项目不存在' }
+    if (!rel) {
+      await shell.openPath(projectPath)
+      return { ok: true }
+    }
+    let target: string
+    try {
+      target = safeResolve(projectPath, String(rel).trim())
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+    const err = await shell.openPath(target)
+    return err ? { ok: false, error: err } : { ok: true }
   })
 
   ipcMain.handle('files:readMentions', async (_e, projectId: string, paths: string[]): Promise<MentionResult[]> => {

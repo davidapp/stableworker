@@ -89,7 +89,18 @@ const EN: [string, string][] = [
   ['缓存命中率', 'Cache hit rate'],
   ['上下文容量', 'Context capacity'],
   ['当前会话输入用量', 'Session input usage'],
+  // 文件面板
+  ['文件', 'Files'],
+  ['展开文件面板', 'Expand files panel'],
+  ['收起文件面板', 'Collapse files panel'],
+  ['在资源管理器中打开工作目录', 'Open working directory in Explorer'],
+  ['在资源管理器中显示', 'Reveal in Explorer'],
+  ['文件预览', 'File preview'],
+  ['目录为空', 'Directory is empty'],
+  ['内容过长，仅显示前一部分', 'Content too long — showing the first part only'],
+
   // 设置导航
+
   ['LLM 配置', 'LLM Profiles'],
   ['模型价格', 'Model Pricing'],
   ['工具开关', 'Tool Switches'],

@@ -2438,6 +2438,68 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-panel { flex: 0 1 256px; width: 256px; min-width: 200px; padding: 20px 14px; overflow-y: auto; border-left: 1px solid var(--border); background: var(--panel); }
 .office-panel.collapsed { flex: 0 0 48px; min-width: 48px; }
 .office-panel.collapsed { padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+/* 文件浏览面板（编程模式，右侧） */
+.filex-panel {
+  flex: 0 1 280px;
+  width: 280px;
+  min-width: 220px;
+  padding: 20px 14px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+.filex-panel.collapsed { flex: 0 0 48px; width: 48px; min-width: 48px; padding: 12px 6px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.filex-panel .office-panel-count { font-size: 11px; color: var(--text-faint); }
+.filex-tree { margin-top: 12px; }
+.filex-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filex-row:hover { background: var(--surface-2); color: var(--text); }
+.filex-row span { overflow: hidden; text-overflow: ellipsis; }
+.filex-viewer {
+  position: fixed;
+  inset: 48px 24px 24px;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  padding: 14px 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+.filex-viewer-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.filex-viewer-head code { color: var(--accent-strong); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filex-viewer-body {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
 .office-panel.collapsed .office-panel-count { font-size: 11px; color: var(--text-faint); }
 .office-panel-heading { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .office-panel-heading > span { margin-left: auto; font-size: 11px; color: var(--text-faint); }

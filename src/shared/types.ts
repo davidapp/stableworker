@@ -314,6 +314,8 @@ export interface Preferences {
   theme: 'dark' | 'light'
   /** 办公模式右侧任务文件面板是否收起 */
   officePanelCollapsed?: boolean
+  /** 编程模式右侧文件浏览面板是否收起 */
+  filesPanelCollapsed?: boolean
 }
 
 /** MCP 资源元数据（resources/list） */

@@ -12,6 +12,7 @@ import { copyText } from '../clipboard'
 import { Icon } from './Icon'
 import { t } from '../i18n'
 import { OfficePanel } from './OfficePanel'
+import { FileExplorerPanel } from './FileExplorerPanel'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
 function CodeBlock({ children }: { children?: ReactNode }) {
@@ -329,6 +330,12 @@ export function ChatPane() {
             onImport={() => void importFiles()}
             onTask={(text) => setTaskDraft((previous) => ({ id: (previous?.id ?? 0) + 1, text }))}
             refreshKey={fileRefresh}
+          />
+        )}
+        {!office && (
+          <FileExplorerPanel
+            collapsed={preferences.filesPanelCollapsed === true}
+            onToggleCollapsed={() => void actions.setPreferences({ filesPanelCollapsed: !(preferences.filesPanelCollapsed === true) })}
           />
         )}
     </div>

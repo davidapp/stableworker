@@ -207,6 +207,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
       language: cfg.preferences?.language ?? 'zh',
       theme: cfg.preferences?.theme ?? 'dark',
       officePanelCollapsed: cfg.preferences?.officePanelCollapsed === true,
+      filesPanelCollapsed: cfg.preferences?.filesPanelCollapsed === true,
     },
   }
 }
@@ -362,7 +363,9 @@ export function registerConfigHandlers(): void {
       const theme: Preferences['theme'] = patch.theme === 'light' ? 'light' : patch.theme === 'dark' ? 'dark' : 'dark'
       const officePanelCollapsed =
         typeof patch.officePanelCollapsed === 'boolean' ? patch.officePanelCollapsed : cfg.preferences?.officePanelCollapsed ?? false
-      cfg.preferences = { language, theme, officePanelCollapsed }
+      const filesPanelCollapsed =
+        typeof patch.filesPanelCollapsed === 'boolean' ? patch.filesPanelCollapsed : cfg.preferences?.filesPanelCollapsed ?? false
+      cfg.preferences = { language, theme, officePanelCollapsed, filesPanelCollapsed }
       nativeTheme.themeSource = theme
       return saveConfig(cfg)
     },
