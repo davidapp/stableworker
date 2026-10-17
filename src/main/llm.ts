@@ -745,7 +745,14 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
 async function chatSendInternal(req: ChatRequest, controller: AbortController): Promise<{ ok: boolean; error?: string; compacted?: number }> {
   const cfg = await loadConfig()
   controller.signal.throwIfAborted()
-  const llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
+  let llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
+  // 斜杠命令 frontmatter 的 model 覆盖：按模型名匹配配置档，找不到保持激活档
+  const requestedModel = req.skill?.model?.trim()
+  if (requestedModel) {
+    const override = cfg.llmProfiles?.find((p) => p.model === requestedModel)
+    if (override) llm = override
+    else console.warn(`[skill] model 覆盖未命中配置档：${requestedModel}，使用当前激活档`)
+  }
   if (!llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中添加配置档' }
   const apiKey = decryptApiKey(llm.apiKey)
   if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
@@ -884,6 +891,10 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
     executeTool: (tu) => executeToolWithGates(tu, subExecCtx),
   })
   if (effSettings.toolSwitches.task !== false) tools = [...tools, taskTool]
+
+  // 斜杠命令 frontmatter 的 allowed-tools：本轮流式对话只可用列出的工具（最终门）
+  const allowedTools = req.skill?.allowedTools?.filter(Boolean)
+  if (allowedTools?.length) tools = tools.filter((d) => allowedTools.includes(d.name))
 
   // 发送前裁剪：估算超过上下文上限的 70%（预留输出与估算误差）时，
   // 从最旧的整组开始丢弃。只影响请求体；会话文件与界面历史保持完整。

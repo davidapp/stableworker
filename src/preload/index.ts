@@ -34,6 +34,7 @@ import type {
   SubagentTypeConfig,
   HookConfig,
 } from '../shared/types'
+import type { SkillFrontmatter } from '../shared/skillFrontmatter'
 
 /**
  * preload：唯一允许同时接触 Electron API 和页面 JS 的地方。
@@ -219,9 +220,8 @@ const api = {
   /** 读取一个资源（取文本部分） */
   readMcpResource: (name: string, uri: string): Promise<{ ok: boolean; error?: string; contents: McpResourceContent[] }> =>
     ipcRenderer.invoke('mcp:readResource', name, uri),
-  /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
-  /** 解析 /name args 斜杠命令 → 展开后的 prompt（未命中 found:false） */
-  resolveSkill: (text: string): Promise<{ found: boolean; content?: string }> =>
+  /** 解析 /name args 斜杠命令 → 展开后的 prompt + frontmatter 元数据（未命中 found:false） */
+  resolveSkill: (text: string): Promise<{ found: boolean; content?: string; meta?: SkillFrontmatter }> =>
     ipcRenderer.invoke('skills:resolve', text),
   /** 选段压缩：把 [startId..endId] 范围替换为一条摘要消息 */
   compressRange: (projectId: string, sessionId: string, startId: string, endId: string): Promise<ContextOpResult> =>

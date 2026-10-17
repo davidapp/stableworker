@@ -545,11 +545,13 @@ const skillTool: ToolDefinition = {
       const all = await listSkillNames()
       return { content: all.length ? `可用的 skill：${all.join('、')}` : '当前没有任何自定义 skill（可在设置 → 斜杠命令中创建）' }
     }
-    const content = await loadSkillContent(name, args)
-    if (content == null) {
+    const loaded = await loadSkillContent(name, args)
+    if (loaded == null) {
       return { content: `skill「${name}」不存在。请确认名称，或在设置 → 斜杠命令中创建。`, isError: true }
     }
-    return { content }
+    // frontmatter 只是斜杠触发时的约束元数据（allowed-tools/model），对模型调用的 Skill 工具
+    // 只需返回展开后的模板正文
+    return { content: loaded.content }
   },
 }
 

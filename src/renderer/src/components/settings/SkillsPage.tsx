@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../store'
 import type { SkillMeta } from '../../../../shared/types'
+import { parseSkillFrontmatter } from '../../../../shared/skillFrontmatter'
 import { Icon } from '../Icon'
 import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
 
@@ -46,6 +47,8 @@ export function SkillsPage() {
         在输入框输入 <code className="tool-switch-name">/名称 参数</code> 触发，模板中的 $ARGUMENTS 会被替换为参数。
         全局命令存于应用数据目录；项目级命令存于 <code className="tool-switch-name">&lt;项目&gt;/.stableworker/commands/</code>
         （可与项目一起进版本库），同名时项目覆盖全局。
+        模板支持 frontmatter：description（列表说明）/ allowed-tools（逗号分隔，触发后的本轮对话只可用这些工具）/
+        model（按模型名覆盖配置档）；正文支持 !`命令` 内嵌执行（输出就地注入，10 秒超时）。
       </p>
 
       {editing ? (
@@ -123,7 +126,14 @@ export function SkillsPage() {
                         {scopeLabel(s.scope)}
                       </span>
                     </span>
-                    <small>{s.content.split('\n')[0].slice(0, 80)}</small>
+                    <small>
+                      {(() => {
+                        const { meta, body } = parseSkillFrontmatter(s.content)
+                        const tags = [meta.model ? `model: ${meta.model}` : '', meta.allowedTools?.length ? `tools: ${meta.allowedTools.join(',')}` : ''].filter(Boolean)
+                        const desc = meta.description ?? body.split('\n')[0]
+                        return `${desc.slice(0, 70)}${tags.length ? `（${tags.join(' · ')}）` : ''}`
+                      })()}
+                    </small>
                   </div>
                   <div className="profile-actions">
                     <button

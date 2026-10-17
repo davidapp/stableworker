@@ -385,6 +385,8 @@ export interface ChatRequest {
   projectId: string
   revision?: number
   messages: ChatHistoryMessage[]
+  /** 斜杠命令元数据：本轮流式对话受 allowed-tools 限制、model 覆盖激活配置档 */
+  skill?: { allowedTools?: string[]; model?: string }
 }
 
 /** 测试连接的入参：允许用尚未保存的表单值来测试（id 用于回退到该配置档已存的 key） */

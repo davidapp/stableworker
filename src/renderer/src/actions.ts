@@ -494,15 +494,17 @@ export async function sendChat(text: string): Promise<void> {
   let content = text.trim()
   if (!content || s.streaming || !s.activeProjectId) return
   const generation = ++chatGeneration
+  // 斜杠命令的 frontmatter 元数据（allowed-tools / model），随请求传给主进程生效
+  let skillMeta: { allowedTools?: string[]; model?: string } | undefined
   // 斜杠命令：/name args → 展开 skills/<name>.md 模板后作为普通消息发送
   if (content.startsWith('/')) {
-    const sp = content.indexOf(' ')
-    const args = sp < 0 ? '' : content.slice(sp + 1).trim()
     const r = await window.api.resolveSkill(content)
     if (r.found && r.content) {
+      // 主进程已完成 $参数替换、!`命令` 内嵌执行与 frontmatter 解析
       content = r.content
-        .replaceAll('$ARGUMENTS', args)
-        .replaceAll(/\$(\d+)/g, (_, n: number) => args.split(/\s+/)[Number(n) - 1] ?? '')
+      if (r.meta?.allowedTools?.length || r.meta?.model) {
+        skillMeta = { allowedTools: r.meta.allowedTools, model: r.meta.model }
+      }
     }
   }
   // @文件引用：把消息里的 @路径 读取为 [引用文件：…] 分节附加（历史即所见）
@@ -587,7 +589,7 @@ export async function sendChat(text: string): Promise<void> {
 
   let res: { ok: boolean; error?: string; compacted?: number }
   try {
-    const request = window.api.sendChat({ sessionId, projectId: ap, messages: history, revision: store.getState().activeSessionRevision })
+    const request = window.api.sendChat({ sessionId, projectId: ap, messages: history, revision: store.getState().activeSessionRevision, skill: skillMeta })
     activeChatRequest = request
     try { res = await request } finally { if (activeChatRequest === request) activeChatRequest = null }
   } catch (err) {

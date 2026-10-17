@@ -50,6 +50,7 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **消息级 rewind**：悬停消息"⏪ 回到这里"——删除其后全部消息（会话文件即时落盘）；范围内有文件修改时询问是否一并按检查点逆序回放恢复到该时点（回退前当前状态先拍 restore- 快照可撤销）；planRewind 纯函数 + 测试
 - [x] **microCompact**：上下文估算超上限 55%（auto-compact 0.8 之前更早介入）时，把最近 2 条助手消息之外的旧工具结果清成占位符（保留调用结构 + 100 字符预览，<200 字符的结果不动）；只作用于请求体、幂等、无模型调用；microCompact.ts 纯函数 + 6 测试
 - [x] **设置分层（项目级覆盖）**：批准模式 / 工具开关 / 权限规则可按项目覆盖（config.projectOverrides，按 projectId 存）；resolveEffectiveSettings 纯函数（覆盖 > 全局；权限规则与全局合并而非替换）；chatSend 全链路消费有效值；设置 → 项目覆盖页（三态：继承全局 / 指定值）；resolveEffectiveSettings 合并语义 5 测试；未做：覆盖的导出分享（文件化）、更多设置项分层
+- [x] **Skills frontmatter**：模板支持 description / allowed-tools（触发后的本轮对话只可用列出工具，最终门过滤）/ model（按模型名匹配配置档覆盖激活档）声明；正文支持 !`命令` 内嵌执行（$参数替换后执行，输出就地注入，≤20 个/10s 超时/10k 字符）；Skill 工具与斜杠触发共用展开；设置页列表展示元数据；shared/skillFrontmatter.ts 纯函数 + 6 测试
 - [x] **并行子代理**：一轮全为 task 调用时并发执行（parallelBatches 按上限 4 分批，每批 Promise.allSettled），混合轮次保持串行；每个子代理仍是完整门禁执行（钩子/批准/检查点），进度各挂独立卡片；task 描述已告知模型可并行分派；测试：会话停止/office 重负载用例加 retry 消噪，全量 274/4 skip/0 fail
 - [x] **测试平台适配**：symlink 类测试探测能力不支持时跳过（Windows 需开发者模式）；shell 测试跨平台命令（node 替代 POSIX sleep/while）；killTree 双保险补杀 + taskkill 失败日志；OCR 断言路径分隔符归一——全量 267 通过 / 4 跳过 / 0 失败
 - [ ] **Windows 前台命令中止的孤儿进程**：vitest worker 环境下 cmd 可能在 taskkill 启动前自行退出（报"没有找到进程"），孙进程短暂孤儿化（已加 killTree 双保险缓解）；真实应用未复现，如遇"停不下来"按此排查

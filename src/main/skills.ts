@@ -1,7 +1,10 @@
 import { app, ipcMain } from 'electron'
+import { spawn } from 'node:child_process'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { loadConfig } from './config'
+import { parseSkillFrontmatter, substituteArgs, type SkillFrontmatter } from '../shared/skillFrontmatter'
+import { tokenize } from './mcp'
 import type { SkillMeta } from '../shared/types'
 
 /**
@@ -66,16 +69,73 @@ export async function listSkillNames(): Promise<string[]> {
   return [...new Set([...project, ...global].map((s) => s.name))].sort()
 }
 
-/** 读取 skill 模板并展开参数（斜杠命令与 Skill 工具共用） */
-export async function loadSkillContent(name: string, args: string): Promise<string | null> {
-  const tpl = await readSkill(name)
-  if (tpl == null) return null
-  const positional = args ? args.split(/\s+/) : []
-  return tpl.replaceAll('$ARGUMENTS', args).replaceAll(/\$(\d+)/g, (_, n) => positional[Number(n) - 1] ?? '')
+/** 读取 skill 模板并展开（frontmatter 元数据 + $参数替换 + !`命令` 内嵌执行） */
+export interface LoadedSkill {
+  content: string
+  meta: SkillFrontmatter
 }
 
-/** 解析 /name args → 展开后的 prompt；未命中返回 null */
-export async function resolveSlashCommand(text: string): Promise<string | null> {
+/** 内嵌命令执行上限（防失控） */
+const MAX_EMBEDDED = 20
+const EMBED_TIMEOUT_MS = 10_000
+const MAX_EMBED_OUTPUT = 10_000
+
+async function runEmbeddedCommand(command: string): Promise<string> {
+  return new Promise((resolve) => {
+    const parts = tokenize(command)
+    if (parts.length === 0) {
+      resolve('（命令为空）')
+      return
+    }
+    const child = spawn(parts[0], parts.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    let out = ''
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      if (!child.killed) child.kill()
+    }, EMBED_TIMEOUT_MS)
+    timer.unref?.()
+    child.stdout?.on('data', (d: Buffer) => {
+      if (out.length < MAX_EMBED_OUTPUT) out += d.toString('utf8')
+    })
+    child.stderr?.on('data', (d: Buffer) => {
+      if (out.length < MAX_EMBED_OUTPUT) out += d.toString('utf8')
+    })
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      resolve(`（命令启动失败：${err.message}）`)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      const text = out.trim().slice(0, MAX_EMBED_OUTPUT)
+      resolve(timedOut ? `（命令超时，部分输出：${text}）` : `（退出码 ${code}）\n${text}`)
+    })
+  })
+}
+
+/** 展开模板：$参数替换 → !`命令` 内嵌执行（结果就地注入） */
+async function expandSkillBody(body: string, args: string): Promise<string> {
+  const substituted = substituteArgs(body, args)
+  const matches = [...substituted.matchAll(/!`([^`]+)`/g)].slice(0, MAX_EMBEDDED)
+  if (matches.length === 0) return substituted
+  const results = await Promise.all(matches.map((m) => runEmbeddedCommand(m[1])))
+  let i = 0
+  return substituted.replaceAll(/!`([^`]+)`/g, () => `\n[命令输出] $ ${matches[i][1]}\n${results[i++]}\n`)
+}
+
+/** 读取 skill 模板并展开（斜杠命令与 Skill 工具共用；带 frontmatter 元数据） */
+export async function loadSkillContent(name: string, args: string): Promise<LoadedSkill | null> {
+  const tpl = await readSkill(name)
+  if (tpl == null) return null
+  const { meta, body } = parseSkillFrontmatter(tpl)
+  const content = await expandSkillBody(body, args)
+  return { content, meta }
+}
+
+/** 解析 /name args → 展开后的 prompt + 元数据；未命中返回 null */
+export async function resolveSlashCommand(
+  text: string,
+): Promise<{ content: string; meta: SkillFrontmatter } | null> {
   if (!text.startsWith('/')) return null
   const trimmed = text.slice(1)
   const sp = trimmed.indexOf(' ')
@@ -129,8 +189,8 @@ export function registerSkillHandlers(): void {
     return true
   })
 
-  ipcMain.handle('skills:resolve', async (_e, text: string): Promise<{ found: boolean; content?: string }> => {
+  ipcMain.handle('skills:resolve', async (_e, text: string): Promise<{ found: boolean; content?: string; meta?: SkillFrontmatter }> => {
     const expanded = await resolveSlashCommand(text)
-    return expanded == null ? { found: false } : { found: true, content: expanded }
+    return expanded == null ? { found: false } : { found: true, content: expanded.content, meta: expanded.meta }
   })
 }
