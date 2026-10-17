@@ -48,7 +48,7 @@ export function ContextMeter() {
   const ringC = 2 * Math.PI * ringR
 
   return (
-    <div className="mode-menu-wrap">
+    <div className="mode-menu-wrap align-right">
       <button className="mode-btn context-meter-btn" aria-expanded={open}
         title={hasRatio ? `${t('上下文')} ${fmtPct(pct / 100)}` : t('上下文')}
         onClick={() => setOpen((v) => !v)}>
