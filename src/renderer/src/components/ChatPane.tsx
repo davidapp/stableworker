@@ -144,15 +144,6 @@ export function ChatPane() {
         <span className="header-separator">/</span>
         <span className="chat-header-session">{session?.title ?? t('新会话')}</span>
         <div className="spacer" />
-        {activeSessionId && messages.length > 0 ? (
-          <button
-            className="btn btn-ghost"
-            title="上下文管理：浏览 / 编辑 / 删除消息，管理摘要与压缩（独立窗口）"
-            onClick={() => void window.api.openContextWindow()}
-          >
-            <Icon name="list" size={14} /> {t('上下文')}
-          </button>
-        ) : null}
         <div className="win-controls">
           <button className="win-btn" title={t('最小化')} aria-label={t('最小化')} onClick={() => void window.api.minimizeWindow()}>
             <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor" strokeWidth="1" /></svg>

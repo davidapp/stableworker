@@ -88,6 +88,7 @@ const EN: [string, string][] = [
   ['输出上限', 'Output limit'],
   ['缓存命中率', 'Cache hit rate'],
   ['上下文容量', 'Context capacity'],
+  ['打开上下文管理', 'Open context manager'],
   ['当前会话输入用量', 'Session input usage'],
   // 文件面板
   ['文件', 'Files'],
