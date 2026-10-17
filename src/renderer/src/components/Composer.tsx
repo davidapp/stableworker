@@ -92,7 +92,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           aria-label="消息"
           value={text}
           placeholder={office ? t('描述要完成的工作，或添加资料开始') : t('输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行')}
-          rows={3}
+          rows={2}
           onChange={(e) => {
             setText(e.target.value)
             refreshMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
