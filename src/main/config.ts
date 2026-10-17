@@ -203,7 +203,11 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     sidebarExpanded: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
-    preferences: { language: cfg.preferences?.language ?? 'zh', theme: cfg.preferences?.theme ?? 'dark' },
+    preferences: {
+      language: cfg.preferences?.language ?? 'zh',
+      theme: cfg.preferences?.theme ?? 'dark',
+      officePanelCollapsed: cfg.preferences?.officePanelCollapsed === true,
+    },
   }
 }
 
