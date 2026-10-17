@@ -22,6 +22,8 @@ function BreakdownRow({ color, label, tokens, total }: { color: string; label: s
 export function ContextMeter() {
   const { contextLimit, contextInfo, activeSessionId, activeLlmId, llmProfiles } = useApp()
   const [open, setOpen] = useState(false)
+  // 弹层固定定位坐标（聊天区 overflow:hidden 会裁掉绝对定位弹层，改用视口坐标 + 收进视口）
+  const [pos, setPos] = useState<{ right: number; bottom: number }>({ right: 8, bottom: 8 })
   const [latest, setLatest] = useState<DebugListItem | null>(null)
   const active = llmProfiles.find((p) => p.id === activeLlmId)
 
@@ -51,7 +53,15 @@ export function ContextMeter() {
     <div className="mode-menu-wrap align-right">
       <button className="mode-btn context-meter-btn" aria-expanded={open}
         title={hasRatio ? `${t('上下文')} ${fmtPct(pct / 100)}` : t('上下文')}
-        onClick={() => setOpen((v) => !v)}>
+        onClick={(e) => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          const vw = window.innerWidth
+          setPos({
+            right: Math.max(8, Math.min(vw - rect.right, vw - 340)),
+            bottom: window.innerHeight - rect.top + 8,
+          })
+          setOpen((v) => !v)
+        }}>
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
           <circle cx="8" cy="8" r={ringR} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" />
           {hasRatio ? <circle cx="8" cy="8" r={ringR} fill="none" stroke={`var(--${tone})`} strokeWidth="2.5"
@@ -61,7 +71,7 @@ export function ContextMeter() {
       {open ? (
         <>
           <div className="popover-backdrop" onClick={() => setOpen(false)} />
-          <div className="mode-menu ctx-popover">
+          <div className="mode-menu ctx-popover" style={{ position: 'fixed', right: pos.right, bottom: pos.bottom, left: 'auto' }}>
             <div className="ctx-title-row">
               <span>{t('已用')}</span>
               <span className="ctx-value">{contextTokens != null ? `${fmtNum(contextTokens)} / ${contextLimit ? fmtNum(contextLimit) : '?'}` : '—'}</span>

@@ -48,6 +48,9 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **调试面板增强**：列表"加载更多"（每次 +25，默认 10 上限 500）、按模型过滤已加载记录、导出单条记录为格式化 JSON（保存对话框，密钥保持脱敏）
 - [x] **Hooks 生命周期钩子（v1）**：preToolUse（exit 2 或 stdout JSON block 阻止 + 理由；approve 跳过批准门；updatedInput 改写入参）/ postToolUse（additionalContext 追加给模型）/ stop（副作用）三事件 × command 类型；stdin 收 { sessionId, toolName, toolInput, toolResult }；匹配器支持精确名与前缀通配；崩溃/超时 fail-open（日志可查）；注入点在 executeToolWithGates（主循环与子代理共用）；设置 → Hooks 页管理；未做：prompt/agent/http 类型、更多事件、Stop 阻止继续
 - [x] **分层记忆（对齐 CLAUDE.md 层级模型）**：全局（userData/AGENTS.md）→ 项目父目录逐级 → 项目 AGENTS.md → 项目 AGENTS.local.md，近处优先注入；整行 @相对路径 引用（嵌套/深度≤3/环引用安全/预算受限）；设置 → 记忆页可视化管理三层；memory 工具（跨会话记忆目录 userData/memory/<项目>-<hash>/，read/write/delete/list，路径越界防护，索引 MEMORY.md）；系统提示引导模型主动记录偏好/决定/踩坑；未做：自动记忆检索召回（grep 式）、记忆跨项目共享层
+- [x] **MCP 资源双工具**：mcp_list_resources（可按服务器过滤）/ mcp_read_resource——模型可列出并读取已连接 MCP 服务器的 resources（此前只有界面浏览）；kind=read、无需批准
+- [x] **Plan 工具化**：enter_plan_mode（模型主动进入规划模式，全局批准模式联动 + 界面即时同步）/ exit_plan_mode（计划呈给用户批准，批准自动切回执行模式，拒绝则留在规划）；经 config:updated 广播同步界面；仅在编程模式注册
+- [x] **WebSearch**：DeepSeek Search API（POST /v1/tools/search，同 API Key，按 baseURL 含 deepseek 匹配配置档）；query 校验（1–128 字符/ site: 语法）、count 1–50、结果含权威性/日期/摘要、总量截断；办公模式白名单同享；测试 formatSearchResults/validateSearchQuery
 - [x] **@文件引用**：输入框 @ 触发项目文件补全（递归收集、忽略 node_modules/.git/二进制，文件名前缀命中优先，≤30 条，5s 缓存）；发送时把 @路径 读为 [引用文件：…] 分节附加进消息（安全解析在项目内，单文件 20k/总预算 60k，缺失/越界标注）；↑↓/Enter/Tab/Esc 键盘导航；未做：粘贴图片输入（需多模态模型，deepseek-chat 不支持图像，待接入视觉配置）
 - [x] **消息级 rewind**：悬停消息"⏪ 回到这里"——删除其后全部消息（会话文件即时落盘）；范围内有文件修改时询问是否一并按检查点逆序回放恢复到该时点（回退前当前状态先拍 restore- 快照可撤销）；planRewind 纯函数 + 测试
 - [x] **microCompact**：上下文估算超上限 55%（auto-compact 0.8 之前更早介入）时，把最近 2 条助手消息之外的旧工具结果清成占位符（保留调用结构 + 100 字符预览，<200 字符的结果不动）；只作用于请求体、幂等、无模型调用；microCompact.ts 纯函数 + 6 测试
