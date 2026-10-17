@@ -34,6 +34,37 @@
   --glow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/* 明亮主题：仅覆盖颜色变量与个别深色硬编码，结构样式全部复用 */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f7f7f8;
+  --panel: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #ececee;
+  --surface-3: #e0e0e3;
+  --border: #d9d9de;
+  --border-subtle: #e7e7ea;
+  --border-strong: #b9b9c0;
+  --text: #1c1c1f;
+  --text-dim: #5c5c66;
+  --text-faint: #8a8a94;
+  --accent: #5e6ad2;
+  --accent-hover: #4f5bbd;
+  --accent-strong: #3d49b8;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, #ffffff);
+  --ok: #2e8a55;
+  --warn: #b06f14;
+  --danger: #cc3d36;
+  --ok-soft: color-mix(in srgb, var(--ok) 12%, #ffffff);
+  --warn-soft: color-mix(in srgb, var(--warn) 12%, #ffffff);
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, #ffffff);
+}
+
+/* 明亮主题下的深色硬编码修正（原为暗底上的白色叠加） */
+:root[data-theme='light'] .message.user .bubble { border-color: rgba(0, 0, 0, 0.1); }
+:root[data-theme='light'] .sidebar-section-header,
+:root[data-theme='light'] .tool-card-head { background: rgba(0, 0, 0, 0.035); }
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -291,6 +322,7 @@ body {
 }
 
 .sidebar-footer {
+  position: relative;
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
@@ -476,6 +508,43 @@ body {
 .msg-rewind-btn:hover {
   color: var(--text-1, #e6e8eb);
   border-color: var(--text-2, #9aa0aa);
+}
+
+/* 界面选项菜单（侧栏页脚弹出：语言 / 主题） */
+.appearance-menu {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.appearance-menu-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 4px 0;
+}
+
+.appearance-menu-row {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.appearance-menu-row label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
 }
 
 .bubble {

@@ -2,15 +2,17 @@ import { useState } from 'react'
 import type { SessionMeta } from '../../../shared/types'
 import { useApp } from '../store'
 import * as actions from '../actions'
+import { t } from '../i18n'
 import { Icon } from './Icon'
 
 /** 侧栏：项目树。项目可展开出会话叶子；叶子右键可重命名/删除；项目行上的 ＋ 新建会话 */
 export function Sidebar() {
-  const { projects, activeProjectId, activeSessionId, sessionsByProject, expandedProjects, taskMode } = useApp()
+  const { projects, activeProjectId, activeSessionId, sessionsByProject, expandedProjects, taskMode, preferences } = useApp()
   const office = taskMode === 'office'
   const visibleProjects = projects.filter((p) => office ? p.id === 'office-workspace' : p.id !== 'office-workspace')
   const [menu, setMenu] = useState<{ x: number; y: number; projectId: string; session: SessionMeta } | null>(null)
   const [renaming, setRenaming] = useState<{ projectId: string; id: string; value: string } | null>(null)
+  const [appearanceOpen, setAppearanceOpen] = useState(false)
 
   const commitRename = (): void => {
     if (!renaming) return
@@ -22,13 +24,13 @@ export function Sidebar() {
     <aside className="sidebar" aria-label="工作区导航">
       <div className="sidebar-brand"><span className="brand-mark"><Icon name="logo" size={18} /></span><span>StableWorker</span></div>
       <div className="task-mode-switch" role="group" aria-label="工作模式">
-        <button aria-pressed={!office} className={!office ? 'active' : ''} onClick={() => void actions.switchTaskMode('coding')}><Icon name="code" size={14} /> 编程</button>
-        <button aria-pressed={office} className={office ? 'active' : ''} onClick={() => void actions.switchTaskMode('office')}><Icon name="briefcase" size={14} /> 办公</button>
+        <button aria-pressed={!office} className={!office ? 'active' : ''} onClick={() => void actions.switchTaskMode('coding')}><Icon name="code" size={14} /> {t('编程')}</button>
+        <button aria-pressed={office} className={office ? 'active' : ''} onClick={() => void actions.switchTaskMode('office')}><Icon name="briefcase" size={14} /> {t('办公')}</button>
       </div>
       <button className="btn btn-block" onClick={() => void (office ? actions.newOfficeTask() : actions.addProject())}>
-        <Icon name="plus" /> {office ? '新建办公任务' : '新建项目'}
+        <Icon name="plus" /> {t(office ? '新建办公任务' : '新建项目')}
       </button>
-      <div className="sidebar-section-label">{office ? '办公任务' : '工作区'} <span>{office ? (sessionsByProject['office-workspace'] ?? []).length : visibleProjects.length}</span></div>
+      <div className="sidebar-section-label">{t(office ? '办公任务' : '工作区')} <span>{office ? (sessionsByProject['office-workspace'] ?? []).length : visibleProjects.length}</span></div>
       <ul className="project-list">
         {visibleProjects.map((p) => {
           const expanded = office || (expandedProjects[p.id] ?? false)
@@ -114,13 +116,52 @@ export function Sidebar() {
             </li>
           )
         })}
-        {!office && visibleProjects.length === 0 ? <li className="sidebar-empty"><Icon name="folder" size={24} /><span>还没有工作区</span><small>添加本地目录，开始协作</small></li> : null}
+        {!office && visibleProjects.length === 0 ? <li className="sidebar-empty"><Icon name="folder" size={24} /><span>{t('还没有工作区')}</span><small>{t('添加本地目录，开始协作')}</small></li> : null}
       </ul>
 
       <div className="sidebar-footer">
+        {appearanceOpen ? (
+          <div className="appearance-menu">
+            <div className="appearance-menu-title"><Icon name="globe" size={13} /> {t('界面语言')}</div>
+            <div className="appearance-menu-row">
+              {([['zh', '中文'], ['en', 'English']] as const).map(([lang, label]) => (
+                <label key={lang}>
+                  <input
+                    type="radio"
+                    checked={preferences.language === lang}
+                    onChange={() => void actions.setPreferences({ language: lang })}
+                  />{' '}
+                  {label}
+                </label>
+              ))}
+            </div>
+            <div className="appearance-menu-title"><Icon name="sun" size={13} /> {t('主题')}</div>
+            <div className="appearance-menu-row">
+              {([['dark', t('暗黑')], ['light', t('明亮')]] as const).map(([th, label]) => (
+                <label key={th}>
+                  <input
+                    type="radio"
+                    checked={preferences.theme === th}
+                    onChange={() => void actions.setPreferences({ theme: th })}
+                  />{' '}
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="sidebar-footer-actions">
-          <button className="icon-btn-lg" title="设置" onClick={() => actions.openSettings()}>
-            <Icon name="settings" /> <span>设置</span>
+          <button className="icon-btn-lg" title={t('设置')} onClick={() => actions.openSettings()}>
+            <Icon name="settings" /> <span>{t('设置')}</span>
+          </button>
+          <button
+            className="icon-btn-lg"
+            title={t('界面')}
+            aria-label={t('界面')}
+            style={appearanceOpen ? { color: 'var(--accent-strong)' } : undefined}
+            onClick={() => setAppearanceOpen((open) => !open)}
+          >
+            <Icon name="globe" />
           </button>
           <button className="icon-btn-lg" title="搜索所有会话" aria-label="搜索所有会话" onClick={() => void window.api.openSearchWindow()}>
             <Icon name="search" />
@@ -135,6 +176,8 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+
+      {appearanceOpen ? <div className="popover-backdrop" onClick={() => setAppearanceOpen(false)} /> : null}
 
       {/* 会话叶子的右键菜单 */}
       {menu ? (
@@ -155,7 +198,7 @@ export function Sidebar() {
                 setMenu(null)
               }}
             >
-              <Icon name="edit" size={14} /> 重命名
+              <Icon name="edit" size={14} /> {t('重命名')}
             </button>
             <button
               className="ctx-menu-item danger"

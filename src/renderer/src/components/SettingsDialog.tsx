@@ -13,6 +13,7 @@ import { HooksPage } from './settings/HooksPage'
 import { MemoryPage } from './settings/MemoryPage'
 import { OverridesPage } from './settings/OverridesPage'
 import { Icon } from './Icon'
+import { t } from '../i18n'
 
 /**
  * 统一设置对话框：左侧导航 + 右侧页面。
@@ -88,7 +89,7 @@ export function SettingsDialog() {
         <aside className="settings-nav">
           <div className="settings-nav-header">
             <Icon name="settings" size={18} />
-            <span className="settings-nav-title" id={titleId}>设置</span>
+            <span className="settings-nav-title" id={titleId}>{t('设置')}</span>
           </div>
           <p className="settings-nav-subtitle" id={descriptionId}>模型、工具与工作区偏好</p>
           <nav className="settings-nav-list" aria-label="设置分类">
@@ -100,7 +101,7 @@ export function SettingsDialog() {
                 onClick={() => setActive(p.id)}
               >
                 <Icon name={p.icon} size={16} />
-                {p.label}
+                {t(p.label)}
               </button>
             ))}
           </nav>
@@ -110,7 +111,7 @@ export function SettingsDialog() {
 
         <section className="settings-content">
           <div className="settings-content-header">
-            <span>偏好设置</span>
+            <span>{t('偏好设置')}</span>
             <button className="icon-btn" aria-label="关闭设置" title="关闭设置 (Esc)" onClick={() => actions.closeSettings()}>
               <Icon name="close" size={18} />
             </button>

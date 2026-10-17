@@ -7,6 +7,7 @@ import { ThinkingEffortMenu } from './ThinkingEffortMenu'
 import { ContextMeter } from './ContextMeter'
 import { CaretIcon } from './CaretIcon'
 import { Icon } from './Icon'
+import { t } from '../i18n'
 
 export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
   const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId } = useApp()
@@ -55,7 +56,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
     if ((!content && attachments.length === 0) || disabled) return
     setText('')
     setMention(null)
-    if (onSend) onSend(content || '请阅读这些资料，并整理主要内容。')
+    if (onSend) onSend(content || t('请阅读这些资料，并整理主要内容。'))
     else void actions.sendChat(content)
   }
 
@@ -90,7 +91,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           ref={textareaRef}
           aria-label="消息"
           value={text}
-          placeholder={office ? '描述要完成的工作，或添加资料开始' : '输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行'}
+          placeholder={office ? t('描述要完成的工作，或添加资料开始') : t('输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行')}
           rows={3}
           onChange={(e) => {
             setText(e.target.value)
@@ -128,7 +129,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           }}
         />
         <div className="composer-row">
-          {office && <button className="icon-btn-lg" title="添加办公资料" disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
+          {office && <button className="icon-btn-lg" title={t('添加办公资料')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
           <ApprovalModeMenu />
           <div className="spacer" />
           <ContextMeter />
@@ -155,7 +156,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           </div>
           <ThinkingEffortMenu />
         {disabled ? (
-          <button className="composer-send stop" title="停止生成" onClick={() => void actions.stopChat()}>
+          <button className="composer-send stop" title={t('停止生成')} onClick={() => void actions.stopChat()}>
             <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor" />
             </svg>
@@ -185,7 +186,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
         )}
         </div>
       </div>
-      <div className="composer-hint"><span>{office ? '资料仅导入当前任务 · 生成结果可预览和打开' : '结合项目文件与你协作'}</span><span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span></div>
+      <div className="composer-hint"><span>{office ? t('资料仅导入当前任务 · 生成结果可预览和打开') : t('结合项目文件与你协作')}</span><span><kbd>Enter</kbd> 发送 · <kbd>Shift + Enter</kbd> 换行</span></div>
     </footer>
   )
 }

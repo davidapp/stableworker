@@ -75,6 +75,9 @@ const api = {
   /** 项目级设置覆盖（整体替换该项目的覆盖对象；空对象 = 完全继承全局） */
   setProjectOverrides: (projectId: string, overrides: import('../shared/types').ProjectOverrides): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setProjectOverrides', projectId, overrides),
+  /** 界面偏好（语言 / 主题；局部合并，主题同步原生） */
+  setPreferences: (patch: { language?: 'zh' | 'en'; theme?: 'dark' | 'light' }): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setPreferences', patch),
   /** 分层记忆：查看各层（全局 → 父目录 → 项目 → 项目本地）原文 */
   getMemoryLayers: (projectId: string): Promise<{ layers: { label: string; path: string; raw: string | null }[] }> =>
     ipcRenderer.invoke('memory:getLayers', projectId),

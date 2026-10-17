@@ -1,6 +1,6 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
-import { registerConfigHandlers } from './config'
+import { registerConfigHandlers, loadConfig } from './config'
 import { registerProjectHandlers } from './projects'
 import { registerSessionHandlers } from './sessions'
 import { registerChatHandlers } from './llm'
@@ -73,7 +73,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  nativeTheme.themeSource = 'dark'
+  nativeTheme.themeSource = (await loadConfig()).preferences?.theme === 'light' ? 'light' : 'dark'
   registerConfigHandlers()
   registerProjectHandlers()
   registerSessionHandlers()

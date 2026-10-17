@@ -12,6 +12,7 @@ import type {
   SubagentTypeConfig,
   HookConfig,
   ProjectOverrides,
+  Preferences,
   TodoItem,
 } from '../../shared/types'
 
@@ -62,6 +63,8 @@ export interface AppState {
   hooks: HookConfig[]
   /** 项目级设置覆盖（projectId → 覆盖项） */
   projectOverrides: Record<string, ProjectOverrides>
+  /** 界面偏好（语言 / 主题） */
+  preferences: Preferences
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
   contextInfo: ModelContextInfo | null
@@ -120,6 +123,7 @@ export const store = createStore<AppState>({
   subagentTypes: [],
   hooks: [],
   projectOverrides: {},
+  preferences: { language: 'zh', theme: 'dark' },
   contextLimit: 0,
   contextInfo: null,
   toolSwitches: {},

@@ -1,4 +1,5 @@
 import { store } from './store'
+import { setLanguage } from './i18n'
 import { sameModelProfile, selectContextExchange } from '../../shared/contextUsage'
 import type {
   ApprovalMode,
@@ -13,6 +14,7 @@ import type {
   ProjectInfo,
   Session,
   SessionMeta,
+  Preferences,
   ToolUseBlock,
   TaskMode,
 } from '../../shared/types'
@@ -44,7 +46,22 @@ function applyConfig(cfg: ConfigView): void {
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
     projectOverrides: cfg.projectOverrides ?? {},
+    preferences: cfg.preferences ?? { language: 'zh', theme: 'dark' },
   })
+  applyPreferences(cfg.preferences ?? { language: 'zh', theme: 'dark' })
+}
+
+/** 应用界面偏好：主题切 data-theme；语言切 i18n 模块（组件经 store 变化重渲染） */
+function applyPreferences(prefs: Preferences): void {
+  // Node 测试环境无 document（session-renderer 等直接调用 applyConfig），跳过 DOM 副作用
+  if (typeof document !== 'undefined') document.documentElement.dataset.theme = prefs.theme
+  setLanguage(prefs.language)
+}
+
+export async function setPreferences(patch: Partial<Preferences>): Promise<void> {
+  const merged = { ...store.getState().preferences, ...patch }
+  const cfg = await window.api.setPreferences(merged)
+  applyConfig(cfg)
 }
 
 function toMeta(session: Session): SessionMeta {
@@ -105,6 +122,7 @@ export async function ensureOfficeSession(): Promise<string> {
 export async function boot(): Promise<void> {
   const cfg = await window.api.getConfig()
   applyConfig(cfg)
+  applyPreferences(cfg.preferences)
   store.setState({ taskMode: cfg.activeProjectId === 'office-workspace' ? 'office' : 'coding' })
   const map = await reloadAllSessions(cfg.projects)
   const ap = cfg.activeProjectId

@@ -10,6 +10,7 @@ import { ToolCallCard } from './ToolCallCard'
 import { TodoPanel } from './TodoPanel'
 import { copyText } from '../clipboard'
 import { Icon } from './Icon'
+import { t } from '../i18n'
 import { OfficePanel } from './OfficePanel'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
@@ -144,7 +145,7 @@ export function ChatPane() {
             title="上下文管理：浏览 / 编辑 / 删除消息，管理摘要与压缩（独立窗口）"
             onClick={() => void window.api.openContextWindow()}
           >
-            <Icon name="list" size={14} /> 上下文
+            <Icon name="list" size={14} /> {t('上下文')}
           </button>
         ) : null}
       </header>
@@ -192,9 +193,9 @@ export function ChatPane() {
           <span className="empty-state-icon"><Icon name={office ? 'briefcase' : 'chat'} size={28} /></span>
           <span className="empty-state-eyebrow">{office ? '你的 AI 办公助手' : project.name}</span>
           <h2>{office ? '把资料变成工作成果' : '今天一起完成什么？'}</h2>
-          <p>{office ? '整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。' : '提问、排查问题或描述一个想法，助手会结合项目文件与你协作。'}</p>
+          <p>{office ? t('整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。') : t('提问、排查问题或描述一个想法，助手会结合项目文件与你协作。')}</p>
           <div className="conversation-starters">
-            {(office ? ['生成一份 Word 项目周报模板', '制作一个 Excel 费用汇总表', '制作一份三页 PPT 工作总结'] : ['介绍这个项目的结构', '检查代码中潜在的问题', '帮我规划下一步开发']).map((prompt) => (
+            {(office ? [t('生成一份 Word 项目周报模板'), t('制作一个 Excel 费用汇总表'), t('制作一份三页 PPT 工作总结')] : [t('介绍这个项目的结构'), t('检查代码中潜在的问题'), t('帮我规划下一步开发')]).map((prompt) => (
               <button key={prompt} className="btn btn-ghost" onClick={() => void actions.sendChat(prompt)}>{prompt}<Icon name="arrowUp" size={14} /></button>
             ))}
           </div>
@@ -213,7 +214,7 @@ export function ChatPane() {
                       .map((b) => b.text)
                       .join('\n')
                   ) : m.blocks.length === 0 ? (
-                    m.streaming ? <span className="thinking">{statusText || '思考中…'}</span> : null
+                    m.streaming ? <span className="thinking">{statusText || t('思考中…')}</span> : null
                   ) : (
                     m.blocks.map((b, i) => {
                       if (b.type === 'reasoning') {
@@ -265,14 +266,14 @@ export function ChatPane() {
                         title={`删除这条之后的 ${messages.length - idx - 1} 条消息，回退到这里`}
                         onClick={() => void actions.rewindToMessage(m.id)}
                       >
-                        ⏪ 回到这里
+                        ⏪ {t('回到这里')}
                       </button>
                       <button
                         className="msg-rewind-btn"
                         title="复制这条及之前的消息为一个新会话（原会话不变）"
                         onClick={() => void actions.forkFromMessage(m.id)}
                       >
-                        🍴 从这里分叉
+                        🍴 {t('从这里分叉')}
                       </button>
                     </div>
                   ) : (
@@ -283,7 +284,7 @@ export function ChatPane() {
                           title="复制全部消息为一个新会话（原会话不变）"
                           onClick={() => void actions.forkFromMessage(m.id)}
                         >
-                          🍴 从这里分叉
+                          🍴 {t('从这里分叉')}
                         </button>
                       </div>
                     ) : null
@@ -293,7 +294,7 @@ export function ChatPane() {
             ))}
           </div>
           {showJumpButton ? (
-            <button className="jump-bottom" title="滚到最下面" onClick={jumpToBottom}>
+            <button className="jump-bottom" title={t('滚到最下面')} onClick={jumpToBottom}>
               <Icon name="arrowDown" />
             </button>
           ) : null}

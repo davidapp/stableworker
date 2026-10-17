@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
-import type { ApprovalMode, ConfigView, FeatureEntry, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, ProjectOverrides, SubagentTypeConfig } from '../shared/types'
+import { nativeTheme } from 'electron'
+import type { ApprovalMode, ConfigView, FeatureEntry, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, ProjectOverrides, Preferences, SubagentTypeConfig } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -81,6 +82,7 @@ interface StoredConfig {
   subagentTypes?: SubagentTypeConfig[]
   hooks?: HookConfig[]
   projectOverrides?: Record<string, ProjectOverrides>
+  preferences?: Partial<Preferences>
 }
 
 let cache: StoredConfig | null = null
@@ -210,6 +212,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     subagentTypes: cfg.subagentTypes ?? [],
     hooks: cfg.hooks ?? [],
     projectOverrides: cfg.projectOverrides ?? {},
+    preferences: { language: cfg.preferences?.language ?? 'zh', theme: cfg.preferences?.theme ?? 'dark' },
   }
 }
 
@@ -375,6 +378,19 @@ export function registerConfigHandlers(): void {
       }
       if (Object.keys(clean).length === 0) delete cfg.projectOverrides[projectId]
       else cfg.projectOverrides[projectId] = clean
+      return saveConfig(cfg)
+    },
+  )
+
+  // 界面偏好（局部合并）；主题切换同步原生主题（对话框 / 原生滚动条跟随）
+  ipcMain.handle(
+    'config:setPreferences',
+    async (_e, patch: Partial<Preferences>): Promise<ConfigView> => {
+      const cfg = await loadConfig()
+      const language: Preferences['language'] = patch.language === 'en' ? 'en' : 'zh'
+      const theme: Preferences['theme'] = patch.theme === 'light' ? 'light' : patch.theme === 'dark' ? 'dark' : 'dark'
+      cfg.preferences = { language, theme }
+      nativeTheme.themeSource = theme
       return saveConfig(cfg)
     },
   )
