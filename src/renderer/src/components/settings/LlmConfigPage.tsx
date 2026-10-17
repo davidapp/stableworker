@@ -24,7 +24,7 @@ const PRESETS: ProviderPreset[] = [
     provider: 'openai-compatible',
     baseURL: 'https://api.deepseek.com/',
     models: ['deepseek-flash', 'deepseek-v4-pro'],
-    docsURL: 'https://api-docs.deepseek.com/zh-cn/quick_start',
+    docsURL: 'https://api-docs.deepseek.com/',
   },
   {
     id: 'zhipu',
