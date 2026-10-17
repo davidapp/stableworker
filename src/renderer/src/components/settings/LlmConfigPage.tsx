@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../../store'
 import * as actions from '../../actions'
-import type { LLMProfileView, ProviderType } from '../../../../shared/types'
+import type { BalanceResult, LLMProfileView, ProviderType } from '../../../../shared/types'
 import { Icon } from '../Icon'
 import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
 
@@ -204,6 +204,17 @@ export function LlmConfigPage() {
       }
     } finally {
       setFetchingModels(false)
+    }
+  }
+
+  const [balance, setBalance] = useState<BalanceResult | null>(null)
+  const [balanceBusy, setBalanceBusy] = useState(false)
+  const queryBalance = async (): Promise<void> => {
+    setBalanceBusy(true)
+    try {
+      setBalance(await window.api.queryBalance())
+    } finally {
+      setBalanceBusy(false)
     }
   }
 
@@ -432,46 +443,64 @@ export function LlmConfigPage() {
       {llmProfiles.length === 0 ? (
         <div className="profile-empty">还没有模型配置。添加服务商与 API Key，即可开始对话。</div>
       ) : (
-        <div className="profile-list">
-          {llmProfiles.map((p) => (
-            <div key={p.id} className={`profile-row ${p.id === activeLlmId ? 'active' : ''}`}>
-              <div className="profile-info">
-                <span className="profile-name">
-                  {p.name}
-                  {p.id === activeLlmId ? <span className="status-line status-success"><span className="status-dot" />使用中</span> : null}
-                </span>
-                <small>
-                  {p.provider === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'} · {p.model || '(未设模型)'} ·{' '}
-                  {p.hasApiKey ? `密钥 ${p.apiKeyHint}` : '未设密钥'}
-                </small>
-                <small>
-                  上下文：{p.contextInfo ? `${p.contextInfo.contextWindow.toLocaleString()} tokens · ${p.contextInfo.source === 'api' ? '服务元数据' : p.contextInfo.source === 'manual' ? '手动配置' : '官方文档'}` : '上限未确认'}
-                </small>
-              </div>
-              <div className="profile-actions">
-                <button className="btn" disabled={refreshingContext !== null} onClick={async () => {
-                  setRefreshingContext(p.id)
-                  const result = await actions.refreshModelContext(p.id)
-                  setContextNotice({ tone: result.ok ? 'success' : 'warning', text: result.message })
-                  setRefreshingContext(null)
-                }}>
-                  <Icon name="refresh" size={14} />{refreshingContext === p.id ? '获取中…' : '获取容量'}
-                </button>
-                {p.id !== activeLlmId ? (
-                  <button className="btn" onClick={() => void actions.setActiveLlm(p.id)}>
-                    使用
+        <>
+          <div className="profile-list">
+            {llmProfiles.map((p) => (
+              <div key={p.id} className={`profile-row ${p.id === activeLlmId ? 'active' : ''}`}>
+                <div className="profile-info">
+                  <span className="profile-name">
+                    {p.name}
+                    {p.id === activeLlmId ? <span className="status-line status-success"><span className="status-dot" />使用中</span> : null}
+                  </span>
+                  <small>
+                    {p.provider === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'} · {p.model || '(未设模型)'} ·{' '}
+                    {p.hasApiKey ? `密钥 ${p.apiKeyHint}` : '未设密钥'}
+                  </small>
+                  <small>
+                    上下文：{p.contextInfo ? `${p.contextInfo.contextWindow.toLocaleString()} tokens · ${p.contextInfo.source === 'api' ? '服务元数据' : p.contextInfo.source === 'manual' ? '手动配置' : '官方文档'}` : '上限未确认'}
+                  </small>
+                </div>
+                <div className="profile-actions">
+                  <button className="btn" disabled={refreshingContext !== null} onClick={async () => {
+                    setRefreshingContext(p.id)
+                    const result = await actions.refreshModelContext(p.id)
+                    setContextNotice({ tone: result.ok ? 'success' : 'warning', text: result.message })
+                    setRefreshingContext(null)
+                  }}>
+                    <Icon name="refresh" size={14} />{refreshingContext === p.id ? '获取中…' : '获取容量'}
                   </button>
-                ) : null}
-                <button className="btn" onClick={() => startEdit(p)}>
-                  <Icon name="edit" size={14} />编辑
-                </button>
-                <button className="btn btn-danger-ghost" onClick={() => void remove(p)}>
-                  <Icon name="trash" size={14} />删除
-                </button>
+                  {p.id !== activeLlmId ? (
+                    <button className="btn" onClick={() => void actions.setActiveLlm(p.id)}>
+                      使用
+                    </button>
+                  ) : null}
+                  <button className="btn" onClick={() => startEdit(p)}>
+                    <Icon name="edit" size={14} />编辑
+                  </button>
+                  <button className="btn btn-danger-ghost" onClick={() => void remove(p)}>
+                    <Icon name="trash" size={14} />删除
+                  </button>
+                </div>
               </div>
+            ))}
+          </div>
+
+          <div className="ctx-title-row" style={{ margin: '14px 0 8px' }}>
+            <span>API Key 余额（使用中配置档）</span>
+            <button className="btn" disabled={balanceBusy} onClick={() => void queryBalance()}>
+              <Icon name="key" size={14} />
+              {balanceBusy ? '查询中…' : '查询'}
+            </button>
+          </div>
+          {balance ? (
+            <div className="saved-hint" role="status">
+              <Icon name={balance.ok ? 'check' : 'warning'} size={14} />
+              {balance.ok
+                ? `可用：${balance.currency === 'USD' ? '$' : balance.currency === 'CNY' ? '¥' : ''}${balance.totalBalance ?? '?'}${balance.currency === 'CNY' ? '（人民币）' : ''}${balance.grantedBalance && balance.grantedBalance !== '0' ? ` · 赠送 ${balance.grantedBalance}` : ''}${balance.isAvailable === false ? ' · 账户不可用' : ''}`
+                : balance.error ?? '查询失败'}
             </div>
-          ))}
-        </div>
+          ) : null}
+        </>
       )}
 
       <div className="settings-page-actions">

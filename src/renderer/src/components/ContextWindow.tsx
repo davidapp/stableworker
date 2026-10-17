@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import type { BalanceResult, ChatMessage, ContextInfo } from '../../../shared/types'
+import type { ChatMessage, ContextInfo } from '../../../shared/types'
 import { copyText } from '../clipboard'
 import { Icon } from './Icon'
 
@@ -47,7 +47,6 @@ export function ContextWindow() {
   const [missing, setMissing] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [info, setInfo] = useState<ContextInfo | null>(null)
-  const [balance, setBalance] = useState<BalanceResult | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [editText, setEditText] = useState('')
@@ -228,12 +227,6 @@ export function ContextWindow() {
     })
   }
 
-  const queryBalance = async (): Promise<void> => {
-    await run('查询余额', async () => {
-      setBalance(await window.api.queryBalance())
-    })
-  }
-
   if (missing) {
     return (
       <div className="utility-window ctx-window">
@@ -361,21 +354,6 @@ export function ContextWindow() {
                 提示：在左侧勾选两条以上消息，可把该范围压缩成一条摘要消息（整段替换，保持工具调用配对）。
               </div>
 
-              <div className="ctx-title-row ctx-section-spaced">
-                <span>API Key 余额</span>
-                <button className="btn" disabled={busy !== null} onClick={() => void queryBalance()}>
-                  <Icon name="key" />
-                  {busy === '查询余额' ? '查询中…' : '查询'}
-                </button>
-              </div>
-              {balance ? (
-                <div className={`ctx-value ctx-balance result-status ${balance.ok ? 'success' : 'error'}`} role="status">
-                  <Icon name={balance.ok ? 'check' : 'warning'} />
-                  {balance.ok
-                    ? `可用：${balance.currency === 'USD' ? '$' : balance.currency === 'CNY' ? '¥' : ''}${balance.totalBalance ?? '?'}${balance.currency === 'CNY' ? '（人民币）' : ''}${balance.grantedBalance && balance.grantedBalance !== '0' ? ` · 赠送 ${balance.grantedBalance}` : ''}${balance.isAvailable === false ? ' · 账户不可用' : ''}`
-                    : balance.error ?? '查询失败'}
-                </div>
-              ) : null}
             </>
           ) : (
             <>
