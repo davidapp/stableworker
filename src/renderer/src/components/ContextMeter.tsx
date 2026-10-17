@@ -82,6 +82,16 @@ export function ContextMeter() {
                 <span className="ctx-value">{fmtNum(contextInfo.maxOutputTokens)}</span>
               </div>
             ) : null}
+            <button
+              className="btn"
+              style={{ width: '100%', marginTop: 10 }}
+              onClick={() => {
+                setOpen(false)
+                void window.api.openContextWindow()
+              }}
+            >
+              {t('打开上下文管理')}
+            </button>
             {breakdown ? (
               <>
                 <div className="ctx-divider" />
