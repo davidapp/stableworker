@@ -346,6 +346,7 @@ body {
 
 .chat-header {
   height: 48px;
+  -webkit-app-region: drag; /* 无原生标题栏：头部整条拖拽移动窗口（交互元素下方豁免） */
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -508,6 +509,44 @@ body {
 .msg-rewind-btn:hover {
   color: var(--text-1, #e6e8eb);
   border-color: var(--text-2, #9aa0aa);
+}
+
+/* 自定义窗口控制（聊天头部右上角：最小化 / 最大化 / 关闭） */
+.chat-header button,
+.chat-header a,
+.chat-header input,
+.chat-header select {
+  -webkit-app-region: no-drag;
+}
+
+.win-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+.win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.win-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.win-btn.win-close:hover {
+  background: var(--danger);
+  color: #fff;
 }
 
 /* 界面选项菜单（侧栏页脚弹出：语言 / 主题） */
@@ -2249,7 +2288,8 @@ button:disabled { cursor: not-allowed; }
 .btn-danger:hover:enabled { background: var(--danger); border-color: var(--danger); }
 .btn:disabled:hover { border-color: var(--border); background: var(--surface-2); }
 .btn-primary:disabled:hover { background: var(--accent); border-color: var(--accent); }
-.sidebar-brand { height: 48px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.sidebar-brand {
+  -webkit-app-region: drag; height: 48px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
 .brand-mark { display: flex; color: var(--accent-strong); }
 .sidebar-section-label { display: flex; justify-content: space-between; padding: 16px 6px 4px; font-size: 11px; font-weight: 500; color: var(--text-faint); }
 .sidebar-section-label span { font-variant-numeric: tabular-nums; }

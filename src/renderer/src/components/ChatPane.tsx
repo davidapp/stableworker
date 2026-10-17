@@ -54,6 +54,9 @@ export function ChatPane() {
   const listRef = useRef<HTMLDivElement>(null)
   const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
+  // 窗口最大化状态（隐藏标题栏的自定义窗口控制按钮切换图标用）
+  const [maximized, setMaximized] = useState(false)
+  useEffect(() => window.api.onMaximizeChange(setMaximized), [])
   const [attachments, setAttachments] = useState<OfficeFile[]>([])
   const [fileRefresh, setFileRefresh] = useState(0)
   const [importError, setImportError] = useState('')
@@ -148,6 +151,21 @@ export function ChatPane() {
             <Icon name="list" size={14} /> {t('上下文')}
           </button>
         ) : null}
+        <div className="win-controls">
+          <button className="win-btn" title={t('最小化')} aria-label={t('最小化')} onClick={() => void window.api.minimizeWindow()}>
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor" strokeWidth="1" /></svg>
+          </button>
+          <button className="win-btn" title={t('最大化')} aria-label={t('最大化')} onClick={() => void window.api.maximizeToggleWindow()}>
+            {maximized ? (
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 0h8v8M0 2h8v8H0z" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
+            ) : (
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
+            )}
+          </button>
+          <button className="win-btn win-close" title={t('关闭')} aria-label={t('关闭')} onClick={() => void window.api.closeWindow()}>
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" strokeWidth="1" /></svg>
+          </button>
+        </div>
       </header>
 
       {importError && <div className="chat-banner error" role="alert">导入失败：{importError}</div>}

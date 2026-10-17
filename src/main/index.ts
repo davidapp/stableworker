@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { join } from 'node:path'
 import { registerConfigHandlers, loadConfig } from './config'
 import { registerProjectHandlers } from './projects'
@@ -33,6 +33,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     title: 'StableWorker',
+    titleBarStyle: 'hidden', // 无原生标题栏：窗口控制移入聊天头部，头部整条可拖拽
     backgroundColor: '#161618',
     autoHideMenuBar: true, // 不显示菜单栏（按 Alt 可临时呼出，快捷键仍有效）
     webPreferences: {
@@ -52,6 +53,16 @@ function createWindow(): void {
     void shell.openExternal(url)
     return { action: 'deny' }
   })
+
+  // 自定义窗口控制（隐藏标题栏后由聊天头部右上角的三键接管）
+  ipcMain.handle('win:minimize', () => win.minimize())
+  ipcMain.handle('win:maximizeToggle', () => (win.isMaximized() ? win.unmaximize() : win.maximize()))
+  ipcMain.handle('win:close', () => win.close())
+  const sendMaxState = (): void => {
+    if (!win.isDestroyed()) win.webContents.send('win:maximized', win.isMaximized())
+  }
+  win.on('maximize', sendMaxState)
+  win.on('unmaximize', sendMaxState)
 
   // Markdown 里的链接被点击时不在应用内跳转，交给系统浏览器
   win.webContents.on('will-navigate', (event, url) => {

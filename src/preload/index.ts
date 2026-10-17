@@ -75,6 +75,16 @@ const api = {
   /** 项目级设置覆盖（整体替换该项目的覆盖对象；空对象 = 完全继承全局） */
   setProjectOverrides: (projectId: string, overrides: import('../shared/types').ProjectOverrides): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setProjectOverrides', projectId, overrides),
+  // ---- 窗口控制（隐藏标题栏） ----
+  minimizeWindow: (): Promise<void> => ipcRenderer.invoke('win:minimize'),
+  maximizeToggleWindow: (): Promise<void> => ipcRenderer.invoke('win:maximizeToggle'),
+  closeWindow: (): Promise<void> => ipcRenderer.invoke('win:close'),
+  onMaximizeChange: (callback: (maximized: boolean) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, maximized: boolean): void => callback(maximized)
+    ipcRenderer.on('win:maximized', listener)
+    return () => ipcRenderer.removeListener('win:maximized', listener)
+  },
+
   /** 界面偏好（语言 / 主题；局部合并，主题同步原生） */
   setPreferences: (patch: { language?: 'zh' | 'en'; theme?: 'dark' | 'light' }): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setPreferences', patch),

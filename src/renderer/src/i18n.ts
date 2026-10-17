@@ -106,6 +106,8 @@ const EN: [string, string][] = [
   ['项目覆盖', 'Project Overrides'],
   ['功能开关', 'Features'],
   ['关闭', 'Close'],
+  ['最小化', 'Minimize'],
+  ['最大化', 'Maximize'],
   ['偏好设置', 'Preferences'],
 ]
 
