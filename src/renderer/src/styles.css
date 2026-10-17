@@ -733,7 +733,11 @@ body {
   padding: 14px 18px 10px;
   font: inherit;
   line-height: 1.5;
-  min-height: 72px; /* 2 行文本 + 上下内边距；80px 会顶回 3 行 */
+  /* 固定 2 行视觉高度（border-box 含内边距）；内容超出时内部滚动 */
+  box-sizing: border-box;
+  height: 66px;
+  min-height: 66px;
+  max-height: 200px;
 }
 
 .composer-box textarea:focus {
