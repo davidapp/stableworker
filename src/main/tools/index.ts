@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { dirname, relative, resolve } from 'node:path'
 import { ipcMain } from 'electron'
 import { safeResolve } from './paths'
-import { startShellTask, getShellTask, stopShellTask, killTree } from './shellTasks'
+import { startShellTask, adoptShellTask, getShellTask, stopShellTask, killTree } from './shellTasks'
 import { smartDecode } from './smartDecode'
 import { loadSkillContent, listSkillNames } from '../skills'
 import { grepTool, globTool } from './search'
@@ -295,12 +295,15 @@ const multiEditTool: ToolDefinition = {
   },
 }
 
-const RUN_COMMAND_TIMEOUT_MS = 60_000
+// 前台宽限期：超过后不杀进程，自动转入后台（环境变量可覆盖，测试用）
+function runCommandForegroundMs(): number {
+  return Number(process.env.SW_RUN_COMMAND_FOREGROUND_MS ?? 60_000)
+}
 
 const runCommandTool: ToolDefinition = {
   name: 'run_command',
   description:
-    '在项目目录下执行一条 shell 命令（Windows 用 cmd），返回退出码与合并后的 stdout/stderr。用于运行脚本、测试、安装依赖、查看系统信息等。该操作在用户机器上真实执行，需要用户批准；非零退出码视为失败，输出里通常有报错信息。工作目录在多次调用间保持（cd 会记住）；run_in_background=true 时立即返回、进程持续运行（用 task_output 查询、task_stop 终止），适合 dev server / watch 等长驻命令。',
+    '在项目目录下执行一条 shell 命令（Windows 用 cmd），返回退出码与合并后的 stdout/stderr。用于运行脚本、测试、安装依赖、查看系统信息等。该操作在用户机器上真实执行，需要用户批准；非零退出码视为失败，输出里通常有报错信息。工作目录在多次调用间保持（cd 会记住）；run_in_background=true 时立即返回、进程持续运行（用 task_output 查询、task_stop 终止），适合 dev server / watch 等长驻命令。前台命令运行超过 60 秒未结束时自动转入后台继续执行（不终止），并返回任务 id 供 task_output 轮询。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -312,7 +315,7 @@ const runCommandTool: ToolDefinition = {
   },
   requiresApproval: true,
   kind: 'system',
-  timeoutMs: RUN_COMMAND_TIMEOUT_MS,
+  timeoutMs: runCommandForegroundMs() + 5_000,
   async execute(input, ctx) {
     const command = typeof input.command === 'string' ? input.command : ''
     if (!command.trim()) return { content: '缺少 command 参数', isError: true }
@@ -362,16 +365,22 @@ const runCommandTool: ToolDefinition = {
       child.stdout?.on('data', append)
       child.stderr?.on('data', append)
 
-      // 自身超时：杀掉整个进程树并以错误结果收场（先于通用 15s 超时，因为本工具更长）
-      let timedOut = false
+      // 宽限期到：不杀进程，把仍在运行的命令收编为后台任务（模型用 task_output 轮询进度）
       let cancelled = false
       const onAbort = (): void => { cancelled = true; killTree(child) }
       ctx.signal?.addEventListener('abort', onAbort, { once: true })
       if (ctx.signal?.aborted) onAbort()
       const timer = setTimeout(() => {
-        timedOut = true
-        killTree(child)
-      }, RUN_COMMAND_TIMEOUT_MS)
+        const id = `bash-${++bgSeq}`
+        adoptShellTask(id, command, cwd, child, ctx.sessionId)
+        resolvePromise({
+          content:
+            `命令已运行 ${Math.round(runCommandForegroundMs() / 1000)} 秒仍未结束，已自动转入后台继续执行（不终止）。
+` +
+            `任务 id: ${id}
+用 task_output 工具轮询进度与输出；确认不需要时用 task_stop 终止。`,
+        })
+      }, runCommandForegroundMs())
 
       child.on('error', (err) => {
         clearTimeout(timer)
@@ -394,14 +403,13 @@ const runCommandTool: ToolDefinition = {
           }
         }
         const notes = [
-          timedOut ? '命令超时 60 秒，已强制终止进程树' : '',
           cancelled ? '用户已停止，进程树已终止' : '',
           truncated ? `输出过长，已截断到 ${MAX_OUTPUT_CHARS} 字符` : '',
         ].filter(Boolean)
         const decoded = smartDecode(Buffer.concat(chunks)).slice(0, MAX_OUTPUT_CHARS + 1000)
         resolvePromise({
           content: truncate(`退出码: ${code ?? 'N/A'}\n${decoded}${notes.length ? `\n${notes.join('；')}` : ''}`),
-          isError: cancelled || timedOut || code !== 0,
+          isError: cancelled || code !== 0,
         })
       })
     })

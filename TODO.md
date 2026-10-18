@@ -35,6 +35,7 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **子代理增强**：①只读工具并行执行（纯 kind:'read' 轮 Promise.all 并行，含写/需批准的轮次保持串行；主循环与子代理循环共用同一策略，对齐 Claude Code 的并行工具）②自定义代理类型（设置 → 子代理类型：名称/说明/工具范围/角色设定，动态注入 task 工具 subagent_type 枚举与描述，下一轮对话生效；config:setSubagentTypes 校验名称与内置冲突）③子代理内 todo_write 经 onTodos 转发主界面 Todo 面板（实现 task 工具时已通）
 - [x] **子代理再增强**：并行子代理已随"并行子代理"条目完成（见微压缩条目之后）；剩余：代理类型项目级、子代理输出折叠卡片
 - [x] **办公模式 memory 工具**：办公白名单加入 memory（跨会话记忆对办公助手可用，可记"周报模板"类偏好）
+- [x] **run_command 超时转后台**：前台命令 60 秒未结束不再杀进程，自动收编为后台任务（返回任务 id，task_output 轮询 / task_stop 终止）；宽限期可用 SW_RUN_COMMAND_FOREGROUND_MS 环境变量覆盖
 - [x] **工具开关按模式分 Tab**：设置 → 工具开关页分 编程模式 / 办公模式 两个 Tab，各自独立开关（config.toolSwitches / config.officeToolSwitches）；tools:list 按模式返回各自的池（办公 = 通用白名单 + office 工具）；resolveEffectiveSettings 按 mode 取基础开关，项目覆盖仍按键合并；modeTools 测试 4 用例
 - [x] **会话分叉**：悬停消息"🍴 从这里分叉"（最后一条也有 = 复制整个会话）——复制该消息及之前的全部内容为新会话（标题加"· 分叉"、摘要不继承、深拷贝互不影响），原会话不动并自动切换到新会话；buildForkSession 纯函数 + 测试
 - [ ] **WebSearch**：需接搜索 API（Brave/Serper 等，要 API key；WebFetch 已完成）

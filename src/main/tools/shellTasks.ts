@@ -115,6 +115,55 @@ export function getShellTask(id: string): ShellTask | undefined {
   return tasks.get(id)
 }
 
+/**
+ * 收编一个已在运行的子进程为后台任务（run_command 前台超时转后台用）：
+ * 注册表接管该进程，task_output / task_stop 立即可用；输出从收编时刻起累积。
+ */
+export function adoptShellTask(
+  id: string,
+  command: string,
+  cwd: string,
+  child: ChildProcess,
+  sessionId?: string,
+): ShellTask {
+  const task: ShellTask = {
+    id,
+    command,
+    cwd,
+    status: 'running',
+    exitCode: null,
+    output: '',
+    truncated: false,
+    startedAt: Date.now(),
+    child,
+    sessionId,
+  }
+  tasks.set(id, task)
+  const stdoutDecoder = new StringDecoder('utf8')
+  const stderrDecoder = new StringDecoder('utf8')
+  const append = (data: string): void => {
+    if (task.output.length >= MAX_BG_OUTPUT) {
+      task.truncated = true
+      return
+    }
+    task.output += data
+    if (task.output.length > MAX_BG_OUTPUT) {
+      task.output = task.output.slice(0, MAX_BG_OUTPUT)
+      task.truncated = true
+    }
+  }
+  child.stdout?.on('data', (data: Buffer) => append(stdoutDecoder.write(data)))
+  child.stderr?.on('data', (data: Buffer) => append(stderrDecoder.write(data)))
+  child.on('close', (code) => {
+    append(stdoutDecoder.end() + stderrDecoder.end())
+    if (task.status === 'running') {
+      task.exitCode = code
+      task.status = code === 0 ? 'completed' : 'failed'
+    }
+  })
+  return task
+}
+
 /** 终止后台任务（杀整个进程树），返回任务是否存在 */
 export function stopShellTask(id: string): boolean {
   const t = tasks.get(id)
