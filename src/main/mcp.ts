@@ -267,7 +267,7 @@ async function connectStdio(
     await stdioRequest(conn, 'initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'StableWorker', version: '0.9.4' },
+      clientInfo: { name: 'StableWorker', version: '0.9.5' },
     })
     send(conn, { jsonrpc: '2.0', method: 'notifications/initialized' })
     const tl = await stdioRequest<{ tools?: McpTool[] }>(conn, 'tools/list', undefined)
@@ -411,7 +411,7 @@ async function connectHttp(name: string, cfg: Pick<MCPServerConfig, 'url' | 'hea
     await httpRpc(conn, 'initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'StableWorker', version: '0.9.4' },
+      clientInfo: { name: 'StableWorker', version: '0.9.5' },
     })
     await httpExchange(conn, { jsonrpc: '2.0', method: 'notifications/initialized' }, 15_000)
     const tl = await httpRpc<{ tools?: McpTool[] }>(conn, 'tools/list', undefined)

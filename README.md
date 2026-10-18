@@ -1,6 +1,6 @@
 # StableWorker
 
-自研 AI 编程与办公助手（Electron 桌面应用，Windows / macOS / Linux）。当前开发分支 **v0.9.4**：
+自研 AI 编程与办公助手（Electron 桌面应用，Windows / macOS / Linux）。当前开发分支 **v0.9.5**：
 多项目管理、会话树、流式对话（Markdown 渲染）、工具调用代理循环（读 / 写 / 改 / 跑命令）、
 子代理（task 工具）、Hooks 生命周期钩子、分层记忆与 memory 工具、@文件引用、MCP（stdio / HTTP）、
 多模型配置档、批准模式、精确计费、上下文管理与水位条、API 调试悬浮窗及更新检查，
