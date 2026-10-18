@@ -225,7 +225,7 @@ export function getVideoToolDefinitions(): ToolDefinition[] {
         const sessionId = requireSession(ctx)
         const ws = await ensureVideoWorkspace(sessionId)
         const sb = parseStoryboard(input.storyboard)
-        await ensureFfmpeg((pct) => ctx.onOutput?.(`首次使用，正在下载合成引擎 ffmpeg：${pct}%\n`))
+        await ensureFfmpeg((message) => ctx.onOutput?.(`${message}\n`))
 
         const workDir = resolve(ws.outputs, '.work')
         const segDir = resolve(workDir, 'segments')

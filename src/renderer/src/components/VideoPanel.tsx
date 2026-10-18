@@ -13,6 +13,21 @@ function baseName(path: string): string {
   return i < 0 ? path : path.slice(i + 1)
 }
 
+/** 语义分组：配音是中间产物不算成品；mp4 才是成品 */
+function groupOf(path: string): 'material' | 'voice' | 'product' | 'work' {
+  if (path.startsWith('inputs/')) return 'material'
+  if (/^outputs\/voice-\d+\.mp3$/.test(path)) return 'voice'
+  if (path.startsWith('outputs/') && path.endsWith('.mp4')) return 'product'
+  return 'work'
+}
+
+const GROUPS = [
+  { key: 'material', label: '素材', empty: '支持图片与音频' },
+  { key: 'voice', label: '配音', empty: '旁白配音会出现在这里' },
+  { key: 'product', label: '成品', empty: '合成完成后，视频会出现在这里' },
+  { key: 'work', label: '中间文件', empty: '' },
+] as const
+
 /** 视频任务的素材与产物面板：inputs/（导入的图片、音频）与 outputs/（配音、成品 MP4） */
 export function VideoPanel({ onImport, refreshKey = 0, collapsed = false, onToggleCollapsed }: { onImport: () => void; refreshKey?: number; collapsed?: boolean; onToggleCollapsed?: () => void }) {
   const { activeSessionId, messages, streaming } = useApp()
@@ -63,11 +78,11 @@ export function VideoPanel({ onImport, refreshKey = 0, collapsed = false, onTogg
       <p className="office-panel-intro">{t('导入图片/音频素材，配音与成片会出现在这里。')}</p>
       <button className="btn btn-block" disabled={streaming} onClick={onImport}><Icon name="attachment" /> {t('添加素材')}</button>
       {error && <p className="msg-error" role="alert">{error}</p>}
-      {(['inputs', 'outputs'] as const).map((dir) => {
-        const group = files.filter((f) => f.path.startsWith(`${dir}/`))
-        return <section className="office-file-section" key={dir}>
-          <div className="sidebar-section-label">{dir === 'inputs' ? t('素材') : t('成品')}<span>{group.length}</span></div>
-          {group.length === 0 ? <p className="office-file-empty">{dir === 'inputs' ? t('支持图片与音频') : t('合成完成后，视频会出现在这里')}</p> : group.map((file) => <div key={file.path} className="office-file-row">
+      {GROUPS.map(({ key, label, empty }) => {
+        const group = files.filter((f) => groupOf(f.path) === key)
+        return <section className="office-file-section" key={key}>
+          <div className="sidebar-section-label">{t(label)}<span>{group.length}</span></div>
+          {group.length === 0 ? (empty ? <p className="office-file-empty">{t(empty)}</p> : null) : group.map((file) => <div key={file.path} className="office-file-row">
             <span className="office-file-info"><strong>{baseName(file.path)}</strong><small>{fileSize(file.bytes)}</small></span>
             <div className="office-file-actions">
               <button className="icon-btn" title={`打开 ${baseName(file.path)}`} onClick={() => void open(file)}><Icon name="external" size={14} /></button>
