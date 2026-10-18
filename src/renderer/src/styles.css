@@ -1271,6 +1271,13 @@ body {
   background: var(--surface-2);
 }
 
+/* Composer 的附件按钮：固定宽高成方形，不吃 flex 拉伸 */
+.icon-btn-lg.icon-btn-square {
+  flex: 0 0 34px;
+  width: 34px;
+  padding: 0;
+}
+
 /* ---------- 工具卡片 ---------- */
 .tool-card {
   border: 1px solid var(--border);

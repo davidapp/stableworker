@@ -143,7 +143,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           }}
         />
         <div className="composer-row">
-          {(office || video) && <button className="icon-btn-lg" title={office ? t('添加办公资料') : t('添加视频素材')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
+          {(office || video) && <button className="icon-btn-lg icon-btn-square" title={office ? t('添加办公资料') : t('添加视频素材')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
           <ApprovalModeMenu />
           <div className="spacer" />
           <ContextMeter />
