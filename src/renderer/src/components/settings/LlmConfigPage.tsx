@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useApp } from '../../store'
 import * as actions from '../../actions'
 import type { BalanceResult, LLMProfileView, ProviderType } from '../../../../shared/types'
@@ -166,41 +166,25 @@ function blankDraft(): ProfileDraft {
 export function LlmConfigPage() {
   const { llmProfiles, activeLlmId } = useApp()
   const [editing, setEditing] = useState<ProfileDraft | null>(null)
-  const [fetchedModels, setFetchedModels] = useState<{ id: string; name?: string }[] | null>(null)
+  const [fetchedByProfile, setFetchedByProfile] = useState<Record<string, { id: string; name?: string }[]>>({})
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [actionNotice, setActionNotice] = useState<{ profileId: string; text: string } | null>(null)
   const [fetchingModels, setFetchingModels] = useState(false)
-  const [fetchNotice, setFetchNotice] = useState('')
   const [testing, setTesting] = useState(false)
   const [refreshingContext, setRefreshingContext] = useState<string | null>(null)
   const [contextNotice, setContextNotice] = useState<SettingsNoticeValue | null>(null)
   const [testResult, setTestResult] = useState<SettingsNoticeValue | null>(null)
   const [saved, setSaved] = useState(false)
 
-  // 切换编辑对象 / 换服务商时清掉上一次拉取的模型列表
-  useEffect(() => {
-    setFetchedModels(null)
-    setFetchNotice('')
-  }, [editing?.baseURL, editing?.id])
-
-  const fetchModelList = async (): Promise<void> => {
-    if (!editing || fetchingModels) return
+  const fetchModelsFor = async (p: LLMProfileView): Promise<void> => {
     setFetchingModels(true)
-    setFetchNotice('')
     try {
-      const r = await window.api.listModels({
-        id: editing.id ?? undefined,
-        provider: editing.provider,
-        name: editing.name,
-        baseURL: editing.baseURL,
-        model: editing.model,
-        proxyURL: editing.proxyURL,
-        apiKey: editing.apiKey.trim() || undefined,
-      })
+      const r = await window.api.listModels({ id: p.id, provider: p.provider, name: p.name, baseURL: p.baseURL })
       if (!r.ok) {
-        setFetchedModels(null)
-        setFetchNotice(`❌ ${r.error ?? '获取失败'}`)
+        setActionNotice({ profileId: p.id, text: `❌ 获取模型列表失败：${r.error ?? '未知错误'}` })
       } else {
-        setFetchedModels(r.models)
-        setFetchNotice(`✅ 获取到 ${r.models.length} 个模型`)
+        setFetchedByProfile((prev) => ({ ...prev, [p.id]: r.models }))
+        setActionNotice({ profileId: p.id, text: `✅ 获取到 ${r.models.length} 个模型（编辑时模型输入框可选）` })
       }
     } finally {
       setFetchingModels(false)
@@ -363,24 +347,12 @@ export function LlmConfigPage() {
             onChange={(e) => setEditing({ ...editing, model: e.target.value })}
           />
           <datalist id="model-suggestions">
-            {(fetchedModels ?? preset.models.map((m) => ({ id: m, name: undefined }))).map((m) => (
+            {(editing?.id ? fetchedByProfile[editing.id] ?? preset.models.map((m) => ({ id: m, name: undefined })) : preset.models.map((m) => ({ id: m, name: undefined }))).map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name ?? ''}
               </option>
             ))}
           </datalist>
-          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              className="btn"
-              disabled={fetchingModels || !editing.baseURL.trim()}
-              title="从服务商拉取可用模型列表（OpenAI 兼容 /models 接口；需要已填 API Key）"
-              onClick={() => void fetchModelList()}
-            >
-              {fetchingModels ? '获取中…' : '⟳ 获取模型列表'}
-            </button>
-            {fetchNotice ? <span className="saved-hint">{fetchNotice}</span> : null}
-          </div>
         </label>
 
         <label className="field">
@@ -461,14 +433,42 @@ export function LlmConfigPage() {
                   </small>
                 </div>
                 <div className="profile-actions">
-                  <button className="btn" disabled={refreshingContext !== null} onClick={async () => {
-                    setRefreshingContext(p.id)
-                    const result = await actions.refreshModelContext(p.id)
-                    setContextNotice({ tone: result.ok ? 'success' : 'warning', text: result.message })
-                    setRefreshingContext(null)
-                  }}>
-                    <Icon name="refresh" size={14} />{refreshingContext === p.id ? '获取中…' : '获取容量'}
-                  </button>
+                  <div className="mode-menu-wrap">
+                    <button className="btn" onClick={() => setMenuFor(menuFor === p.id ? null : p.id)}>
+                      操作 ▾
+                    </button>
+                    {menuFor === p.id ? (
+                      <div className="mode-menu profile-menu">
+                        <button className="mode-item" disabled={fetchingModels} onClick={() => {
+                          setMenuFor(null)
+                          void fetchModelsFor(p)
+                        }}>
+                          获取模型列表
+                        </button>
+                        <button className="mode-item" disabled={refreshingContext !== null} onClick={() => {
+                          setMenuFor(null)
+                          setRefreshingContext(p.id)
+                          void actions.refreshModelContext(p.id).then((result) => {
+                            setRefreshingContext(null)
+                            setContextNotice({ tone: result.ok ? 'success' : 'warning', text: result.message })
+                          })
+                        }}>
+                          获取容量
+                        </button>
+                        <button
+                          className="mode-item"
+                          disabled={p.id !== activeLlmId || balanceBusy}
+                          title={p.id === activeLlmId ? '' : '仅使用中的配置档可查询'}
+                          onClick={() => {
+                            setMenuFor(null)
+                            void queryBalance()
+                          }}
+                        >
+                          查询余额
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                   {p.id !== activeLlmId ? (
                     <button className="btn" onClick={() => void actions.setActiveLlm(p.id)}>
                       使用
@@ -485,13 +485,9 @@ export function LlmConfigPage() {
             ))}
           </div>
 
-          <div className="ctx-title-row" style={{ margin: '14px 0 8px' }}>
-            <span>API Key 余额（使用中配置档）</span>
-            <button className="btn" disabled={balanceBusy} onClick={() => void queryBalance()}>
-              <Icon name="key" size={14} />
-              {balanceBusy ? '查询中…' : '查询'}
-            </button>
-          </div>
+          {actionNotice ? (
+            <div className="saved-hint" role="status">{actionNotice.text}</div>
+          ) : null}
           {balance ? (
             <div className="saved-hint" role="status">
               <Icon name={balance.ok ? 'check' : 'warning'} size={14} />

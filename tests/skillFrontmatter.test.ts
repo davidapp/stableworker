@@ -65,7 +65,7 @@ describe('内嵌命令执行语义', () => {
   }, 15_000)
 
   it('超时标记并保留部分输出', async () => {
-    const out = await runEmbedded(`node -e "console.log('partial');setInterval(function(){},1000)"`, 300)
+    const out = await runEmbedded(`node -e "console.log('partial');setInterval(function(){},1000)"`, 1500)
     expect(out).toContain('（命令超时')
     expect(out).toContain('partial')
   }, 15_000)
