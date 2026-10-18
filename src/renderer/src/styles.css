@@ -465,6 +465,7 @@ body {
 
 .message {
   display: flex;
+  flex-wrap: wrap; /* 气泡与下方的操作行分两行排布 */
   animation: msg-in 0.18s ease;
 }
 
@@ -487,6 +488,7 @@ body {
 .msg-rewind {
   display: flex;
   gap: 8px;
+  width: 100%; /* 独占一行：永远排在气泡下方 */
   justify-content: flex-start;
   opacity: 0;
   transition: opacity 0.15s ease;
