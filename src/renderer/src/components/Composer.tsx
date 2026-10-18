@@ -10,13 +10,18 @@ import { Icon } from './Icon'
 import { t } from '../i18n'
 
 export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
-  const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId } = useApp()
+  const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId, sessionsByProject } = useApp()
   const office = taskMode === 'office'
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // @文件引用补全：光标处于 @片段 中时显示项目文件候选
   const [mention, setMention] = useState<{ start: number; query: string; items: string[]; active: number } | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  // 本会话独立选择的模型（会话 meta.llmId）；未选择时跟随全局激活档
+  const sessionLlmId = activeSessionId && activeProjectId
+    ? sessionsByProject[activeProjectId]?.find((m) => m.id === activeSessionId)?.llmId
+    : undefined
+  const currentLlmId = sessionLlmId ?? activeLlmId
   useEffect(() => { setText(''); setMention(null) }, [activeSessionId, taskMode])
   useEffect(() => {
     if (!taskDraft) return
@@ -138,10 +143,10 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
             {menuOpen ? <div className="popover-backdrop" onClick={() => setMenuOpen(false)} /> : null}
             <button
               className="model-select"
-              title="切换模型配置档"
+              title="切换本会话使用的模型（仅当前会话生效）"
               onClick={() => setMenuOpen((v) => !v)}
             >
-              {llmProfiles.find((p) => p.id === activeLlmId)?.model || llmProfiles.find((p) => p.id === activeLlmId)?.name || t('未配置模型')}
+              {llmProfiles.find((p) => p.id === (sessionLlmId ?? activeLlmId))?.model || t('未配置模型')}
               <CaretIcon />
             </button>
             {menuOpen ? (
@@ -153,14 +158,14 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
                     <button
                       key={p.id}
                       className="mode-item"
-                      style={p.id === activeLlmId ? { color: 'var(--accent-strong)' } : undefined}
+                      style={p.id === currentLlmId ? { color: 'var(--accent-strong)' } : undefined}
                       onClick={() => {
                         setMenuOpen(false)
-                        void actions.setActiveLlm(p.id)
+                        void actions.setSessionModel(p.id)
                       }}
                     >
                       <span style={{ flex: 1, textAlign: 'left' }}>{p.model || p.name}</span>
-                      {p.id === activeLlmId ? '✓' : ''}
+                      {p.id === currentLlmId ? '✓' : ''}
                     </button>
                   ))
                 )}

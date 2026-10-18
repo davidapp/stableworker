@@ -84,6 +84,7 @@ interface SessionOperation {
   title?: string
   createdAt?: number
   taskMode?: TaskMode
+  llmId?: string
   i?: number
   m?: ChatMessage
   droppedCount?: number
@@ -107,6 +108,7 @@ interface ReplayResult {
   totalLines: number
   revision: number
   taskMode: TaskMode
+  llmId?: string
   /** 最近的摘要压缩记录（clear 之后作废） */
   summary?: { droppedCount: number; text: string; ts: number }
 }
@@ -135,6 +137,7 @@ async function replay(projectId: string, sessionId: string): Promise<ReplayResul
       if (o.title) result.title = o.title
       if (o.createdAt && !result.createdAt) result.createdAt = o.createdAt
       if (o.taskMode === 'office' || o.taskMode === 'coding') result.taskMode = o.taskMode
+      result.llmId = o.llmId // 后写的覆盖先写的；undefined（旧版无字段）也清掉
     } else if (o.t === 'm' && o.m && Number.isSafeInteger(o.i) && o.i! >= 0) {
       result.messages[o.i!] = normalizeMessage(o.m)
     } else if (o.t === 'clear') {
@@ -200,6 +203,7 @@ async function loadSessionUnlocked(
       summary: r.summary,
       revision: r.revision,
       taskMode: r.taskMode,
+      llmId: r.llmId,
     }
     // 恢复摘要缓存：重启后同会话继续压缩时直接复用，不再花摘要 API 调用
     if (r.summary) setCachedCompact(sessionId, r.summary.droppedCount, r.summary.text)
@@ -240,6 +244,7 @@ export async function listSessionMetas(projectId: string): Promise<SessionMeta[]
           updatedAt: r.session.updatedAt,
           damaged: r.damaged || undefined,
           taskMode: r.session.taskMode,
+          llmId: r.session.llmId,
         })
       }
     }
@@ -520,6 +525,22 @@ export function registerSessionHandlers(): void {
     },
   )
 
+  // 会话独立模型：llmId 传 null 表示跟随全局激活档
+  ipcMain.handle(
+    'sessions:setModel',
+    async (_e, projectId: string, sessionId: string, llmId: string | null): Promise<boolean> => {
+      const result = await serializeSession(projectId, sessionId, async () => {
+        const { session } = await loadSessionUnlocked(projectId, sessionId)
+        if (!session) return false
+        session.llmId = llmId && llmId.trim() ? llmId.trim() : undefined
+        session.updatedAt = Date.now()
+        return (await saveSessionUnlocked(session)).ok
+      })
+      if (result) emitSessionsChanged(projectId, sessionId, { change: 'metadata' })
+      return result === true
+    },
+  )
+
   // 重命名会话：追加一条 meta（列表排序用的 updatedAt 不变，保持原位）
   ipcMain.handle(
     'sessions:rename',
@@ -585,8 +606,8 @@ async function saveSessionUnlocked(session: Session): Promise<SessionSaveResult>
   const taskMode = session.taskMode ?? stored?.taskMode ?? 'coding'
   const ts = session.updatedAt
   const lines: SessionOperation[] = []
-  if (!stored || stored.title !== session.title || stored.taskMode !== taskMode) {
-    lines.push({ t: 'meta', ts, title: session.title, createdAt: session.createdAt, taskMode })
+  if (!stored || stored.title !== session.title || stored.taskMode !== taskMode || stored.llmId !== session.llmId) {
+    lines.push({ t: 'meta', ts, title: session.title, createdAt: session.createdAt, taskMode, llmId: session.llmId })
   }
   if (known.length > session.messages.length) {
     lines.push({ t: 'clear', ts }, ...session.messages.map((m, i) => ({ t: 'm', ts, i, m })))

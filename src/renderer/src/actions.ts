@@ -606,7 +606,8 @@ export async function sendChat(text: string): Promise<void> {
 
   let res: { ok: boolean; error?: string; compacted?: number }
   try {
-    const request = window.api.sendChat({ sessionId, projectId: ap, messages: history, revision: store.getState().activeSessionRevision, skill: skillMeta })
+    const sessionLlmId = s.sessionsByProject[ap]?.find((m) => m.id === sessionId)?.llmId
+    const request = window.api.sendChat({ sessionId, projectId: ap, messages: history, revision: store.getState().activeSessionRevision, skill: skillMeta, llmId: sessionLlmId })
     activeChatRequest = request
     try { res = await request } finally { if (activeChatRequest === request) activeChatRequest = null }
   } catch (err) {
@@ -815,6 +816,20 @@ export function resolveConfirm(v: boolean): void {
   const state = store.getState().confirmState
   state?.resolve(v)
   store.setState({ confirmState: null })
+}
+
+/** 会话独立模型：写入会话并刷新视图（菜单勾选与圆环用量跟随该模型） */
+export async function setSessionModel(llmId: string): Promise<void> {
+  const s = store.getState()
+  if (!s.activeProjectId || !s.activeSessionId) return
+  const ok = await window.api.setSessionModel(s.activeProjectId, s.activeSessionId, llmId)
+  if (ok) {
+    await refreshProjectSessions(s.activeProjectId)
+    store.setState({ statusText: '✅ 本会话已切换模型（仅此会话生效）' })
+    setTimeout(() => {
+      if (store.getState().statusText?.startsWith('✅ 本会话')) store.setState({ statusText: null })
+    }, 8000)
+  }
 }
 
 /** 订阅主进程的配置变更推送（Plan 工具切换批准模式后同步界面菜单） */

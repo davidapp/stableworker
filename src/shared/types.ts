@@ -172,6 +172,8 @@ export interface SessionMeta {
   title: string
   createdAt: number
   updatedAt: number
+  /** 本会话独立选择的模型配置档（缺省跟随全局激活档） */
+  llmId?: string
   /** 会话文件存在损坏行（打开时会有恢复引导） */
   damaged?: boolean
   /** Legacy records default to coding when loaded. */
@@ -385,6 +387,8 @@ export interface ChatRequest {
   messages: ChatHistoryMessage[]
   /** 斜杠命令元数据：本轮流式对话受 allowed-tools 限制、model 覆盖激活配置档 */
   skill?: { allowedTools?: string[]; model?: string }
+  /** 会话独立模型（配置档 id）；缺省跟随全局激活档 */
+  llmId?: string
 }
 
 /** 测试连接的入参：允许用尚未保存的表单值来测试（id 用于回退到该配置档已存的 key） */

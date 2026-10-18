@@ -747,7 +747,9 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   const cfg = await loadConfig()
   controller.signal.throwIfAborted()
   const enabledProfiles = (cfg.llmProfiles ?? []).filter((p) => p.enabled !== false)
-  let llm = enabledProfiles.find((p) => p.id === cfg.activeLlmId) ?? enabledProfiles[0] ?? null
+  // 会话独立模型优先（会话文件里存的 llmId）；未设置或已失效时跟随全局激活档
+  const sessionLlm = req.llmId ? enabledProfiles.find((p) => p.id === req.llmId) : undefined
+  let llm = sessionLlm ?? enabledProfiles.find((p) => p.id === cfg.activeLlmId) ?? enabledProfiles[0] ?? null
   // 斜杠命令 frontmatter 的 model 覆盖：按模型名匹配配置档，找不到保持激活档
   const requestedModel = req.skill?.model?.trim()
   if (requestedModel) {

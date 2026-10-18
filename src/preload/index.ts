@@ -191,6 +191,9 @@ const api = {
   /** 会话分叉：复制 messageId 及之前的消息为新会话，原会话不变，返回新会话 id */
   forkSession: (projectId: string, sessionId: string, messageId: string): Promise<{ ok: boolean; error?: string; newSessionId?: string }> =>
     ipcRenderer.invoke('sessions:fork', projectId, sessionId, messageId),
+  /** 会话独立模型（写入会话文件；null = 跟随全局激活档） */
+  setSessionModel: (projectId: string, sessionId: string, llmId: string | null): Promise<boolean> =>
+    ipcRenderer.invoke('sessions:setModel', projectId, sessionId, llmId),
   renameSession: (projectId: string, sessionId: string, title: string): Promise<boolean> =>
     ipcRenderer.invoke('sessions:rename', projectId, sessionId, title),
 
