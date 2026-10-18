@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { MCPServerConfig, McpResourceContent, McpResourceMeta, McpServerStatus } from '../../../../shared/types'
 import { Icon } from '../Icon'
 import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
+import * as actions from '../../actions'
 
 interface Draft {
   type: 'stdio' | 'http'
@@ -135,7 +136,7 @@ export function McpPage() {
   }
 
   const remove = async (s: MCPServerConfig): Promise<void> => {
-    if (!window.confirm(`删除 MCP 服务器 ${s.name}？其全部工具将从工具池移除。`)) return
+    if (!(await actions.confirm(`删除 MCP 服务器 ${s.name}？其全部工具将从工具池移除。`))) return
     if (panel?.server === s.name) setPanel(null)
     await persist(servers.filter((x) => x.name !== s.name))
   }

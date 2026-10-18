@@ -252,7 +252,7 @@ export function LlmConfigPage() {
 
   const remove = async (p: LLMProfileView): Promise<void> => {
     if (
-      !window.confirm(
+      !await actions.confirm(
         `删除配置档「${p.name}」？${
           p.id === activeLlmId ? '\n\n这是当前激活的配置档，删除后会自动切换到列表中的第一个。' : ''
         }`,

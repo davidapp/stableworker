@@ -5,6 +5,7 @@ import * as actions from './actions'
 import { Sidebar } from './components/Sidebar'
 import { ChatPane } from './components/ChatPane'
 import { SettingsDialog } from './components/SettingsDialog'
+import { ConfirmDialog } from './components/ConfirmDialog'
 
 const MIN_SIDEBAR = 180
 const MAX_SIDEBAR = 480
@@ -71,6 +72,7 @@ export default function App() {
       <ChatPane />
       {/* 用条件挂载保证每次打开时都基于最新数据初始化 */}
       {settingsOpen && <SettingsDialog />}
+      <ConfirmDialog />
     </div>
   )
 }

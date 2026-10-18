@@ -3,6 +3,7 @@ import { useApp } from '../../store'
 import type { SubagentTypeConfig } from '../../../../shared/types'
 import { Icon } from '../Icon'
 import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
+import * as actions from '../../actions'
 
 interface Draft extends SubagentTypeConfig {
   originalName: string
@@ -55,7 +56,7 @@ export function SubagentTypesPage() {
   }
 
   const remove = async (t: SubagentTypeConfig): Promise<void> => {
-    if (!window.confirm(`删除自定义类型 ${t.name}？`)) return
+    if (!(await actions.confirm(`删除自定义类型 ${t.name}？`))) return
     await persist(types.filter((x) => x.name !== t.name))
   }
 

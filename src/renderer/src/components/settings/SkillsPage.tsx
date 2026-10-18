@@ -4,6 +4,7 @@ import type { SkillMeta } from '../../../../shared/types'
 import { parseSkillFrontmatter } from '../../../../shared/skillFrontmatter'
 import { Icon } from '../Icon'
 import { SettingsNotice, type SettingsNoticeValue } from './SettingsNotice'
+import * as actions from '../../actions'
 
 /** 斜杠命令页：管理全局（userData/skills）与项目级（.stableworker/commands）命令，同名项目优先 */
 export function SkillsPage() {
@@ -33,7 +34,7 @@ export function SkillsPage() {
   }
 
   const remove = async (s: SkillMeta): Promise<void> => {
-    if (!window.confirm(`删除${s.scope === 'project' ? '项目级' : '全局'}命令 /${s.name}？`)) return
+    if (!(await actions.confirm(`删除${s.scope === 'project' ? '项目级' : '全局'}命令 /${s.name}？`))) return
     await window.api.deleteSkill(s.name, s.scope)
     await refresh()
   }

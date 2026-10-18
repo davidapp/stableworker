@@ -477,11 +477,11 @@ export async function restoreCheckpoint(toolUseId: string): Promise<void> {
   if (!s.activeProjectId || !s.activeSessionId) return
   const res = await window.api.restoreCheckpoint(s.activeProjectId, s.activeSessionId, toolUseId)
   if (!res) {
-    window.alert('回滚失败：该次调用没有检查点（可能未启用快照或已被清理）')
+    void alert('回滚失败：该次调用没有检查点（可能未启用快照或已被清理）')
     return
   }
   if ('error' in res) {
-    window.alert(`回滚失败：${res.error}`)
+    void alert(`回滚失败：${res.error}`)
     return
   }
   const note =
@@ -746,14 +746,14 @@ export async function rewindToMessage(messageId: string): Promise<void> {
   const idx = s.messages.findIndex((m) => m.id === messageId)
   if (idx < 0 || idx >= s.messages.length - 1) return
   const removedCount = s.messages.length - idx - 1
-  if (!window.confirm(`回退到这里？其后 ${removedCount} 条消息将被删除（会话文件即时落盘）。`)) return
+  if (!(await confirm(`回退到这里？其后 ${removedCount} 条消息将被删除（会话文件即时落盘）。`))) return
   const removed = s.messages.slice(idx + 1)
   const hasFileEdits = removed.some((m) =>
     m.blocks.some((b) => b.type === 'tool_use' && ['write_file', 'edit_file', 'multi_edit'].includes(b.name)),
   )
   let restoreFiles = false
   if (hasFileEdits) {
-    restoreFiles = window.confirm(
+    restoreFiles = await confirm(
       '该范围内有文件修改。是否同时把文件恢复到该时点？\n（当前文件状态会先被快照，回退后可再撤销）',
     )
   }
@@ -776,7 +776,7 @@ export async function forkFromMessage(messageId: string): Promise<void> {
   const s = store.getState()
   if (!s.activeProjectId || !s.activeSessionId) return
   if (s.messages.findIndex((m) => m.id === messageId) < 0) return
-  if (!window.confirm('从此处分叉一个新会话？当前会话保持不变，新会话包含这条消息及之前的全部内容。')) return
+  if (!(await confirm('从此处分叉一个新会话？当前会话保持不变，新会话包含这条消息及之前的全部内容。'))) return
   const r = await window.api.forkSession(s.activeProjectId, s.activeSessionId, messageId)
   if (!r.ok || !r.newSessionId) {
     store.setState({ statusText: `分叉失败：${r.error ?? '未知原因'}` })
@@ -788,6 +788,27 @@ export async function forkFromMessage(messageId: string): Promise<void> {
   setTimeout(() => {
     if (store.getState().statusText?.startsWith('✅ 已分叉')) store.setState({ statusText: null })
   }, 8000)
+}
+
+/** 应用皮肤确认框（替代原生 window.confirm）；danger = 确定按钮红色警示 */
+export function confirm(message: string, opts: { danger?: boolean } = {}): Promise<boolean> {
+  return new Promise((resolve) => {
+    store.setState({ confirmState: { message, tone: opts.danger ? 'danger' : 'normal', resolve } })
+  })
+}
+
+/** 应用皮肤信息框（替代原生 window.alert，单个确定按钮） */
+export function alert(message: string): Promise<void> {
+  return new Promise((resolve) => {
+    store.setState({ confirmState: { message, tone: 'info', resolve: () => resolve(undefined) } })
+  })
+}
+
+/** ConfirmDialog 按钮回传 */
+export function resolveConfirm(v: boolean): void {
+  const state = store.getState().confirmState
+  state?.resolve(v)
+  store.setState({ confirmState: null })
 }
 
 /** 订阅主进程的配置变更推送（Plan 工具切换批准模式后同步界面菜单） */

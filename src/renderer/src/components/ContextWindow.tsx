@@ -6,6 +6,7 @@ import rehypeHighlight from 'rehype-highlight'
 import type { ChatMessage, ContextInfo } from '../../../shared/types'
 import { copyText } from '../clipboard'
 import { Icon } from './Icon'
+import { confirm } from '../actions'
 
 /**
  * 上下文管理窗口（独立悬浮窗，?page=context）：
@@ -105,9 +106,9 @@ export function ContextWindow() {
   const selectedIndex = messages.findIndex((m) => m.id === selectedId)
   const selected = selectedIndex >= 0 ? messages[selectedIndex] : null
 
-  const select = (id: string): void => {
+  const select = async (id: string): Promise<void> => {
     if (dirty) {
-      if (!window.confirm('当前编辑未保存，放弃修改？')) return
+      if (!(await confirm('当前编辑未保存，放弃修改？'))) return
     }
     setSelectedId(id)
     const m = messages.find((x) => x.id === id)
@@ -138,9 +139,9 @@ export function ContextWindow() {
     })
   }
 
-  const deleteSelected = (): void => {
+  const deleteSelected = async (): Promise<void> => {
     if (!target || !selected) return
-    if (!window.confirm(`确定删除第 ${selectedIndex + 1} 条消息？内容不可恢复。`)) return
+    if (!(await confirm(`确定删除第 ${selectedIndex + 1} 条消息？内容不可恢复。`, { danger: true }))) return
     void run('删除消息', async () => {
       const ok = await window.api.deleteMessage(target.projectId, target.sessionId, selected.id)
       if (!ok) throw new Error('删除失败')
@@ -158,17 +159,18 @@ export function ContextWindow() {
     })
   }
 
-  const compressChecked = (): void => {
+  const compressChecked = async (): Promise<void> => {
     if (!target || checked.size === 0) return
     const ids = messages.filter((m) => checked.has(m.id)).map((m) => m.id)
     const firstIdx = messages.findIndex((m) => m.id === ids[0])
     const lastIdx = messages.findIndex((m) => m.id === ids[ids.length - 1])
     const n = lastIdx - firstIdx + 1
     if (
-      !window.confirm(
+      !(await confirm(
         `将把第 ${firstIdx + 1}–${lastIdx + 1} 条（共 ${n} 条）压缩为一条摘要消息。\n` +
           '该范围会整体替换（保持工具调用配对完整），不可恢复。继续？',
-      )
+        { danger: true },
+      ))
     ) {
       return
     }
@@ -196,9 +198,9 @@ export function ContextWindow() {
     })
   }
 
-  const compactAll = (): void => {
+  const compactAll = async (): Promise<void> => {
     if (!target || messages.length === 0) return
-    if (!window.confirm('把当前全部对话压缩成一份摘要？界面保留，之后请求只发摘要。')) return
+    if (!(await confirm('把当前全部对话压缩成一份摘要？界面保留，之后请求只发摘要。'))) return
     void run('压缩全部对话', async () => {
       const r = await window.api.compactNow(target.projectId, target.sessionId)
       if (!r.ok) throw new Error(r.error ?? '压缩失败')
@@ -206,9 +208,9 @@ export function ContextWindow() {
     })
   }
 
-  const clearAll = (): void => {
+  const clearAll = async (): Promise<void> => {
     if (!target) return
-    if (!window.confirm('确定清空当前会话的全部消息？摘要也会作废，不可恢复。')) return
+    if (!(await confirm('确定清空当前会话的全部消息？摘要也会作废，不可恢复。', { danger: true }))) return
     void run('清空上下文', async () => {
       const ok = await window.api.clearSessionContextById(target.projectId, target.sessionId)
       if (!ok) throw new Error('清空失败')

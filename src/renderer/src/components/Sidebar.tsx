@@ -101,9 +101,11 @@ export function Sidebar() {
                           title="删除会话"
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (window.confirm(office ? `删除办公任务「${s.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${s.title}」？消息记录将一并删除，不可恢复。`)) {
-                              void actions.deleteSession(p.id, s.id)
-                            }
+                            void actions
+                              .confirm(office ? `删除办公任务「${s.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${s.title}」？消息记录将一并删除，不可恢复。`, { danger: true })
+                              .then((ok) => {
+                                if (ok) void actions.deleteSession(p.id, s.id)
+                              })
                           }}
                         >
                           <Icon name="close" size={12} />
@@ -202,9 +204,11 @@ export function Sidebar() {
             <button
               className="ctx-menu-item danger"
               onClick={() => {
-                if (window.confirm(menu.projectId === 'office-workspace' ? `删除办公任务「${menu.session.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${menu.session.title}」？消息记录将一并删除，不可恢复。`)) {
-                  void actions.deleteSession(menu.projectId, menu.session.id)
-                }
+                void actions
+                  .confirm(menu.projectId === 'office-workspace' ? `删除办公任务「${menu.session.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${menu.session.title}」？消息记录将一并删除，不可恢复。`, { danger: true })
+                  .then((ok) => {
+                    if (ok) void actions.deleteSession(menu.projectId, menu.session.id)
+                  })
                 setMenu(null)
               }}
             >

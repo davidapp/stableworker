@@ -61,6 +61,8 @@ export interface AppState {
   /** 项目级设置覆盖（projectId → 覆盖项） */
   /** 界面偏好（语言 / 主题） */
   preferences: Preferences
+  /** 全局确认对话框状态（actions.confirm 触发，ConfirmDialog 组件渲染） */
+  confirmState: { message: string; tone: 'normal' | 'danger' | 'info'; resolve: (v: boolean) => void } | null
   /** 上下文窗口上限（tokens），用于水位条；0 = 未知不显示 */
   contextLimit: number
   contextInfo: ModelContextInfo | null
@@ -120,6 +122,7 @@ export const store = createStore<AppState>({
   subagentTypes: [],
   hooks: [],
   preferences: { language: 'zh', theme: 'dark' },
+  confirmState: null,
   contextLimit: 0,
   contextInfo: null,
   toolSwitches: {},

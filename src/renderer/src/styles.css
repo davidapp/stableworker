@@ -512,6 +512,42 @@ body {
   border-color: var(--text-2, #9aa0aa);
 }
 
+/* 全局确认/信息对话框（应用皮肤，替代原生 confirm/alert） */
+.confirm-dialog {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-l);
+  padding: 16px 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.confirm-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.confirm-dialog-message {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 16px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* 自定义窗口控制（聊天头部右上角：最小化 / 最大化 / 关闭） */
 .chat-header button,
 .chat-header a,

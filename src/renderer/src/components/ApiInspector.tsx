@@ -4,6 +4,7 @@ import json from 'highlight.js/lib/languages/json'
 import { decimalToPico, picoToDecimalString } from '../../../shared/money'
 import type { Currency, DebugDetail, DebugListItem, Money } from '../../../shared/types'
 import { copyText } from '../clipboard'
+import * as actions from '../actions'
 import { Icon } from './Icon'
 
 hljs.registerLanguage('json', json)
@@ -150,9 +151,9 @@ export function ApiInspector() {
             <button
               className="btn btn-danger-ghost"
               onClick={() => {
-                if (window.confirm('确定清空全部 API 调用记录？磁盘上的日志文件也会一并删除，不可恢复。')) {
-                  void window.api.clearDebugLog()
-                }
+                void actions.confirm('确定清空全部 API 调用记录？磁盘上的日志文件也会一并删除，不可恢复。', { danger: true }).then((ok) => {
+                  if (ok) void window.api.clearDebugLog()
+                })
               }}
             >
               <Icon name="trash" />

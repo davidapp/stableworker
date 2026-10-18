@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../../store'
 import type { HookConfig } from '../../../../shared/types'
+import * as actions from '../../actions'
 
 interface Draft {
   id: string
@@ -63,7 +64,7 @@ export function HooksPage() {
   }
 
   const remove = async (h: HookConfig): Promise<void> => {
-    if (!window.confirm(`删除该 ${EVENT_LABEL[h.event]} 钩子？`)) return
+    if (!(await actions.confirm(`删除该 ${EVENT_LABEL[h.event]} 钩子？`))) return
     await persist((hooks ?? []).filter((x) => x.id !== h.id))
   }
 
