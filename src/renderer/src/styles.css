@@ -490,8 +490,11 @@ body {
   justify-content: flex-start;
   opacity: 0;
   transition: opacity 0.15s ease;
-  margin-top: 4px;
+  margin-top: 6px;
+  padding: 0 6px;
 }
+
+.message.user .msg-rewind { justify-content: flex-end; }
 
 .message:hover .msg-rewind {
   opacity: 1;

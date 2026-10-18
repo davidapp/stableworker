@@ -273,8 +273,10 @@ export function ChatPane() {
                   )}
                   {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
                   {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
-                  {!m.streaming && idx < messages.length - 1 ? (
-                    <div className="msg-rewind">
+                </div>
+                {!m.streaming ? (
+                  <div className="msg-rewind">
+                    {idx < messages.length - 1 ? (
                       <button
                         className="msg-rewind-btn"
                         title={`删除这条之后的 ${messages.length - idx - 1} 条消息，回退到这里`}
@@ -282,28 +284,16 @@ export function ChatPane() {
                       >
                         ⏪ {t('回到这里')}
                       </button>
-                      <button
-                        className="msg-rewind-btn"
-                        title="复制这条及之前的消息为一个新会话（原会话不变）"
-                        onClick={() => void actions.forkFromMessage(m.id)}
-                      >
-                        🍴 {t('从这里分叉')}
-                      </button>
-                    </div>
-                  ) : (
-                    !m.streaming ? (
-                      <div className="msg-rewind">
-                        <button
-                          className="msg-rewind-btn"
-                          title="复制全部消息为一个新会话（原会话不变）"
-                          onClick={() => void actions.forkFromMessage(m.id)}
-                        >
-                          🍴 {t('从这里分叉')}
-                        </button>
-                      </div>
-                    ) : null
-                  )}
-                </div>
+                    ) : null}
+                    <button
+                      className="msg-rewind-btn"
+                      title="复制这条及之前的消息为一个新会话（原会话不变）"
+                      onClick={() => void actions.forkFromMessage(m.id)}
+                    >
+                      🍴 {t('从这里分叉')}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
