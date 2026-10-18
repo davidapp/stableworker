@@ -202,7 +202,7 @@ async function loadSessionUnlocked(
       messages: r.messages,
       summary: r.summary,
       revision: r.revision,
-      taskMode: r.taskMode,
+      taskMode: managedTaskMode(projectId) ?? r.taskMode,
       llmId: r.llmId,
     }
     // 恢复摘要缓存：重启后同会话继续压缩时直接复用，不再花摘要 API 调用
@@ -212,13 +212,19 @@ async function loadSessionUnlocked(
   }
   const legacy = await migrateLegacy(projectId, sessionId)
   if (legacy) {
-    return { session: legacy, damaged: false, corruptLines: 0, totalLines: 0 }
+    return { session: { ...legacy, taskMode: managedTaskMode(projectId) ?? legacy.taskMode }, damaged: false, corruptLines: 0, totalLines: 0 }
   }
   return { session: null, damaged: false, corruptLines: 0, totalLines: 0 }
 }
 
 export function loadSessionAny(projectId: string, sessionId: string): ReturnType<typeof loadSessionUnlocked> {
   return serializeSession(projectId, sessionId, () => loadSessionUnlocked(projectId, sessionId))
+}
+
+/** 受管工作区（办公/视频）的模式由虚拟项目 id 权威决定；
+ *  旧版本曾把错误 taskMode 写进会话文件，加载时以此矫正并随下次保存写回正确值 */
+function managedTaskMode(projectId: string): TaskMode | null {
+  return projectId === 'office-workspace' ? 'office' : projectId === 'video-workspace' ? 'video' : null
 }
 
 // ---------- IPC ----------

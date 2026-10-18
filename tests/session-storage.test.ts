@@ -35,7 +35,8 @@ vi.mock('undici', () => ({ fetch: () => { throw new Error('Unexpected real API r
 
 const message = (id: string, role: 'user' | 'assistant', text: string): ChatMessage => ({ id, role, createdAt: 1, blocks: [{ type: 'text', text }] })
 const initialMessages = (): ChatMessage[] => [message('u1', 'user', 'original user'), message('a1', 'assistant', 'original answer'), message('u2', 'user', 'follow up')]
-const file = (): string => join(fixture.root, 'sessions', 'project', 'session.jsonl')
+const file = (projectId = 'project', sessionId = 'session'): string =>
+  join(fixture.root, 'sessions', projectId, `${sessionId}.jsonl`)
 
 async function seed(): Promise<void> {
   await mkdir(join(fixture.root, 'sessions', 'project'), { recursive: true })
@@ -179,6 +180,23 @@ describe('real JSONL session persistence', () => {
     expect((await loadSessionAny('project', video.id)).session).toMatchObject({ taskMode: 'video', title: 'Video' })
     const { listSessionMetas } = await import('../src/main/sessions')
     expect((await listSessionMetas('project')).find((m) => m.id === video.id)).toMatchObject({ taskMode: 'video' })
+  })
+
+  it('self-heals a video session whose meta was corrupted to coding by an older build', async () => {
+    const video = await invoke<Session>('sessions:create', 'video-workspace', 'Heal', 'video')
+    // 模拟修复前版本追加的错误 meta（renderer 端 taskMode 被打回 coding 后保存）
+    const badBatch = JSON.stringify({ t: 'batch', revision: 2, ts: Date.now(), operations: [
+      { t: 'meta', ts: Date.now(), title: 'Heal', createdAt: video.createdAt, taskMode: 'coding' },
+    ] })
+    const original = await readFile(file('video-workspace', video.id), 'utf-8')
+    await writeFile(file('video-workspace', video.id), original + '\n' + badBatch + '\n', 'utf-8')
+    const { loadSessionAny } = await import('../src/main/sessions')
+    const reloaded = (await loadSessionAny('video-workspace', video.id)).session
+    expect(reloaded).toMatchObject({ taskMode: 'video' })
+    // 矫正后的内存态随保存写回正确值
+    reloaded!.messages = [message('u', 'user', 'hello')]
+    await invoke('sessions:save', reloaded)
+    expect((await loadSessionAny('video-workspace', video.id)).session).toMatchObject({ taskMode: 'video' })
   })
 
   it('keeps a crash-truncated transaction isolated from the next complete append', async () => {
