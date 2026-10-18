@@ -16,6 +16,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // @文件引用补全：光标处于 @片段 中时显示项目文件候选
   const [mention, setMention] = useState<{ start: number; query: string; items: string[]; active: number } | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   useEffect(() => { setText(''); setMention(null) }, [activeSessionId, taskMode])
   useEffect(() => {
     if (!taskDraft) return
@@ -134,34 +135,47 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           <div className="spacer" />
           <ContextMeter />
           <div className="model-select-wrap">
-            <select
+            {menuOpen ? <div className="popover-backdrop" onClick={() => setMenuOpen(false)} /> : null}
+            <button
               className="model-select"
-              value={activeLlmId ?? ''}
               title="切换模型配置档"
-              onChange={(e) => {
-                const v = e.target.value
-                if (v === '__manage__') {
-                  actions.openSettings('llm')
-                  return
-                }
-                if (v) void actions.setActiveLlm(v)
-              }}
+              onClick={() => setMenuOpen((v) => !v)}
             >
-              {llmProfiles.length === 0 ? (
-                <option value="">未配置模型</option>
-              ) : (
-                llmProfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.model || p.name}
-                  </option>
-                ))
-              )}
-              <option value="__manage__" disabled aria-hidden="true">
-                ──────────
-              </option>
-              <option value="__manage__">⚙ 管理模型…</option>
-            </select>
-            <CaretIcon />
+              {llmProfiles.find((p) => p.id === activeLlmId)?.model || llmProfiles.find((p) => p.id === activeLlmId)?.name || t('未配置模型')}
+              <CaretIcon />
+            </button>
+            {menuOpen ? (
+              <div className="mode-menu model-menu">
+                {llmProfiles.length === 0 ? (
+                  <div className="mode-item">{t('未配置模型')}</div>
+                ) : (
+                  llmProfiles.map((p) => (
+                    <button
+                      key={p.id}
+                      className="mode-item"
+                      style={p.id === activeLlmId ? { color: 'var(--accent-strong)' } : undefined}
+                      onClick={() => {
+                        setMenuOpen(false)
+                        void actions.setActiveLlm(p.id)
+                      }}
+                    >
+                      <span style={{ flex: 1, textAlign: 'left' }}>{p.model || p.name}</span>
+                      {p.id === activeLlmId ? '✓' : ''}
+                    </button>
+                  ))
+                )}
+                <div className="model-menu-divider" />
+                <button
+                  className="mode-item"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    actions.openSettings('llm')
+                  }}
+                >
+                  ⚙ {t('管理模型…')}
+                </button>
+              </div>
+            ) : null}
           </div>
           <ThinkingEffortMenu />
         {disabled ? (

@@ -559,6 +559,44 @@ body {
   gap: 8px;
 }
 
+/* 模型选择自绘菜单（圆角卡片，与按钮留 8px 间距，向上展开） */
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: auto;
+  z-index: 200;
+  width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-menu .mode-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-menu .mode-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
 /* 配置档行内"操作 ▾"下拉菜单 */
 .profile-menu {
   right: 0;
