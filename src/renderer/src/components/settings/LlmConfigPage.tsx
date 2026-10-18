@@ -168,11 +168,11 @@ export function LlmConfigPage() {
   const [editing, setEditing] = useState<ProfileDraft | null>(null)
   const [fetchedByProfile, setFetchedByProfile] = useState<Record<string, { id: string; name?: string }[]>>({})
   const [menuFor, setMenuFor] = useState<string | null>(null)
-  const [actionNotice, setActionNotice] = useState<{ profileId: string; text: string } | null>(null)
+  const [balanceFor, setBalanceFor] = useState<Record<string, BalanceResult>>({})
+  const [rowNotice, setRowNotice] = useState<{ profileId: string; tone: 'success' | 'warning'; text: string } | null>(null)
   const [fetchingModels, setFetchingModels] = useState(false)
   const [testing, setTesting] = useState(false)
   const [refreshingContext, setRefreshingContext] = useState<string | null>(null)
-  const [contextNotice, setContextNotice] = useState<SettingsNoticeValue | null>(null)
   const [testResult, setTestResult] = useState<SettingsNoticeValue | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -181,22 +181,22 @@ export function LlmConfigPage() {
     try {
       const r = await window.api.listModels({ id: p.id, provider: p.provider, name: p.name, baseURL: p.baseURL })
       if (!r.ok) {
-        setActionNotice({ profileId: p.id, text: `❌ 获取模型列表失败：${r.error ?? '未知错误'}` })
+        setRowNotice({ profileId: p.id, tone: 'warning', text: `获取模型列表失败：${r.error ?? '未知错误'}` })
       } else {
         setFetchedByProfile((prev) => ({ ...prev, [p.id]: r.models }))
-        setActionNotice({ profileId: p.id, text: `✅ 获取到 ${r.models.length} 个模型（编辑时模型输入框可选）` })
+        setRowNotice({ profileId: p.id, tone: 'success', text: `已获取 ${r.models.length} 个模型，编辑时输入框可选` })
       }
     } finally {
       setFetchingModels(false)
     }
   }
 
-  const [balance, setBalance] = useState<BalanceResult | null>(null)
   const [balanceBusy, setBalanceBusy] = useState(false)
-  const queryBalance = async (): Promise<void> => {
+  const queryBalanceFor = async (profileId: string): Promise<void> => {
     setBalanceBusy(true)
     try {
-      setBalance(await window.api.queryBalance())
+      const r = await window.api.queryBalance()
+      setBalanceFor((prev) => ({ ...prev, [profileId]: r }))
     } finally {
       setBalanceBusy(false)
     }
@@ -430,7 +430,18 @@ export function LlmConfigPage() {
                   </small>
                   <small>
                     上下文：{p.contextInfo ? `${p.contextInfo.contextWindow.toLocaleString()} tokens · ${p.contextInfo.source === 'api' ? '服务元数据' : p.contextInfo.source === 'manual' ? '手动配置' : '官方文档'}` : '上限未确认'}
+                    {balanceFor[p.id] ? (() => {
+                      const b = balanceFor[p.id]
+                      return b.ok
+                        ? ` · 余额：${b.currency === 'USD' ? '$' : b.currency === 'CNY' ? '¥' : ''}${b.totalBalance ?? '?'}${b.grantedBalance && b.grantedBalance !== '0' ? ` · 赠送 ${b.grantedBalance}` : ''}${b.isAvailable === false ? ' · 账户不可用' : ''}`
+                        : ` · 余额查询失败：${b.error ?? '未知原因'}`
+                    })() : null}
                   </small>
+                  {rowNotice?.profileId === p.id ? (
+                    <small className={rowNotice.tone === 'success' ? 'status-line status-success' : 'status-line status-error'} style={{ display: 'block' }}>
+                      {rowNotice.text}
+                    </small>
+                  ) : null}
                 </div>
                 <div className="profile-actions">
                   <div className="mode-menu-wrap">
@@ -450,7 +461,7 @@ export function LlmConfigPage() {
                           setRefreshingContext(p.id)
                           void actions.refreshModelContext(p.id).then((result) => {
                             setRefreshingContext(null)
-                            setContextNotice({ tone: result.ok ? 'success' : 'warning', text: result.message })
+                            setRowNotice({ profileId: p.id, tone: result.ok ? 'success' : 'warning', text: result.message })
                           })
                         }}>
                           获取容量
@@ -461,7 +472,7 @@ export function LlmConfigPage() {
                           title={p.id === activeLlmId ? '' : '仅使用中的配置档可查询'}
                           onClick={() => {
                             setMenuFor(null)
-                            void queryBalance()
+                            void queryBalanceFor(p.id)
                           }}
                         >
                           查询余额
@@ -485,17 +496,6 @@ export function LlmConfigPage() {
             ))}
           </div>
 
-          {actionNotice ? (
-            <div className="saved-hint" role="status">{actionNotice.text}</div>
-          ) : null}
-          {balance ? (
-            <div className="saved-hint" role="status">
-              <Icon name={balance.ok ? 'check' : 'warning'} size={14} />
-              {balance.ok
-                ? `可用：${balance.currency === 'USD' ? '$' : balance.currency === 'CNY' ? '¥' : ''}${balance.totalBalance ?? '?'}${balance.currency === 'CNY' ? '（人民币）' : ''}${balance.grantedBalance && balance.grantedBalance !== '0' ? ` · 赠送 ${balance.grantedBalance}` : ''}${balance.isAvailable === false ? ' · 账户不可用' : ''}`
-                : balance.error ?? '查询失败'}
-            </div>
-          ) : null}
         </>
       )}
 
@@ -506,7 +506,6 @@ export function LlmConfigPage() {
         <div className="spacer" />
         {saved ? <span className="saved-hint" role="status"><Icon name="check" size={14} />已保存</span> : null}
       </div>
-      <SettingsNotice notice={contextNotice} />
     </div>
   )
 }
