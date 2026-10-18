@@ -78,11 +78,16 @@ export function ChatPane() {
         setAttachments((prev) => [...prev, ...imported
           .map((f) => ({ path: f.path, name: f.path.slice(f.path.lastIndexOf('/') + 1), size: f.bytes }))
           .filter((f) => !prev.some((p) => p.path === f.path))])
-      } else {
+      } else if (mode === 'office') {
         const id = await actions.ensureOfficeSession()
         const imported = await window.api.office.import(id)
         if (store.getState().activeSessionId !== id) return
         setAttachments((prev) => [...prev, ...imported.filter((f) => !prev.some((p) => p.path === f.path))])
+      } else {
+        const projectId = store.getState().activeProjectId
+        if (!projectId) throw new Error('请先添加项目')
+        const picked = await window.api.pickContextFiles(projectId)
+        setAttachments((prev) => [...prev, ...picked.filter((f) => !prev.some((p) => p.path === f.path))])
       }
       setFileRefresh((n) => n + 1)
       setImportError('')
@@ -96,6 +101,11 @@ export function ChatPane() {
   const sendVideo = (text: string): void => {
     const refs = attachments.map((f) => `- ${f.path}`).join('\n')
     void actions.sendChat(`${text}${refs ? `\n\n本次导入的素材（相对路径，可直接用于分镜）：\n${refs}` : ''}`)
+    setAttachments([])
+  }
+  const sendCoding = (text: string): void => {
+    const refs = attachments.map((f) => `- ${f.path}`).join('\n')
+    void actions.sendChat(`${text}${refs ? `\n\n本次添加的上下文文件（请先读取这些文件再回答）：\n${refs}` : ''}`)
     setAttachments([])
   }
   // 记录上一次的会话 id：切换会话（含启动恢复）后强制定位到最新消息
@@ -326,7 +336,7 @@ export function ChatPane() {
         </div>
       )}
 
-      <Composer disabled={streaming} attachments={office || video ? attachments : []} onAttach={office || video ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : video ? sendVideo : undefined} taskDraft={office ? taskDraft : null} />
+      <Composer disabled={streaming} attachments={attachments} onAttach={() => void importFiles()} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : video ? sendVideo : sendCoding} taskDraft={office ? taskDraft : null} />
     </main>
     {office && (
           <OfficePanel

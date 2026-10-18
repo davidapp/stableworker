@@ -77,7 +77,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
   return (
     <footer className="composer">
       <div className="composer-box" style={{ position: 'relative' }}>
-        {(office || video) && attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
+        {attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
         {mention && mention.items.length > 0 ? (
           <div
             role="listbox"
@@ -143,7 +143,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           }}
         />
         <div className="composer-row">
-          {(office || video) && <button className="icon-btn-lg icon-btn-square" title={office ? t('添加办公资料') : t('添加视频素材')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
+          <button className="icon-btn-lg icon-btn-square" title={office ? t('添加办公资料') : video ? t('添加视频素材') : t('添加上下文')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>
           <ApprovalModeMenu />
           <div className="spacer" />
           <ContextMeter />

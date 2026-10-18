@@ -1,6 +1,7 @@
 import { dialog, ipcMain } from 'electron'
-import { basename, normalize } from 'node:path'
+import { basename, normalize, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { lstat, stat } from 'node:fs/promises'
 import { loadConfig, saveConfig } from './config'
 import { deleteProjectSessions } from './sessions'
 import type { ConfigView } from '../shared/types'
@@ -10,6 +11,13 @@ import type { ConfigView } from '../shared/types'
  * 与 Claude Code 一致，用规范化后的绝对路径做唯一键，同一目录不会出现两个条目；
  * 移除项目只移除配置与本地会话记录，不动磁盘上的项目文件。
  */
+
+export interface ContextFilePick {
+  /** 项目内相对路径（正斜杠），供消息引用与 read_file 使用 */
+  path: string
+  name: string
+  size: number
+}
 
 export function registerProjectHandlers(): void {
   ipcMain.handle('projects:add', async (): Promise<ConfigView | null> => {
@@ -54,5 +62,32 @@ export function registerProjectHandlers(): void {
     if (cfg.activeProjectId === id) cfg.activeProjectId = cfg.projects[0]?.id ?? null
     await deleteProjectSessions(id)
     return saveConfig(cfg)
+  })
+
+  // 编程模式"添加上下文"：在项目目录内选文件，返回相对路径供消息引用
+  ipcMain.handle('projects:pickContextFiles', async (_e, id: string): Promise<ContextFilePick[]> => {
+    const cfg = await loadConfig()
+    const project = cfg.projects.find((p) => p.id === id)
+    if (!project) throw new Error('项目不存在')
+    const selected = await dialog.showOpenDialog({
+      title: '添加上下文文件',
+      defaultPath: project.path,
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: '所有文件', extensions: ['*'] }],
+    })
+    if (selected.canceled || selected.filePaths.length === 0) return []
+    const picks: ContextFilePick[] = []
+    for (const abs of selected.filePaths) {
+      const root = resolve(project.path)
+      const normalized = resolve(abs)
+      if (normalized !== root && !normalized.startsWith(root + sep)) throw new Error('只能添加项目目录内的文件')
+      const info = await lstat(normalized)
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error('只能添加普通文件')
+      const size = (await stat(normalized)).size
+      const rel = relative(root, normalized).split(sep).join('/')
+      picks.push({ path: rel, name: basename(normalized), size })
+      if (picks.length >= 20) break
+    }
+    return picks
   })
 }

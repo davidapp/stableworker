@@ -58,6 +58,9 @@ const api = {
     list: (sessionId: string): Promise<VideoFile[]> => ipcRenderer.invoke('video:files', sessionId),
     open: (sessionId: string, path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('video:open', sessionId, path),
   },
+  // Coding-mode context picker: files are chosen inside the project directory only.
+  pickContextFiles: (projectId: string): Promise<Array<{ path: string; name: string; size: number }>> =>
+    ipcRenderer.invoke('projects:pickContextFiles', projectId),
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
   refreshModelContext: (id?: string, force = true): Promise<{ ok: boolean; message: string; config: ConfigView }> =>
