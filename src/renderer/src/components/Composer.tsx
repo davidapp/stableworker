@@ -21,7 +21,14 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
   const sessionLlmId = activeSessionId && activeProjectId
     ? sessionsByProject[activeProjectId]?.find((m) => m.id === activeSessionId)?.llmId
     : undefined
-  const currentLlmId = sessionLlmId ?? activeLlmId
+  // 会话覆盖的配置档若已被停用/删除，则回退全局激活档，再回退第一个启用档
+  const sessionProfile = sessionLlmId ? llmProfiles.find((p) => p.id === sessionLlmId) : undefined
+  const currentProfile =
+    sessionProfile && sessionProfile.enabled !== false
+      ? sessionProfile
+      : llmProfiles.find((p) => p.id === activeLlmId && p.enabled !== false) ??
+        llmProfiles.find((p) => p.enabled !== false)
+  const currentLlmId = currentProfile?.id
   useEffect(() => { setText(''); setMention(null) }, [activeSessionId, taskMode])
   useEffect(() => {
     if (!taskDraft) return
@@ -146,7 +153,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
               title="切换本会话使用的模型（仅当前会话生效）"
               onClick={() => setMenuOpen((v) => !v)}
             >
-              {llmProfiles.find((p) => p.id === (sessionLlmId ?? activeLlmId))?.model || t('未配置模型')}
+              {currentProfile?.model || t('未配置模型')}
               <CaretIcon />
             </button>
             {menuOpen ? (
@@ -154,7 +161,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
                 {llmProfiles.length === 0 ? (
                   <div className="mode-item">{t('未配置模型')}</div>
                 ) : (
-                  llmProfiles.map((p) => (
+                  llmProfiles.filter((p) => p.enabled !== false).map((p) => (
                     <button
                       key={p.id}
                       className="mode-item"
