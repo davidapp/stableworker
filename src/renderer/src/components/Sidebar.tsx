@@ -12,6 +12,8 @@ export function Sidebar() {
   const visibleProjects = projects.filter((p) => office ? p.id === 'office-workspace' : p.id !== 'office-workspace')
   const [menu, setMenu] = useState<{ x: number; y: number; projectId: string; session: SessionMeta } | null>(null)
   const [renaming, setRenaming] = useState<{ projectId: string; id: string; value: string } | null>(null)
+  const [projMenu, setProjMenu] = useState<{ x: number; y: number; projectId: string } | null>(null)
+  const [renamingProject, setRenamingProject] = useState<{ id: string; value: string } | null>(null)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
 
   const commitRename = (): void => {
@@ -37,7 +39,13 @@ export function Sidebar() {
           const sessions = sessionsByProject[p.id] ?? []
           return (
             <li key={p.id} className={`project-node ${office ? 'office-task-node' : ''}`}>
-              {!office && <div className={`project-row ${p.id === activeProjectId ? 'active' : ''}`}>
+              {!office && <div
+                className={`project-row ${p.id === activeProjectId ? 'active' : ''}`}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setProjMenu({ x: e.clientX, y: e.clientY, projectId: p.id })
+                }}
+              >
                 <button
                   className="chevron"
                   title={expanded ? '折叠' : '展开会话'}
@@ -46,10 +54,31 @@ export function Sidebar() {
                 >
                   <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={12} />
                 </button>
+                {renamingProject?.id === p.id ? (
+                  <input
+                    className="rename-input"
+                    autoFocus
+                    value={renamingProject.value}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenamingProject({ id: p.id, value: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && renamingProject.value.trim()) {
+                        void actions.renameProject(p.id, renamingProject.value.trim())
+                        setRenamingProject(null)
+                      }
+                      if (e.key === 'Escape') setRenamingProject(null)
+                    }}
+                    onBlur={() => {
+                      if (renamingProject.value.trim()) void actions.renameProject(p.id, renamingProject.value.trim())
+                      setRenamingProject(null)
+                    }}
+                  />
+                ) : (
                 <span className="project-name" title={p.path} onClick={() => void actions.selectProject(p.id)}>
                   <Icon name="folder" size={15} />
                   {p.name}
                 </span>
+                )}
                 <button
                   className="icon-btn project-add"
                   title="在此项目下新建会话"
@@ -179,6 +208,37 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+
+      {/* 项目行的右键菜单 */}
+      {projMenu ? <div className="popover-backdrop" onClick={() => setProjMenu(null)} /> : null}
+      {projMenu ? (
+        <div className="ctx-menu" style={{ left: Math.min(projMenu.x, window.innerWidth - 170), top: projMenu.y }}>
+          <button
+            className="ctx-menu-item"
+            onClick={() => {
+              setRenamingProject({ id: projMenu.projectId, value: projects.find((p) => p.id === projMenu.projectId)?.name ?? '' })
+              setProjMenu(null)
+            }}
+          >
+            <Icon name="edit" size={14} /> {t('重命名')}
+          </button>
+          <button
+            className="ctx-menu-item danger"
+            onClick={() => {
+              const p = projects.find((x) => x.id === projMenu.projectId)
+              if (!p) return
+              void actions
+                .confirm(`删除项目「${p.name}」？该目录下的全部会话记录将一并删除，不可恢复。目录本身不会删除。`, { danger: true })
+                .then((ok) => {
+                  if (ok) void actions.removeProject(projMenu.projectId)
+                })
+              setProjMenu(null)
+            }}
+          >
+            <Icon name="trash" size={14} /> {t('删除项目')}
+          </button>
+        </div>
+      ) : null}
 
       {/* 会话叶子的右键菜单 */}
       {menu ? (

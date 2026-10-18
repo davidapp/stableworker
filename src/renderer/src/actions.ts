@@ -213,6 +213,12 @@ export function toggleProjectExpanded(projectId: string): void {
   if (next[projectId]) void refreshProjectSessions(projectId)
 }
 
+/** 重命名项目（仅改显示名，不动磁盘目录） */
+export async function renameProject(id: string, name: string): Promise<void> {
+  const cfg = await window.api.renameProject(id, name)
+  applyConfig(cfg)
+}
+
 export async function removeProject(id: string): Promise<void> {
   await stopActiveChatForNavigation()
   const cfg = await window.api.removeProject(id)

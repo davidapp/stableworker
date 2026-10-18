@@ -40,6 +40,14 @@ export function registerProjectHandlers(): void {
     return saveConfig(cfg)
   })
 
+  ipcMain.handle('projects:rename', async (_e, id: string, name: string): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    const target = cfg.projects.find((p) => p.id === id)
+    const clean = name.trim()
+    if (target && clean) target.name = clean
+    return saveConfig(cfg)
+  })
+
   ipcMain.handle('projects:remove', async (_e, id: string): Promise<ConfigView> => {
     const cfg = await loadConfig()
     cfg.projects = cfg.projects.filter((p) => p.id !== id)

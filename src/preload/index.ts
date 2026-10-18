@@ -136,6 +136,9 @@ const api = {
   addProject: (): Promise<ConfigView | null> => ipcRenderer.invoke('projects:add'),
   setActiveProject: (id: ProjectInfo['id']): Promise<ConfigView> => ipcRenderer.invoke('projects:setActive', id),
   removeProject: (id: ProjectInfo['id']): Promise<ConfigView> => ipcRenderer.invoke('projects:remove', id),
+  /** 重命名项目（仅改显示名，不动磁盘目录） */
+  renameProject: (id: ProjectInfo['id'], name: string): Promise<ConfigView> =>
+    ipcRenderer.invoke('projects:rename', id, name),
 
   // ---- 会话 ----
   listSessions: (projectId: string): Promise<SessionMeta[]> => ipcRenderer.invoke('sessions:list', projectId),
