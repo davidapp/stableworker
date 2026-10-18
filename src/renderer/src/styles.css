@@ -28,10 +28,10 @@
   --radius-s: 6px;
   --radius: 8px;
   --radius-l: 8px;
-  /* 字体栈：优先现代无衬线（Inter → 思源黑体 Noto Sans SC），中文体验显著优于微软雅黑；
+  /* 字体栈：Segoe UI（常规体，比 Variable Text 厚实）→ 思源黑体 Noto Sans SC；
      拉丁与 CJK 分离指定，数字/代码统一 Cascadia */
-  --font-sans: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'Noto Sans SC',
-    'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-sans: 'Segoe UI', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI',
+    system-ui, sans-serif;
   --font-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   --glow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
@@ -117,6 +117,7 @@ body,
 body {
   font-family: var(--font-sans);
   font-size: 14px;
+  font-weight: 500;
   line-height: 1.6;
   font-feature-settings: 'tnum' 1, 'ss01' 1;
   text-rendering: optimizeLegibility;
