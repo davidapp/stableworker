@@ -96,14 +96,15 @@ export function HooksPage() {
         <>
           <div className="field">
             <span>触发时机</span>
-            <div>
+            <div className="settings-radio-group">
               {(Object.keys(EVENT_LABEL) as HookConfig['event'][]).map((ev) => (
-                <label key={ev} style={{ marginRight: 16 }}>
+                <label key={ev}>
                   <input
                     type="radio"
+                    name="hook-event"
                     checked={draft.event === ev}
                     onChange={() => setDraft({ ...draft, event: ev })}
-                  />{' '}
+                  />
                   {ev}
                 </label>
               ))}
