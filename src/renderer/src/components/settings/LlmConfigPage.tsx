@@ -32,7 +32,7 @@ const PRESETS: ProviderPreset[] = [
     name: '智谱 GLM',
     provider: 'openai-compatible',
     baseURL: 'https://open.bigmodel.cn/api/paas/v4/',
-    models: ['glm-4.6', 'glm-4.5'],
+    models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2', 'glm-4.7', 'glm-4.6', 'glm-4.5'],
     docsURL: 'https://docs.bigmodel.cn/cn/guide/start/quickstart',
   },
   {
@@ -182,6 +182,9 @@ export function LlmConfigPage() {
       const r = await window.api.listModels({ id: p.id, provider: p.provider, name: p.name, baseURL: p.baseURL })
       if (!r.ok) {
         setRowNotice({ profileId: p.id, tone: 'warning', text: `获取模型列表失败：${r.error ?? '未知错误'}` })
+      } else if (r.fallback) {
+        setFetchedByProfile((prev) => ({ ...prev, [p.id]: r.models }))
+        setRowNotice({ profileId: p.id, tone: 'warning', text: `该服务商未提供模型列表接口，已显示常用模型（${r.models.length} 个）` })
       } else {
         setFetchedByProfile((prev) => ({ ...prev, [p.id]: r.models }))
         setRowNotice({ profileId: p.id, tone: 'success', text: `已获取 ${r.models.length} 个模型，编辑时输入框可选` })

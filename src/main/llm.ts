@@ -1181,10 +1181,16 @@ export function registerChatHandlers(): void {
         headers: maskHeaders(headers),
         body,
       })
+  // 已知服务商的兜底模型表：/models 接口不存在时显示常用模型（随官方更新手动维护）
+  const FALLBACK_MODELS: { match: RegExp; models: string[] }[] = [
+    { match: /bigmodel|zhipu/i, models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2', 'glm-4.7', 'glm-4.6', 'glm-4.5'] },
+    { match: /deepseek/i, models: ['deepseek-flash', 'deepseek-v4-pro'] },
+  ]
+
   // 拉取服务商模型列表（OpenAI 兼容 GET /models；key 解析规则与 llm:test 一致）
   ipcMain.handle(
     'llm:listModels',
-    async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string }> => {
+    async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string; fallback?: boolean }> => {
       try {
         const cfg = await loadConfig()
         const profiles = cfg.llmProfiles ?? []
@@ -1213,6 +1219,11 @@ export function registerChatHandlers(): void {
         const res = await undiciFetch(joinURL(baseURL, '/models'), { headers, dispatcher, signal: AbortSignal.timeout(20_000) })
         if (!res.ok) {
           const detail = (await res.text().catch(() => '')).slice(0, 200)
+          // 已知服务商没有公开 /models 接口（如智谱）时，回退到内置常用模型表
+          const fallback = FALLBACK_MODELS.find((f) => f.match.test(baseURL))
+          if (fallback) {
+            return { ok: true, models: fallback.models.map((id) => ({ id })), fallback: true }
+          }
           return { ok: false, models: [], error: `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}（该服务商可能不支持 /models 接口）` }
         }
         const data = (await res.json()) as { data?: Array<{ id?: string; name?: string }> }

@@ -123,7 +123,7 @@ const api = {
     ipcRenderer.invoke('llm:test', payload),
   listModels: (
     payload?: { id?: string; provider?: 'openai-compatible' | 'anthropic'; name?: string; baseURL?: string; model?: string; proxyURL?: string; apiKey?: string },
-  ): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string }> =>
+  ): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string; fallback?: boolean }> =>
     ipcRenderer.invoke('llm:listModels', payload),
 
   // ---- 项目 ----
