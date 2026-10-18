@@ -28,9 +28,9 @@
   --radius-s: 6px;
   --radius: 8px;
   --radius-l: 8px;
-  /* 字体栈：Segoe UI（常规体，比 Variable Text 厚实）→ 思源黑体 Noto Sans SC；
-     拉丁与 CJK 分离指定，数字/代码统一 Cascadia */
-  --font-sans: 'Segoe UI', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI',
+  /* 字体栈：Noto Sans SC 打头（自带同族拉丁字形，中西文统一、字形厚实）；
+     纯西文回退 Segoe UI，数字/代码统一 Cascadia */
+  --font-sans: 'Noto Sans SC', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
     system-ui, sans-serif;
   --font-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   --glow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
