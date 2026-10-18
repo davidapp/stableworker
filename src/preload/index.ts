@@ -58,6 +58,9 @@ const api = {
     ipcRenderer.invoke('config:saveProfile', profile),
   deleteProfile: (id: string): Promise<ConfigView> => ipcRenderer.invoke('config:deleteProfile', id),
   setActiveLlm: (id: LLMProfileView['id']): Promise<ConfigView> => ipcRenderer.invoke('config:setActiveLlm', id),
+  /** 启用/停用一个配置档（停用后从聊天框模型选择列表隐藏；停用激活档自动转移激活） */
+  setProfileEnabled: (id: string, enabled: boolean): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setProfileEnabled', id, enabled),
   setApprovalMode: (mode: ApprovalMode): Promise<ConfigView> => ipcRenderer.invoke('config:setApprovalMode', mode),
   setThinkingEffort: (effort: string): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setThinkingEffort', effort),

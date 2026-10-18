@@ -132,6 +132,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   }
   cache.llmProfiles.forEach((p) => {
     p.proxyURL ??= ''
+    p.enabled ??= true
   })
   if (cache.activeLlmId === undefined) cache.activeLlmId = null
   if (cache.approvalMode === undefined) cache.approvalMode = 'confirm'
@@ -202,6 +203,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
       baseURL: p.baseURL,
       model: p.model,
       proxyURL: p.proxyURL,
+      enabled: p.enabled !== false,
       thinkingEffort: p.thinkingEffort,
       contextWindowOverride: p.contextWindowOverride,
       contextInfo: resolveModelContext(p),
@@ -292,6 +294,32 @@ export function registerConfigHandlers(): void {
     const cfg = await loadConfig()
     cfg.llmProfiles = (cfg.llmProfiles ?? []).filter((p) => p.id !== id)
     if (cfg.activeLlmId === id) cfg.activeLlmId = cfg.llmProfiles[0]?.id ?? null
+    return saveConfig(cfg)
+  })
+
+  ipcMain.handle('config:setProfileEnabled', async (_e, id: string, enabled: boolean): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    const target = (cfg.llmProfiles ?? []).find((p) => p.id === id)
+    if (!target) return toConfigView(cfg)
+    target.enabled = enabled
+    if (!enabled && cfg.activeLlmId === id) {
+      const next = (cfg.llmProfiles ?? []).find((p) => p.id !== id && p.enabled !== false)
+      cfg.activeLlmId = next?.id ?? null
+    }
+    if (enabled && !cfg.activeLlmId) cfg.activeLlmId = id
+    return saveConfig(cfg)
+  })
+
+  ipcMain.handle('config:setProfileEnabled', async (_e, id: string, enabled: boolean): Promise<ConfigView> => {
+    const cfg = await loadConfig()
+    const target = (cfg.llmProfiles ?? []).find((p) => p.id === id)
+    if (!target) return toConfigView(cfg)
+    target.enabled = enabled
+    if (!enabled && cfg.activeLlmId === id) {
+      const next = (cfg.llmProfiles ?? []).find((p) => p.id !== id && p.enabled !== false)
+      cfg.activeLlmId = next?.id ?? null
+    }
+    if (enabled && !cfg.activeLlmId) cfg.activeLlmId = id
     return saveConfig(cfg)
   })
 

@@ -746,7 +746,8 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
 async function chatSendInternal(req: ChatRequest, controller: AbortController): Promise<{ ok: boolean; error?: string; compacted?: number }> {
   const cfg = await loadConfig()
   controller.signal.throwIfAborted()
-  let llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
+  const enabledProfiles = (cfg.llmProfiles ?? []).filter((p) => p.enabled !== false)
+  let llm = enabledProfiles.find((p) => p.id === cfg.activeLlmId) ?? enabledProfiles[0] ?? null
   // 斜杠命令 frontmatter 的 model 覆盖：按模型名匹配配置档，找不到保持激活档
   const requestedModel = req.skill?.model?.trim()
   if (requestedModel) {

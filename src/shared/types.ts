@@ -60,6 +60,8 @@ export interface LLMConfig {
   proxyURL: string
   /** 思考力度（推理模型）：off = 不传参数走模型默认；low/medium/high 映射到各协议的对应参数 */
   thinkingEffort?: 'off' | 'low' | 'medium' | 'high'
+  /** 是否允许出现在聊天框的模型选择列表（默认 true）；关闭的配置档不参与对话 */
+  enabled?: boolean
   /** Explicit user override for providers that do not publish a usable model capacity. */
   contextWindowOverride?: number
 }

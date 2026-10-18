@@ -483,11 +483,6 @@ export function LlmConfigPage() {
                       </div>
                     ) : null}
                   </div>
-                  {p.id !== activeLlmId ? (
-                    <button className="btn" onClick={() => void actions.setActiveLlm(p.id)}>
-                      使用
-                    </button>
-                  ) : null}
                   <button className="btn" onClick={() => startEdit(p)}>
                     <Icon name="edit" size={14} />编辑
                   </button>

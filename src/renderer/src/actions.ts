@@ -311,6 +311,12 @@ export async function deleteProfile(id: string): Promise<void> {
   applyConfig(cfg)
 }
 
+/** 启用/停用一个配置档（停用激活档时自动转移激活） */
+export async function setProfileEnabled(id: string, enabled: boolean): Promise<void> {
+  const cfg = await window.api.setProfileEnabled(id, enabled)
+  applyConfig(cfg)
+}
+
 export async function setActiveLlm(id: string): Promise<void> {
   const cfg = await window.api.setActiveLlm(id)
   applyConfig(cfg)
