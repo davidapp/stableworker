@@ -50,4 +50,14 @@ describe('工具开关按模式生效', () => {
     expect(office.toolSwitches.list_files).toBe(false)
     expect(office.toolSwitches.read_file).toBeUndefined()
   })
+
+  it('视频模式读 videoToolSwitches，与编程/办公互不影响', () => {
+    const videoCfg = { ...cfg, videoToolSwitches: { video_tts: false } }
+    const video = resolveEffectiveSettings(videoCfg, 'video')
+    expect(video.toolSwitches.video_tts).toBe(false)
+    expect(video.toolSwitches.read_file).toBeUndefined()
+    expect(video.toolSwitches.list_files).toBeUndefined()
+    // 编程/办公不受视频开关影响
+    expect(resolveEffectiveSettings(videoCfg, 'coding').toolSwitches.video_tts).toBeUndefined()
+  })
 })

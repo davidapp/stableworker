@@ -365,6 +365,8 @@ export interface ConfigView {
   toolSwitches: Record<string, boolean>
   /** 办公模式的工具开关（独立于编程模式） */
   officeToolSwitches: Record<string, boolean>
+  /** 视频模式的工具开关（独立于编程/办公模式） */
+  videoToolSwitches: Record<string, boolean>
   /** 权限规则（deny > ask > allow） */
   permissionRules: PermissionRules
   /** MCP 服务器列表（其工具以 mcp__服务器__工具 并入工具池） */

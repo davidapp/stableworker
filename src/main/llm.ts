@@ -779,7 +779,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
   const officeTools = office ? (await import('./tools/office')).getOfficeToolDefinitions() : []
   const videoTools = video ? (await import('./tools/video')).getVideoToolDefinitions() : []
-  const effSettings = resolveEffectiveSettings(cfg, office ? 'office' : 'coding')
+  const effSettings = resolveEffectiveSettings(cfg, office ? 'office' : video ? 'video' : 'coding')
   let tools = [...toolsForTaskMode(office ? 'office' : video ? 'video' : 'coding', getToolDefinitions(), officeTools, videoTools), ...getMcpToolDefs(), ...getResourceTools()].filter((d) => effSettings.toolSwitches[d.name] !== false)
   const approvalMode = effSettings.approvalMode
   if (approvalMode === 'plan') {

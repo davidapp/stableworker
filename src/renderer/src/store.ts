@@ -70,6 +70,8 @@ export interface AppState {
   toolSwitches: Record<string, boolean>
   /** 办公模式的工具开关（独立于编程模式） */
   officeToolSwitches: Record<string, boolean>
+  /** 视频模式的工具开关（独立于编程/办公模式） */
+  videoToolSwitches: Record<string, boolean>
   /** micro 压缩触发比例（上下文估算超上限的百分比） */
   microCompactRatio: number
   /** micro 压缩保留最近几条助手消息 */
@@ -131,6 +133,7 @@ export const store = createStore<AppState>({
   contextInfo: null,
   toolSwitches: {},
   officeToolSwitches: {},
+  videoToolSwitches: {},
   microCompactRatio: 0.55,
   microCompactKeep: 2,
   permissionRules: { allow: [], ask: [], deny: [] },

@@ -715,10 +715,15 @@ export interface ToolMeta {
 }
 
 export function registerToolHandlers(): void {
-  ipcMain.handle('tools:list', async (_e, mode: 'coding' | 'office' = 'coding'): Promise<ToolMeta[]> => {
+  ipcMain.handle('tools:list', async (_e, mode: 'coding' | 'office' | 'video' = 'coding'): Promise<ToolMeta[]> => {
     const { toolsForTaskMode } = await import('../officeMode')
     const officeTools = mode === 'office' ? (await import('./office')).getOfficeToolDefinitions() : []
-    const pool = mode === 'office' ? toolsForTaskMode('office', getToolDefinitions(), officeTools) : [...getToolDefinitions(), ...officeTools]
+    const videoTools = mode === 'video' ? (await import('./video')).getVideoToolDefinitions() : []
+    const pool = mode === 'office'
+      ? toolsForTaskMode('office', getToolDefinitions(), officeTools)
+      : mode === 'video'
+        ? toolsForTaskMode('video', getToolDefinitions(), [], videoTools)
+        : [...getToolDefinitions(), ...officeTools]
     return pool.map((d) => ({
       name: d.name,
       description: d.description,

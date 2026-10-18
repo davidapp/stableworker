@@ -39,12 +39,12 @@ const APPROVAL_MODES: ApprovalMode[] = ['plan', 'confirm', 'autoEdit', 'fullAcce
 
 /** 三项关键设置的有效值（项目覆盖 > 全局；permissionRules 与全局按 deny/ask/allow 分别合并） */
 export function resolveEffectiveSettings(
-  cfg: Pick<StoredConfig, 'toolSwitches' | 'officeToolSwitches' | 'approvalMode' | 'permissionRules'>,
-  mode: 'coding' | 'office' = 'coding',
+  cfg: Pick<StoredConfig, 'toolSwitches' | 'officeToolSwitches' | 'videoToolSwitches' | 'approvalMode' | 'permissionRules'>,
+  mode: 'coding' | 'office' | 'video' = 'coding',
 ): { toolSwitches: Record<string, boolean>; approvalMode: ApprovalMode; permissionRules: PermissionRules } {
   return {
     approvalMode: cfg.approvalMode ?? 'confirm',
-    toolSwitches: mode === 'office' ? cfg.officeToolSwitches ?? {} : cfg.toolSwitches ?? {},
+    toolSwitches: mode === 'office' ? cfg.officeToolSwitches ?? {} : mode === 'video' ? cfg.videoToolSwitches ?? {} : cfg.toolSwitches ?? {},
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
   }
 }
@@ -70,6 +70,8 @@ interface StoredConfig {
   toolSwitches?: Record<string, boolean>
   /** 办公模式的工具开关（独立于编程模式） */
   officeToolSwitches?: Record<string, boolean>
+  /** 视频模式的工具开关（独立于编程/办公模式） */
+  videoToolSwitches?: Record<string, boolean>
   permissionRules?: PermissionRules
   mcpServers?: MCPServerConfig[]
   sidebarExpanded?: Record<string, boolean>
@@ -150,6 +152,7 @@ export async function loadConfig(): Promise<StoredConfig> {
   updateContextLimit(cache)
   if (cache.toolSwitches === undefined) cache.toolSwitches = {}
   if (cache.officeToolSwitches === undefined) cache.officeToolSwitches = {}
+  if (cache.videoToolSwitches === undefined) cache.videoToolSwitches = {}
   if (cache.permissionRules === undefined) cache.permissionRules = { allow: [], ask: [], deny: [] }
   if (cache.mcpServers === undefined) cache.mcpServers = []
   if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
@@ -223,6 +226,7 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
     contextInfo: resolveModelContext(cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId)),
     toolSwitches: cfg.toolSwitches ?? {},
     officeToolSwitches: cfg.officeToolSwitches ?? {},
+    videoToolSwitches: cfg.videoToolSwitches ?? {},
     permissionRules: cfg.permissionRules ?? { allow: [], ask: [], deny: [] },
     mcpServers: cfg.mcpServers ?? [],
     sidebarExpanded: cfg.sidebarExpanded ?? {},
@@ -370,15 +374,10 @@ export function registerConfigHandlers(): void {
   })
 
   // 设置工具开关（禁用的工具不会随请求发给模型）
-  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean, mode: 'coding' | 'office' = 'coding'): Promise<ConfigView> => {
+  ipcMain.handle('config:setToolSwitch', async (_e, name: string, enabled: boolean, mode: 'coding' | 'office' | 'video' = 'coding'): Promise<ConfigView> => {
     const cfg = await loadConfig()
-    if (mode === 'office') {
-      cfg.officeToolSwitches ??= {}
-      cfg.officeToolSwitches[name] = enabled
-    } else {
-      cfg.toolSwitches ??= {}
-      cfg.toolSwitches[name] = enabled
-    }
+    const bucket = mode === 'office' ? (cfg.officeToolSwitches ??= {}) : mode === 'video' ? (cfg.videoToolSwitches ??= {}) : (cfg.toolSwitches ??= {})
+    bucket[name] = enabled
     return saveConfig(cfg)
   })
 

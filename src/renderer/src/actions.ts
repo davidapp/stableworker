@@ -40,6 +40,7 @@ function applyConfig(cfg: ConfigView): void {
     contextInfo: cfg.contextInfo ?? null,
     toolSwitches: cfg.toolSwitches,
     officeToolSwitches: cfg.officeToolSwitches ?? {},
+    videoToolSwitches: cfg.videoToolSwitches ?? {},
     microCompactRatio: cfg.microCompactRatio ?? 0.55,
     microCompactKeep: cfg.microCompactKeep ?? 2,
     permissionRules: cfg.permissionRules,
@@ -401,7 +402,7 @@ export async function setSidebarWidth(width: number): Promise<void> {
   applyConfig(cfg)
 }
 
-export async function setToolSwitch(name: string, enabled: boolean, mode: 'coding' | 'office' = 'coding'): Promise<void> {
+export async function setToolSwitch(name: string, enabled: boolean, mode: 'coding' | 'office' | 'video' = 'coding'): Promise<void> {
   const cfg = await window.api.setToolSwitch(name, enabled, mode)
   applyConfig(cfg)
 }
