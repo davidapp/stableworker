@@ -152,7 +152,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
               ) : (
                 llmProfiles.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} · {p.model}
+                    {p.model || p.name}
                   </option>
                 ))
               )}
