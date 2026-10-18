@@ -164,7 +164,7 @@ function blankDraft(): ProfileDraft {
 
 /** LLM 配置页：配置档管理器（列表 + 新增/编辑/删除，激活项在输入框下方可随时切换） */
 export function LlmConfigPage() {
-  const { llmProfiles, activeLlmId } = useApp()
+  const { llmProfiles, activeLlmId, microCompactRatio, microCompactKeep } = useApp()
   const [editing, setEditing] = useState<ProfileDraft | null>(null)
   const [fetchedByProfile, setFetchedByProfile] = useState<Record<string, { id: string; name?: string }[]>>({})
   const [menuFor, setMenuFor] = useState<string | null>(null)
@@ -195,6 +195,8 @@ export function LlmConfigPage() {
   }
 
   const [balanceBusy, setBalanceBusy] = useState(false)
+  const [microRatioText, setMicroRatioText] = useState<string | null>(null)
+  const [microKeepText, setMicroKeepText] = useState<string | null>(null)
   const queryBalanceFor = async (profileId: string): Promise<void> => {
     setBalanceBusy(true)
     try {
@@ -203,6 +205,17 @@ export function LlmConfigPage() {
     } finally {
       setBalanceBusy(false)
     }
+  }
+
+  const saveMicroCompact = async (): Promise<void> => {
+    const ratio = Number.parseFloat(microRatioText ?? '')
+    const keep = Number.parseInt(microKeepText ?? '', 10)
+    const cfg = await window.api.setMicroCompact(
+      Number.isFinite(ratio) ? ratio / 100 : 0.55,
+      Number.isFinite(keep) ? keep : 2,
+    )
+    setMicroRatioText(String(Math.round((cfg.microCompactRatio ?? 0.55) * 100)))
+    setMicroKeepText(String(cfg.microCompactKeep ?? 2))
   }
 
   const startNew = (): void => {
@@ -507,6 +520,40 @@ export function LlmConfigPage() {
 
         </>
       )}
+
+      <div className="ctx-title-row" style={{ margin: '18px 0 8px' }}>
+        <span>上下文压缩</span>
+      </div>
+      <p className="hint-line">
+        对话占用超过上下文上限一定比例时，自动把早期工具结果清成摘要占位（保留最近几轮完整结果）。
+        触发比例越低越早压缩、更省 token；保留轮数越多上下文越完整。
+      </p>
+      <div className="field">
+        <span>触发比例（占上下文上限的 %，30–80）</span>
+        <input
+          type="number"
+          min="30"
+          max="80"
+          value={Math.round((microCompactRatio ?? 0.55) * 100)}
+          onChange={(e) => setMicroRatioText(e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <span>保留最近助手消息轮数（1–6）</span>
+        <input
+          type="number"
+          min="1"
+          max="6"
+          value={microCompactKeep ?? 2}
+          onChange={(e) => setMicroKeepText(e.target.value)}
+        />
+      </div>
+      <div className="settings-page-actions">
+        <button className="btn" onClick={() => void saveMicroCompact()}>
+          <Icon name="check" size={14} />保存压缩设置
+        </button>
+        <div className="spacer" />
+      </div>
 
       <div className="settings-page-actions">
         <button className="btn btn-primary" onClick={startNew}>

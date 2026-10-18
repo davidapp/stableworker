@@ -948,7 +948,11 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   }
 
   // micro 压缩：逼近水位时把早期工具结果清成占位符（保留调用结构，无模型调用，幂等）
-  const micro = microCompactHistory(requestMessages, { limit: cfg.contextLimit ?? 0 })
+  const micro = microCompactHistory(requestMessages, {
+    limit: cfg.contextLimit ?? 0,
+    ratio: cfg.microCompactRatio ?? 0.55,
+    keepRecent: cfg.microCompactKeep ?? 2,
+  })
   if (micro.cleared > 0) {
     requestMessages = micro.messages
     console.info(`[microCompact] 已清理 ${micro.cleared} 条早期工具结果（约省 ${micro.charsSaved} 字符）`)

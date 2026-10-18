@@ -371,6 +371,10 @@ export interface ConfigView {
   hooks: HookConfig[]
   /** 界面偏好（语言 / 主题） */
   preferences: Preferences
+  /** micro 压缩触发比例（上下文估算超上限的百分比，0.3–0.8） */
+  microCompactRatio: number
+  /** micro 压缩保留最近几条助手消息的工具结果（1–6） */
+  microCompactKeep: number
 }
 
 /** 发给 LLM 的历史消息（UI 消息去掉展示字段后的形状） */

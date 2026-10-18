@@ -76,6 +76,8 @@ interface StoredConfig {
   subagentTypes?: SubagentTypeConfig[]
   hooks?: HookConfig[]
   preferences?: Partial<Preferences>
+  microCompactRatio?: number
+  microCompactKeep?: number
 }
 
 let cache: StoredConfig | null = null
@@ -153,6 +155,8 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
   if (cache.subagentTypes === undefined) cache.subagentTypes = []
   if (cache.hooks === undefined) cache.hooks = []
+  if (cache.microCompactRatio === undefined) cache.microCompactRatio = 0.55
+  if (cache.microCompactKeep === undefined) cache.microCompactKeep = 2
   syncLiveApprovalMode(cache)
   return cache
 }
@@ -230,6 +234,8 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
       officePanelCollapsed: cfg.preferences?.officePanelCollapsed === true,
       filesPanelCollapsed: cfg.preferences?.filesPanelCollapsed === true,
     },
+    microCompactRatio: cfg.microCompactRatio ?? 0.55,
+    microCompactKeep: cfg.microCompactKeep ?? 2,
   }
 }
 
@@ -296,6 +302,20 @@ export function registerConfigHandlers(): void {
     if (cfg.activeLlmId === id) cfg.activeLlmId = cfg.llmProfiles[0]?.id ?? null
     return saveConfig(cfg)
   })
+
+  ipcMain.handle(
+    'config:setMicroCompact',
+    async (_e, ratio: number, keep: number): Promise<ConfigView> => {
+      const cfg = await loadConfig()
+      if (typeof ratio === 'number' && Number.isFinite(ratio)) {
+        cfg.microCompactRatio = Math.min(0.8, Math.max(0.3, ratio))
+      }
+      if (typeof keep === 'number' && Number.isFinite(keep)) {
+        cfg.microCompactKeep = Math.min(6, Math.max(1, Math.round(keep)))
+      }
+      return saveConfig(cfg)
+    },
+  )
 
   ipcMain.handle('config:setProfileEnabled', async (_e, id: string, enabled: boolean): Promise<ConfigView> => {
     const cfg = await loadConfig()

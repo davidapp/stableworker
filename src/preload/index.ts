@@ -91,6 +91,9 @@ const api = {
     return () => ipcRenderer.removeListener('config:updated', listener)
   },
 
+  /** micro 压缩参数（触发比例 / 保留最近轮数） */
+  setMicroCompact: (ratio: number, keep: number): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:setMicroCompact', ratio, keep),
   /** 界面偏好（语言 / 主题；局部合并，主题同步原生） */
   setPreferences: (patch: { language?: 'zh' | 'en'; theme?: 'dark' | 'light'; officePanelCollapsed?: boolean; filesPanelCollapsed?: boolean }): Promise<ConfigView> =>
     ipcRenderer.invoke('config:setPreferences', patch),

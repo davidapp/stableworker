@@ -70,6 +70,10 @@ export interface AppState {
   toolSwitches: Record<string, boolean>
   /** 办公模式的工具开关（独立于编程模式） */
   officeToolSwitches: Record<string, boolean>
+  /** micro 压缩触发比例（上下文估算超上限的百分比） */
+  microCompactRatio: number
+  /** micro 压缩保留最近几条助手消息 */
+  microCompactKeep: number
   /** 权限规则（deny > ask > allow） */
   permissionRules: { allow: string[]; ask: string[]; deny: string[] }
   /** 设置对话框当前页 */
@@ -127,6 +131,8 @@ export const store = createStore<AppState>({
   contextInfo: null,
   toolSwitches: {},
   officeToolSwitches: {},
+  microCompactRatio: 0.55,
+  microCompactKeep: 2,
   permissionRules: { allow: [], ask: [], deny: [] },
   settingsPage: 'llm',
   settingsOpen: false,

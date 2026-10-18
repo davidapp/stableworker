@@ -40,6 +40,8 @@ function applyConfig(cfg: ConfigView): void {
     contextInfo: cfg.contextInfo ?? null,
     toolSwitches: cfg.toolSwitches,
     officeToolSwitches: cfg.officeToolSwitches ?? {},
+    microCompactRatio: cfg.microCompactRatio ?? 0.55,
+    microCompactKeep: cfg.microCompactKeep ?? 2,
     permissionRules: cfg.permissionRules,
     expandedProjects: cfg.sidebarExpanded ?? {},
     subagentTypes: cfg.subagentTypes ?? [],
@@ -830,6 +832,12 @@ export async function setSessionModel(llmId: string): Promise<void> {
       if (store.getState().statusText?.startsWith('✅ 本会话')) store.setState({ statusText: null })
     }, 8000)
   }
+}
+
+/** micro 压缩参数（触发比例 0.3–0.8 / 保留最近轮数 1–6） */
+export async function setMicroCompact(ratio: number, keep: number): Promise<void> {
+  const cfg = await window.api.setMicroCompact(ratio, keep)
+  applyConfig(cfg)
 }
 
 /** 订阅主进程的配置变更推送（Plan 工具切换批准模式后同步界面菜单） */
