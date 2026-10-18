@@ -436,10 +436,7 @@ export function LlmConfigPage() {
             {llmProfiles.map((p) => (
               <div key={p.id} className={`profile-row ${p.id === activeLlmId ? 'active' : ''}`}>
                 <div className="profile-info">
-                  <span className="profile-name">
-                    {p.name}
-                    {p.id === activeLlmId ? <span className="status-line status-success"><span className="status-dot" />使用中</span> : null}
-                  </span>
+                  <span className="profile-name">{p.name}</span>
                   <small>
                     {p.provider === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'} · {p.model || '(未设模型)'} ·{' '}
                     {p.hasApiKey ? `密钥 ${p.apiKeyHint}` : '未设密钥'}
