@@ -310,19 +310,6 @@ export function registerConfigHandlers(): void {
     return saveConfig(cfg)
   })
 
-  ipcMain.handle('config:setProfileEnabled', async (_e, id: string, enabled: boolean): Promise<ConfigView> => {
-    const cfg = await loadConfig()
-    const target = (cfg.llmProfiles ?? []).find((p) => p.id === id)
-    if (!target) return toConfigView(cfg)
-    target.enabled = enabled
-    if (!enabled && cfg.activeLlmId === id) {
-      const next = (cfg.llmProfiles ?? []).find((p) => p.id !== id && p.enabled !== false)
-      cfg.activeLlmId = next?.id ?? null
-    }
-    if (enabled && !cfg.activeLlmId) cfg.activeLlmId = id
-    return saveConfig(cfg)
-  })
-
   ipcMain.handle('config:setActiveLlm', async (_e, id: string): Promise<ConfigView> => {
     const cfg = await loadConfig()
     if ((cfg.llmProfiles ?? []).some((p) => p.id === id)) cfg.activeLlmId = id
