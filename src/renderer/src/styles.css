@@ -2694,6 +2694,7 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-file-info strong { font-size: 11px; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .office-file-info small { color: var(--text-faint); font-size: 10px; }
 .office-file-row > .icon-btn { margin-right: 6px; flex-shrink: 0; }
+.video-audio { display: block; width: 100%; height: 32px; margin: -4px 0 10px; }
 .office-file-actions { display: flex; flex-shrink: 0; flex-direction: column; padding: 3px 4px 3px 0; }
 .office-file-actions .icon-btn { width: 24px; height: 24px; padding: 4px; }
 .office-panel .icon-btn, .office-attachment-chips .icon-btn { visibility: visible; }

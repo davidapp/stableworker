@@ -1,7 +1,9 @@
-import { app, dialog, ipcMain, shell } from 'electron'
+import { app, dialog, ipcMain, protocol, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { constants, lstat, mkdir, readdir, stat, copyFile } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
+import { Readable } from 'node:stream'
 import { loadConfig, saveConfig } from './config'
 import type { ConfigView } from '../shared/types'
 import { videoSystemPrompt } from './officeMode'
@@ -85,6 +87,42 @@ export async function listVideoFiles(ws: { root: string }): Promise<VideoFile[]>
     }
   }
   return rows
+}
+
+/** 工作区内媒体文件的 MIME（audio 元素播放与图片预览用） */
+const MEDIA_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp',
+}
+
+/** 注册 video-media:// 协议：只服务视频任务工作区内的文件（<audio> 播放用），支持 Range 拖动进度 */
+export function registerVideoMediaProtocol(): void {
+  protocol.handle('video-media', async (request) => {
+    try {
+      const url = new URL(request.url)
+      const ws = await ensureVideoWorkspace(url.hostname)
+      const rel = decodeURIComponent(url.pathname).replace(/^\//, '')
+      const abs = await resolveVideoFile(ws, rel)
+      const info = await stat(abs)
+      if (!info.isFile()) return new Response('not found', { status: 404 })
+      const ext = abs.slice(abs.lastIndexOf('.')).toLowerCase()
+      const type = MEDIA_MIME[ext] ?? 'application/octet-stream'
+      const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') ?? '')
+      let start = range?.[1] ? Number.parseInt(range[1], 10) : 0
+      let end = range?.[2] ? Number.parseInt(range[2], 10) : info.size - 1
+      start = Math.max(0, Math.min(start, info.size - 1))
+      end = Math.max(start, Math.min(end, info.size - 1))
+      const stream = Readable.toWeb(createReadStream(abs, { start, end })) as unknown as ReadableStream
+      if (range) {
+        return new Response(stream, { status: 206, headers: {
+          'content-type': type, 'content-length': String(end - start + 1), 'content-range': `bytes ${start}-${end}/${info.size}`, 'accept-ranges': 'bytes',
+        } })
+      }
+      return new Response(stream, { headers: { 'content-type': type, 'content-length': String(info.size), 'accept-ranges': 'bytes' } })
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
+  })
 }
 
 /** 注册视频模式 IPC：虚拟项目引导、素材导入、文件列表、打开文件 */

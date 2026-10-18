@@ -13,6 +13,13 @@ function baseName(path: string): string {
   return i < 0 ? path : path.slice(i + 1)
 }
 
+function extOf(path: string): string {
+  const i = path.lastIndexOf('.')
+  return i < 0 ? '' : path.slice(i + 1).toLowerCase()
+}
+
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'])
+
 /** 语义分组：配音是中间产物不算成品；mp4 才是成品 */
 function groupOf(path: string): 'material' | 'voice' | 'product' | 'work' {
   if (path.startsWith('inputs/')) return 'material'
@@ -28,11 +35,12 @@ const GROUPS = [
   { key: 'work', label: '中间文件', empty: '' },
 ] as const
 
-/** 视频任务的素材与产物面板：inputs/（导入的图片、音频）与 outputs/（配音、成品 MP4） */
+/** 视频任务的素材与产物面板：inputs/（导入素材）与 outputs/（配音、成品 MP4），音频可点击播放 */
 export function VideoPanel({ onImport, refreshKey = 0, collapsed = false, onToggleCollapsed }: { onImport: () => void; refreshKey?: number; collapsed?: boolean; onToggleCollapsed?: () => void }) {
   const { activeSessionId, messages, streaming } = useApp()
   const [files, setFiles] = useState<VideoFile[]>([])
   const [error, setError] = useState('')
+  const [playing, setPlaying] = useState<string | null>(null)
   const finishedTools = messages.flatMap((m) => m.blocks.filter((b) => b.type === 'tool_use' && (b.status === 'done' || b.status === 'error')).map((b) => b.type === 'tool_use' ? `${b.id}:${b.status}` : '')).join('|')
 
   useEffect(() => {
@@ -49,6 +57,10 @@ export function VideoPanel({ onImport, refreshKey = 0, collapsed = false, onTogg
       const result = await window.api.video.open(activeSessionId, file.path)
       if (!result.ok) setError(result.error ?? '无法打开文件')
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+  }
+
+  const togglePlay = (file: VideoFile): void => {
+    setPlaying((current) => (current === file.path ? null : file.path))
   }
 
   if (collapsed) {
@@ -82,12 +94,40 @@ export function VideoPanel({ onImport, refreshKey = 0, collapsed = false, onTogg
         const group = files.filter((f) => groupOf(f.path) === key)
         return <section className="office-file-section" key={key}>
           <div className="sidebar-section-label">{t(label)}<span>{group.length}</span></div>
-          {group.length === 0 ? (empty ? <p className="office-file-empty">{t(empty)}</p> : null) : group.map((file) => <div key={file.path} className="office-file-row">
-            <span className="office-file-info"><strong>{baseName(file.path)}</strong><small>{fileSize(file.bytes)}</small></span>
-            <div className="office-file-actions">
-              <button className="icon-btn" title={`打开 ${baseName(file.path)}`} onClick={() => void open(file)}><Icon name="external" size={14} /></button>
-            </div>
-          </div>)}
+          {group.length === 0 ? (empty ? <p className="office-file-empty">{t(empty)}</p> : null) : group.map((file) => {
+            const ext = extOf(file.path)
+            const isAudio = AUDIO_EXTS.has(ext)
+            const isPlaying = playing === file.path
+            return (
+              <div key={file.path}>
+                <div className="office-file-row">
+                  <button className="office-file-preview" title={isAudio ? t('点击播放') : baseName(file.path)} onClick={() => (isAudio ? togglePlay(file) : void open(file))}>
+                    <span className="office-file-format">{ext.toUpperCase()}</span>
+                    <span className="office-file-info">
+                      <strong>{baseName(file.path)}</strong>
+                      <small>{isAudio ? (isPlaying ? t('正在播放') : t('点击播放')) : fileSize(file.bytes)}</small>
+                    </span>
+                  </button>
+                  <div className="office-file-actions">
+                    {isAudio && (
+                      <button className="icon-btn" title={isPlaying ? t('暂停') : t('播放')} onClick={() => togglePlay(file)}>
+                        <Icon name={isPlaying ? 'stop' : 'play'} size={14} />
+                      </button>
+                    )}
+                    <button className="icon-btn" title={`打开 ${baseName(file.path)}`} onClick={() => void open(file)}><Icon name="external" size={14} /></button>
+                  </div>
+                </div>
+                {isPlaying && activeSessionId && (
+                  <audio
+                    className="video-audio"
+                    controls
+                    autoPlay
+                    src={`video-media://${activeSessionId}/${file.path}`}
+                  />
+                )}
+              </div>
+            )
+          })}
         </section>
       })}
     </aside>

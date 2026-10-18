@@ -39,6 +39,7 @@ const paths = {
   moon: 'M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z',
   globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3c3 3.6 3 14.4 0 18 M12 3c-3 3.6-3 14.4 0 18',
   video: 'M3 5h18v14H3z M10 9l5 3-5 3z',
+  play: 'M8 5.5l11 6.5-11 6.5z',
 } as const
 
 export type IconName = keyof typeof paths

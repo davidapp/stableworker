@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, protocol, shell } from 'electron'
 import { join } from 'node:path'
 import { registerConfigHandlers, loadConfig } from './config'
 import { registerProjectHandlers } from './projects'
@@ -18,7 +18,7 @@ import { setupUpdater } from './updater'
 import { openContextWindow, openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
 import { registerOfficeHandlers } from './office'
-import { registerVideoModeHandlers } from './videoMode'
+import { registerVideoModeHandlers, registerVideoMediaProtocol } from './videoMode'
 
 /**
  * 主进程入口：创建窗口、注册所有 IPC 处理器。
@@ -26,6 +26,11 @@ import { registerVideoModeHandlers } from './videoMode'
  * - 渲染进程不碰 Node/Electron API，一切能力通过 preload 暴露的 window.api 走 IPC
  * - 每个能力域一个模块（config / projects / sessions / llm），各自注册自己的 ipcMain.handle
  */
+
+// 视频任务的媒体流播放协议（<audio>/<img>）；必须在 app ready 前声明特权
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'video-media', privileges: { standard: true, stream: true, supportFetchAPI: true, secure: true } },
+])
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -86,6 +91,7 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = (await loadConfig()).preferences?.theme === 'light' ? 'light' : 'dark'
+  registerVideoMediaProtocol()
   registerConfigHandlers()
   registerProjectHandlers()
   registerSessionHandlers()
