@@ -9,7 +9,9 @@ import { Icon } from './Icon'
 export function Sidebar() {
   const { projects, activeProjectId, activeSessionId, sessionsByProject, expandedProjects, taskMode, preferences } = useApp()
   const office = taskMode === 'office'
-  const visibleProjects = projects.filter((p) => office ? p.id === 'office-workspace' : p.id !== 'office-workspace')
+  const video = taskMode === 'video'
+  const managedId = office ? 'office-workspace' : video ? 'video-workspace' : null
+  const visibleProjects = projects.filter((p) => managedId ? p.id === managedId : p.id !== 'office-workspace' && p.id !== 'video-workspace')
   const [menu, setMenu] = useState<{ x: number; y: number; projectId: string; session: SessionMeta } | null>(null)
   const [renaming, setRenaming] = useState<{ projectId: string; id: string; value: string } | null>(null)
   const [projMenu, setProjMenu] = useState<{ x: number; y: number; projectId: string } | null>(null)
@@ -26,19 +28,20 @@ export function Sidebar() {
     <aside className="sidebar" aria-label="工作区导航">
       <div className="sidebar-brand"><span className="brand-mark"><Icon name="logo" size={18} /></span><span>StableWorker</span></div>
       <div className="task-mode-switch" role="group" aria-label="工作模式">
-        <button aria-pressed={!office} className={!office ? 'active' : ''} onClick={() => void actions.switchTaskMode('coding')}><Icon name="code" size={14} /> {t('编程')}</button>
+        <button aria-pressed={taskMode === 'coding'} className={taskMode === 'coding' ? 'active' : ''} onClick={() => void actions.switchTaskMode('coding')}><Icon name="code" size={14} /> {t('编程')}</button>
         <button aria-pressed={office} className={office ? 'active' : ''} onClick={() => void actions.switchTaskMode('office')}><Icon name="briefcase" size={14} /> {t('办公')}</button>
+        <button aria-pressed={video} className={video ? 'active' : ''} onClick={() => void actions.switchTaskMode('video')}><Icon name="video" size={14} /> {t('视频')}</button>
       </div>
-      <button className="btn btn-block" onClick={() => void (office ? actions.newOfficeTask() : actions.addProject())}>
-        <Icon name="plus" /> {t(office ? '新建办公任务' : '新建项目')}
+      <button className="btn btn-block" onClick={() => void (office ? actions.newOfficeTask() : video ? actions.newVideoTask() : actions.addProject())}>
+        <Icon name="plus" /> {t(office ? '新建办公任务' : video ? '新建视频任务' : '新建项目')}
       </button>
-      <div className="sidebar-section-label">{t(office ? '办公任务' : '工作区')} <span>{office ? (sessionsByProject['office-workspace'] ?? []).length : visibleProjects.length}</span></div>
+      <div className="sidebar-section-label">{t(office ? '办公任务' : video ? '视频任务' : '工作区')} <span>{managedId ? (sessionsByProject[managedId] ?? []).length : visibleProjects.length}</span></div>
       <ul className="project-list">
         {visibleProjects.map((p) => {
-          const expanded = office || (expandedProjects[p.id] ?? false)
+          const expanded = !!managedId || (expandedProjects[p.id] ?? false)
           const sessions = sessionsByProject[p.id] ?? []
           return (
-            <li key={p.id} className={`project-node ${office ? 'office-task-node' : ''}`}>
+            <li key={p.id} className={`project-node ${managedId ? 'office-task-node' : ''}`}>
               {!office && <div
                 className={`project-row ${p.id === activeProjectId ? 'active' : ''}`}
                 onContextMenu={(e) => {
@@ -93,7 +96,7 @@ export function Sidebar() {
 
               {expanded ? (
                 <ul className="session-list">
-                  {sessions.length === 0 ? <li className="session-empty">{office ? '新建任务，开始整理资料' : '（暂无会话，点 ＋ 新建）'}</li> : null}
+                  {sessions.length === 0 ? <li className="session-empty">{office ? '新建任务，开始整理资料' : video ? '新建任务，开始制作短视频' : '（暂无会话，点 ＋ 新建）'}</li> : null}
                   {sessions.map((s) =>
                     renaming && renaming.id === s.id && renaming.projectId === p.id ? (
                       <li key={s.id} className="session-leaf">
@@ -121,7 +124,7 @@ export function Sidebar() {
                           setMenu({ x: e.clientX, y: e.clientY, projectId: p.id, session: s })
                         }}
                       >
-                        <Icon name={s.damaged ? 'warning' : office ? 'file' : 'chat'} size={14} />
+                        <Icon name={s.damaged ? 'warning' : managedId ? 'file' : 'chat'} size={14} />
                         <span className="session-title">
                           {s.title}
                         </span>
@@ -131,7 +134,7 @@ export function Sidebar() {
                           onClick={(e) => {
                             e.stopPropagation()
                             void actions
-                              .confirm(office ? `删除办公任务「${s.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${s.title}」？消息记录将一并删除，不可恢复。`, { danger: true })
+                              .confirm(managedId ? `删除${office ? '办公' : '视频'}任务「${s.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${s.title}」？消息记录将一并删除，不可恢复。`, { danger: true })
                               .then((ok) => {
                                 if (ok) void actions.deleteSession(p.id, s.id)
                               })
@@ -265,7 +268,7 @@ export function Sidebar() {
               className="ctx-menu-item danger"
               onClick={() => {
                 void actions
-                  .confirm(menu.projectId === 'office-workspace' ? `删除办公任务「${menu.session.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${menu.session.title}」？消息记录将一并删除，不可恢复。`, { danger: true })
+                  .confirm(menu.projectId === 'office-workspace' || menu.projectId === 'video-workspace' ? `删除${menu.projectId === 'video-workspace' ? '视频' : '办公'}任务「${menu.session.title}」？消息、导入资料和生成文件将一并删除，不可恢复。` : `删除会话「${menu.session.title}」？消息记录将一并删除，不可恢复。`, { danger: true })
                   .then((ok) => {
                     if (ok) void actions.deleteSession(menu.projectId, menu.session.id)
                   })

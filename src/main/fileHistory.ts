@@ -166,7 +166,9 @@ export function registerFileHistoryHandlers(): void {
       const cfg = await loadConfig()
       const projectPath = projectId === 'office-workspace'
         ? await (await import('./office')).ensureOfficeWorkspace(sessionId)
-        : cfg.projects.find((p) => p.id === projectId)?.path ?? null
+        : projectId === 'video-workspace'
+          ? (await (await import('./videoMode')).ensureVideoWorkspace(sessionId)).root
+          : cfg.projects.find((p) => p.id === projectId)?.path ?? null
       if (!projectPath) return { error: '项目不存在' }
       try {
         return await restoreSnapshot(root(projectId, sessionId), toolUseId, projectPath)

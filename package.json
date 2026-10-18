@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "adm-zip": "^0.6.1",
     "docx": "^9.11.0",
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
@@ -24,6 +25,7 @@
     "highlight.js": "^11.12.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.13.0",
+    "msedge-tts": "^2.1.0",
     "pdf-parse": "^2.4.5",
     "pptxgenjs": "^4.0.1",
     "react": "^19.3.0",
@@ -62,7 +64,10 @@
       "node_modules/{tesseract.js,tesseract.js-core,bmp-js,idb-keyval,is-url,node-fetch,whatwg-url,tr46,webidl-conversions,opencollective-postinstall,regenerator-runtime,wasm-feature-detect,zlibjs}/**/*"
     ],
     "extraResources": [
-      { "from": "resources/ocr", "to": "ocr" }
+      {
+        "from": "resources/ocr",
+        "to": "ocr"
+      }
     ],
     "win": {
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",

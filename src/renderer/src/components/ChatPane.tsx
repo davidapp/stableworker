@@ -12,6 +12,7 @@ import { copyText } from '../clipboard'
 import { Icon } from './Icon'
 import { t } from '../i18n'
 import { OfficePanel } from './OfficePanel'
+import { VideoPanel } from './VideoPanel'
 import { FileExplorerPanel } from './FileExplorerPanel'
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
@@ -59,26 +60,42 @@ export function ChatPane() {
   // 窗口最大化状态（隐藏标题栏的自定义窗口控制按钮切换图标用）
   const [maximized, setMaximized] = useState(false)
   useEffect(() => window.api.onMaximizeChange(setMaximized), [])
-  const [attachments, setAttachments] = useState<OfficeFile[]>([])
+  const [attachments, setAttachments] = useState<Array<Pick<OfficeFile, 'path' | 'name' | 'size'>>>([])
   const [fileRefresh, setFileRefresh] = useState(0)
   const [importError, setImportError] = useState('')
   const [taskDraft, setTaskDraft] = useState<{ id: number; text: string } | null>(null)
   const office = taskMode === 'office'
+  const video = taskMode === 'video'
   useEffect(() => { setAttachments([]); setImportError(''); setTaskDraft(null) }, [activeSessionId, taskMode])
   const importFiles = async (): Promise<void> => {
     if (streaming) return
+    const mode = store.getState().taskMode
     try {
-      const id = await actions.ensureOfficeSession()
-      const imported = await window.api.office.import(id)
-      if (store.getState().activeSessionId !== id) return
-      setAttachments((prev) => [...prev, ...imported.filter((f) => !prev.some((p) => p.path === f.path))])
+      if (mode === 'video') {
+        const id = await actions.ensureVideoSession()
+        const imported = await window.api.video.import(id)
+        if (store.getState().activeSessionId !== id) return
+        setAttachments((prev) => [...prev, ...imported
+          .map((f) => ({ path: f.path, name: f.path.slice(f.path.lastIndexOf('/') + 1), size: f.bytes }))
+          .filter((f) => !prev.some((p) => p.path === f.path))])
+      } else {
+        const id = await actions.ensureOfficeSession()
+        const imported = await window.api.office.import(id)
+        if (store.getState().activeSessionId !== id) return
+        setAttachments((prev) => [...prev, ...imported.filter((f) => !prev.some((p) => p.path === f.path))])
+      }
       setFileRefresh((n) => n + 1)
       setImportError('')
-    } catch (err) { if (store.getState().taskMode === 'office') setImportError(err instanceof Error ? err.message : String(err)) }
+    } catch (err) { if (store.getState().taskMode === mode) setImportError(err instanceof Error ? err.message : String(err)) }
   }
   const sendOffice = (text: string): void => {
     const refs = attachments.map((f) => `- ${f.name}: ${f.path}`).join('\n')
     void actions.sendChat(`${text}${refs ? `\n\n本次参考资料（请使用 office_read_document 读取）：\n${refs}` : ''}`)
+    setAttachments([])
+  }
+  const sendVideo = (text: string): void => {
+    const refs = attachments.map((f) => `- ${f.path}`).join('\n')
+    void actions.sendChat(`${text}${refs ? `\n\n本次导入的素材（相对路径，可直接用于分镜）：\n${refs}` : ''}`)
     setAttachments([])
   }
   // 记录上一次的会话 id：切换会话（含启动恢复）后强制定位到最新消息
@@ -134,12 +151,12 @@ export function ChatPane() {
   }
 
   return (
-    <div className={office ? 'office-workbench' : 'chat-workbench'}>
+    <div className={office || video ? 'office-workbench' : 'chat-workbench'}>
     <main className="chat-pane">
       <header className="chat-header">
-        <Icon name={office ? 'briefcase' : 'folder'} />
+        <Icon name={office ? 'briefcase' : video ? 'video' : 'folder'} />
         <span className="chat-header-project" title={project.path}>
-          {office ? t('办公') : project.name}
+          {office ? t('办公') : video ? t('视频') : project.name}
         </span>
         <span className="header-separator">/</span>
         <span className="chat-header-session">{session?.title ?? t('新会话')}</span>
@@ -201,12 +218,16 @@ export function ChatPane() {
         </div>
       ) : messages.length === 0 ? (
         <div className="empty-state">
-          <span className="empty-state-icon"><Icon name={office ? 'briefcase' : 'chat'} size={28} /></span>
-          <span className="empty-state-eyebrow">{office ? t('你的 AI 办公助手') : project.name}</span>
-          <h2>{office ? t('把资料变成工作成果') : t('今天一起完成什么？')}</h2>
-          <p>{office ? t('整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。') : t('提问、排查问题或描述一个想法，助手会结合项目文件与你协作。')}</p>
+          <span className="empty-state-icon"><Icon name={office ? 'briefcase' : video ? 'video' : 'chat'} size={28} /></span>
+          <span className="empty-state-eyebrow">{office ? t('你的 AI 办公助手') : video ? t('你的 AI 短视频工作室') : project.name}</span>
+          <h2>{office ? t('把资料变成工作成果') : video ? t('把想法变成短视频') : t('今天一起完成什么？')}</h2>
+          <p>{office ? t('整理文档、分析表格、制作演示文稿。添加资料或直接描述任务，生成可打开的办公文件。') : video ? t('导入图片素材，描述主题，助手生成分镜、配音并合成带字幕的 MP4。') : t('提问、排查问题或描述一个想法，助手会结合项目文件与你协作。')}</p>
           <div className="conversation-starters">
-            {(office ? [t('生成一份 Word 项目周报模板'), t('制作一个 Excel 费用汇总表'), t('制作一份三页 PPT 工作总结')] : [t('介绍这个项目的结构'), t('检查代码中潜在的问题'), t('帮我规划下一步开发')]).map((prompt) => (
+            {(office
+              ? [t('生成一份 Word 项目周报模板'), t('制作一个 Excel 费用汇总表'), t('制作一份三页 PPT 工作总结')]
+              : video
+                ? [t('用素材做一个 30 秒的产品介绍视频'), t('做一条配旁白的知识科普短视频'), t('把这些图片做成带字幕的幻灯片视频')]
+                : [t('介绍这个项目的结构'), t('检查代码中潜在的问题'), t('帮我规划下一步开发')]).map((prompt) => (
               <button key={prompt} className="btn btn-ghost" onClick={() => void actions.sendChat(prompt)}>{prompt}<Icon name="arrowUp" size={14} /></button>
             ))}
           </div>
@@ -305,7 +326,7 @@ export function ChatPane() {
         </div>
       )}
 
-      <Composer disabled={streaming} attachments={office ? attachments : []} onAttach={office ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : undefined} taskDraft={office ? taskDraft : null} />
+      <Composer disabled={streaming} attachments={office || video ? attachments : []} onAttach={office || video ? () => void importFiles() : undefined} onRemove={(path) => setAttachments((files) => files.filter((f) => f.path !== path))} onSend={office ? sendOffice : video ? sendVideo : undefined} taskDraft={office ? taskDraft : null} />
     </main>
     {office && (
           <OfficePanel
@@ -316,7 +337,15 @@ export function ChatPane() {
             refreshKey={fileRefresh}
           />
         )}
-        {!office && (
+        {video && (
+          <VideoPanel
+            collapsed={preferences.officePanelCollapsed === true}
+            onToggleCollapsed={() => void actions.setPreferences({ officePanelCollapsed: !(preferences.officePanelCollapsed === true) })}
+            onImport={() => void importFiles()}
+            refreshKey={fileRefresh}
+          />
+        )}
+        {!office && !video && (
           <FileExplorerPanel
             collapsed={preferences.filesPanelCollapsed === true}
             onToggleCollapsed={() => void actions.setPreferences({ filesPanelCollapsed: !(preferences.filesPanelCollapsed === true) })}

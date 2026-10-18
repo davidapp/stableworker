@@ -18,6 +18,7 @@ import { setupUpdater } from './updater'
 import { openContextWindow, openInspectorWindow, registerInspectorHandlers } from './inspectorWindow'
 import { createAppMenu } from './menu'
 import { registerOfficeHandlers } from './office'
+import { registerVideoModeHandlers } from './videoMode'
 
 /**
  * 主进程入口：创建窗口、注册所有 IPC 处理器。
@@ -89,6 +90,7 @@ app.whenReady().then(async () => {
   registerProjectHandlers()
   registerSessionHandlers()
   registerOfficeHandlers()
+  registerVideoModeHandlers()
   registerChatHandlers()
   registerDebugHandlers()
   registerApprovalHandlers()

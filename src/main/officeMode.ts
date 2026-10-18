@@ -1,10 +1,31 @@
 import type { TaskMode } from '../shared/types'
 import type { ToolDefinition } from './tools'
 
-export function toolsForTaskMode(mode: TaskMode, base: ToolDefinition[], office: ToolDefinition[]): ToolDefinition[] {
+export function toolsForTaskMode(
+  mode: TaskMode,
+  base: ToolDefinition[],
+  office: ToolDefinition[],
+  video: ToolDefinition[] = [],
+): ToolDefinition[] {
   if (mode === 'coding') return base
+  if (mode === 'video') {
+    const common = new Set(['todo_write', 'ask_user_question', 'web_fetch', 'memory', 'web_search'])
+    return [...base.filter((tool) => common.has(tool.name)), ...video]
+  }
   const common = new Set(['list_files', 'todo_write', 'ask_user_question', 'web_fetch', 'memory', 'web_search'])
   return [...base.filter((tool) => common.has(tool.name)), ...office]
+}
+
+/** 视频模式的系统提示词：指导模型产出分镜 JSON（video_compose 的输入） */
+export function videoSystemPrompt(workspace: string): string {
+  return [
+    '你是 StableWorker 的短视频制作助手。工作流程：与用户确认主题和风格 → 产出分镜脚本 → 生成配音 → 合成导出 MP4。',
+    `当前任务目录：${workspace}。inputs/ 保存用户导入的素材（图片/音频），outputs/ 保存成品与中间文件。`,
+    '分镜脚本是一个 JSON 对象：{ "scenes": [{ "image": "inputs/xxx.jpg 或留空用纯色底", "text": "该镜头字幕/旁白文本", "duration": 3 }] , "voice": "zh-CN-XiaoxiaoNeural" }。',
+    '流程：先在回复中展示完整分镜脚本供用户确认 → 确认后逐镜头调 video_tts（scene=镜头序号）生成旁白 → 把分镜脚本作为 storyboard 参数调 video_compose 合成。用 video_files 查看素材与产物。',
+    '字幕由 video_compose 自动按 text 烧录；旁白音频决定镜头时长（duration 仅在无旁白时生效）。',
+    '只有 video_compose 返回成功才可宣称视频完成，并列出实际输出路径。不要编造素材或文件链接。',
+  ].join('\n')
 }
 
 export function officeSystemPrompt(workspace: string): string {

@@ -112,6 +112,12 @@ export interface OfficePreviewResult {
   error?: string
 }
 
+/** 视频任务受管文件：path 为任务目录内相对路径（inputs/… 或 outputs/…） */
+export interface VideoFile {
+  path: string
+  bytes: number
+}
+
 /** 消息内容块：对齐 LLM API 的原生形状（text / tool_use），工具结果挂在 tool_use 块上 */
 export interface TextBlock {
   type: 'text'
@@ -165,7 +171,7 @@ export interface ChatMessage {
   error?: string
 }
 
-export type TaskMode = 'coding' | 'office'
+export type TaskMode = 'coding' | 'office' | 'video'
 
 export interface SessionMeta {
   id: string

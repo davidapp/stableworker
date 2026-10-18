@@ -410,7 +410,7 @@ export function registerSessionHandlers(): void {
       updatedAt: Date.now(),
       messages: [],
       revision: 1,
-      taskMode: taskMode === 'office' ? 'office' : 'coding',
+      taskMode: taskMode === 'office' || taskMode === 'video' ? taskMode : 'coding',
     }
     await serializeSession(projectId, session.id, () => appendTransaction(sessionFile(projectId, session.id), 1, [
       { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt, taskMode: session.taskMode },
@@ -440,10 +440,16 @@ export function registerSessionHandlers(): void {
         // Validate every managed directory before deleting either records or files.
         officeRoot = await ensureOfficeWorkspace(sessionId)
       }
+      let videoRoot: string | undefined
+      if (projectId === 'video-workspace' || session?.taskMode === 'video') {
+        const ws = await (await import('./videoMode')).ensureVideoWorkspace(sessionId)
+        videoRoot = ws.root
+      }
       await rm(sessionFile(projectId, sessionId), { force: true })
       await rm(legacyFile(projectId, sessionId), { force: true })
       deletedSessions.add(cacheKey(projectId, sessionId))
       if (officeRoot) await rm(officeRoot, { recursive: true, force: true })
+      if (videoRoot) await rm(videoRoot, { recursive: true, force: true })
       await deleteSessionCheckpoints(projectId, sessionId)
       invalidateCompactCache(sessionId)
     })

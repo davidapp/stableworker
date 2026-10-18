@@ -32,6 +32,7 @@ import type {
   SkillMeta,
   SubagentTypeConfig,
   HookConfig,
+  VideoFile,
 } from '../shared/types'
 import type { SkillFrontmatter } from '../shared/skillFrontmatter'
 
@@ -49,6 +50,13 @@ const api = {
     list: (sessionId: string): Promise<OfficeFile[]> => ipcRenderer.invoke('office:list', sessionId),
     open: (sessionId: string, path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('office:open', sessionId, path),
     preview: (sessionId: string, path: string): Promise<OfficePreviewResult> => ipcRenderer.invoke('office:preview', sessionId, path),
+  },
+  // Managed video task files; imports are restricted to the native file picker.
+  video: {
+    workspace: (): Promise<ConfigView> => ipcRenderer.invoke('video:workspace'),
+    import: (sessionId: string): Promise<VideoFile[]> => ipcRenderer.invoke('video:import', sessionId),
+    list: (sessionId: string): Promise<VideoFile[]> => ipcRenderer.invoke('video:files', sessionId),
+    open: (sessionId: string, path: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('video:open', sessionId, path),
   },
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),

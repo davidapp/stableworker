@@ -762,18 +762,25 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
 
   const office = req.projectId === 'office-workspace'
-  const storedSession = office || req.revision !== undefined ? (await loadSessionAny(req.projectId, req.sessionId))?.session : null
+  const video = req.projectId === 'video-workspace'
+  const storedSession = office || video || req.revision !== undefined ? (await loadSessionAny(req.projectId, req.sessionId))?.session : null
   if (office && (!storedSession || storedSession.taskMode !== 'office')) return { ok: false, error: '办公任务不存在，请新建办公任务后继续' }
+  if (video && (!storedSession || storedSession.taskMode !== 'video')) return { ok: false, error: '视频任务不存在，请新建视频任务后继续' }
   if (req.revision !== undefined && req.revision !== storedSession?.revision) return { ok: false, error: '会话已被修改，请重新加载后继续' }
-  const projectPath = office ? await (await import('./office')).ensureOfficeWorkspace(req.sessionId) : cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
+  const projectPath = office
+    ? await (await import('./office')).ensureOfficeWorkspace(req.sessionId)
+    : video
+      ? (await (await import('./videoMode')).ensureVideoWorkspace(req.sessionId)).root
+      : cfg.projects.find((p) => p.id === req.projectId)?.path ?? null
   // MCP 服务器：对话开始时按配置 diff 连接（新连/断开已移除的），其工具并入下面的工具池
   await waitForPreparation(ensureMcpConnections(cfg.mcpServers ?? []), controller.signal)
   controller.signal.throwIfAborted()
   // 工具池同时用于请求定义与执行门禁；被禁用的工具即使被模型请求也不会执行。
   // 规划模式：所有需要批准的工具（写/改/命令/MCP）都从工具池移除，只保留只读研究
   const officeTools = office ? (await import('./tools/office')).getOfficeToolDefinitions() : []
+  const videoTools = video ? (await import('./tools/video')).getVideoToolDefinitions() : []
   const effSettings = resolveEffectiveSettings(cfg, office ? 'office' : 'coding')
-  let tools = [...toolsForTaskMode(office ? 'office' : 'coding', getToolDefinitions(), officeTools), ...getMcpToolDefs(), ...getResourceTools()].filter((d) => effSettings.toolSwitches[d.name] !== false)
+  let tools = [...toolsForTaskMode(office ? 'office' : video ? 'video' : 'coding', getToolDefinitions(), officeTools, videoTools), ...getMcpToolDefs(), ...getResourceTools()].filter((d) => effSettings.toolSwitches[d.name] !== false)
   const approvalMode = effSettings.approvalMode
   if (approvalMode === 'plan') {
     tools = tools.filter((d) => !d.requiresApproval)
@@ -784,8 +791,12 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   // 上下文构成明细用：系统提示词与工具定义是我们自己的固定文本，可本地估算；
   // messages 部分用服务端总量减去这两项得出余量。
   // AGENTS.md（项目约定）在每轮对话开始时读取，存在则注入系统提示词。
-  const agentsMd = !office && projectPath ? await loadAgentsMd(projectPath) : ''
-  let systemText = office ? officeSystemPrompt(projectPath!) : buildSystemPrompt(projectPath, agentsMd)
+  const agentsMd = !office && !video && projectPath ? await loadAgentsMd(projectPath) : ''
+  let systemText = office
+    ? officeSystemPrompt(projectPath!)
+    : video
+      ? (await import('./videoMode')).videoSystemPromptFor(req.sessionId)
+      : buildSystemPrompt(projectPath, agentsMd)
   // 规划模式的系统提示：告知模型当前只读约束
   if (approvalMode === 'plan') {
     systemText +=

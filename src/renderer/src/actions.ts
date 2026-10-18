@@ -70,14 +70,21 @@ function toMeta(session: Session): SessionMeta {
 
 let lastCodingProjectId: string | null = null
 
-/** Office owns a managed workspace; it does not require choosing a code folder. */
+/** 虚拟项目（办公/视频）→ 模式；其余都算编程 */
+function taskModeForProject(id: string | null): TaskMode {
+  return id === 'office-workspace' ? 'office' : id === 'video-workspace' ? 'video' : 'coding'
+}
+
+/** Office/Video own managed workspaces; they do not require choosing a code folder. */
 export async function switchTaskMode(mode: TaskMode): Promise<void> {
   const before = store.getState()
-  if (before.taskMode === mode && (mode === 'coding' || before.activeProjectId === 'office-workspace')) return
+  const managedId = mode === 'office' ? 'office-workspace' : mode === 'video' ? 'video-workspace' : null
+  if (before.taskMode === mode && (mode === 'coding' || before.activeProjectId === managedId)) return
   await stopActiveChatForNavigation()
   if (before.taskMode === 'coding') lastCodingProjectId = before.activeProjectId
-  let cfg = mode === 'office' ? await window.api.office.workspace() : await window.api.getConfig()
-  const projectId = mode === 'office' ? 'office-workspace' : cfg.projects.find((p) => p.id === lastCodingProjectId && p.id !== 'office-workspace')?.id ?? cfg.projects.find((p) => p.id !== 'office-workspace')?.id ?? null
+  let cfg = mode === 'office' ? await window.api.office.workspace() : mode === 'video' ? await window.api.video.workspace() : await window.api.getConfig()
+  const unmanaged = (p: ProjectInfo): boolean => p.id !== 'office-workspace' && p.id !== 'video-workspace'
+  const projectId = managedId ?? cfg.projects.find((p) => p.id === lastCodingProjectId && unmanaged(p))?.id ?? cfg.projects.find(unmanaged)?.id ?? null
   if (projectId) cfg = await window.api.setActiveProject(projectId)
   applyConfig(cfg)
   store.setState({ taskMode: mode, activeProjectId: projectId, activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
@@ -119,11 +126,42 @@ export async function ensureOfficeSession(): Promise<string> {
   try { return await creatingOfficeSession } finally { creatingOfficeSession = null }
 }
 
+export async function newVideoTask(): Promise<void> {
+  await stopActiveChatForNavigation()
+  await switchTaskMode('video')
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
+  try { await ensureVideoSession() }
+  catch (error) {
+    if (store.getState().taskMode === 'video') store.setState({ sessionWarning: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+let creatingVideoSession: Promise<string> | null = null
+export async function ensureVideoSession(): Promise<string> {
+  if (creatingVideoSession) return creatingVideoSession
+  const create = async (): Promise<string> => {
+    if (store.getState().taskMode !== 'video') await switchTaskMode('video')
+    const state = store.getState()
+    if (state.activeSessionId) return state.activeSessionId
+    const epoch = sessionEditEpoch
+    const session = await window.api.createSession('video-workspace', '新视频任务', 'video')
+    const current = store.getState()
+    if (epoch !== sessionEditEpoch || current.taskMode !== 'video' || current.activeProjectId !== 'video-workspace') {
+      throw new Error('创建任务期间已切换工作区，请在当前任务中重新操作')
+    }
+    store.setState((prev) => ({ activeProjectId: 'video-workspace', activeSessionId: session.id, activeSessionRevision: session.revision ?? 0,
+      taskMode: 'video', sessionsByProject: { ...prev.sessionsByProject, 'video-workspace': [toMeta(session), ...(prev.sessionsByProject['video-workspace'] ?? [])] } }))
+    return session.id
+  }
+  creatingVideoSession = create()
+  try { return await creatingVideoSession } finally { creatingVideoSession = null }
+}
+
 export async function boot(): Promise<void> {
   const cfg = await window.api.getConfig()
   applyConfig(cfg)
   applyPreferences(cfg.preferences)
-  store.setState({ taskMode: cfg.activeProjectId === 'office-workspace' ? 'office' : 'coding' })
+  store.setState({ taskMode: taskModeForProject(cfg.activeProjectId) })
   const map = await reloadAllSessions(cfg.projects)
   const ap = cfg.activeProjectId
   if (ap) {
@@ -198,7 +236,7 @@ export async function selectProject(id: string): Promise<void> {
   await stopActiveChatForNavigation()
   const cfg = await window.api.setActiveProject(id)
   applyConfig(cfg)
-  store.setState({ taskMode: id === 'office-workspace' ? 'office' : 'coding' })
+  store.setState({ taskMode: taskModeForProject(id) })
   store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
   store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [id]: true } }))
   await refreshProjectSessions(id)
@@ -242,7 +280,7 @@ export async function newSessionInProject(projectId: string): Promise<void> {
   }
   store.setState((prev) => ({
     expandedProjects: { ...prev.expandedProjects, [projectId]: true },
-    taskMode: projectId === 'office-workspace' ? 'office' : 'coding',
+    taskMode: taskModeForProject(projectId),
     activeSessionId: null,
     activeSessionRevision: 0,
     messages: [],

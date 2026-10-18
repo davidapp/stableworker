@@ -4,7 +4,8 @@
 多项目管理、会话树、流式对话（Markdown 渲染）、工具调用代理循环（读 / 写 / 改 / 跑命令）、
 子代理（task 工具）、Hooks 生命周期钩子、分层记忆与 memory 工具、@文件引用、MCP（stdio / HTTP）、
 多模型配置档、批准模式、精确计费、上下文管理与水位条、API 调试悬浮窗及更新检查，
-以及独立办公任务、附件导入和真实办公文件生成。
+以及独立办公任务、附件导入和真实办公文件生成，
+独立视频任务（分镜脚本、Edge-TTS 配音、ffmpeg 合成带字幕 MP4）。
 
 安装包见 [GitHub Releases](https://github.com/davidapp/stableworker/releases)。
 更新链路说明：v0.9.0 的 Windows 更新元数据缺陷已在 v0.9.2 修复——**v0.9.0 客户端直接"检查更新"即可升级到最新版**。
@@ -54,6 +55,7 @@ npm run verify:release # 检查更新元数据、安装包及 SHA-512；不等�
 | --- | --- | --- | --- |
 | 编程 | 用户选择的项目目录 | 读写代码、搜索、命令和子代理 | 项目文件 |
 | 办公 | 每个任务独立的本地目录 | 提取资料、创建文档、数据表和演示文稿 | Word / Excel / PPT / PDF |
+| 视频 | 每个任务独立的本地目录 | 分镜脚本、配音、素材与产物管理 | 带字幕的 MP4 |
 
 - 支持导入 DOCX、XLSX、PPTX、PDF、TXT、Markdown、CSV；单文件最多 25 MB。
 - `office_read_document` 提取文本、表格和幻灯片内容，长文档可分段读取；扫描 PDF 自动在本机识别无文字页。
@@ -82,6 +84,22 @@ Word/PPT 支持跨文字片段替换；Excel 支持单元格值或公式修改�
 
 上述能力不依赖用户安装 Python 或 LibreOffice；未提供 VBA、全套 Excel 专用函数或 PDF 正文重排编辑。
 语言模型来源及许可证见 [本地 OCR 资源](resources/ocr/tessdata/sources.json)。
+
+## 独立视频模式
+
+侧栏顶部选择 **视频** → **新建视频任务**。无需选择代码目录；通过输入框的附件按钮或右侧
+**添加素材** 导入图片与音频（单文件最多 100 MB），素材复制到当前任务，原件不动。
+
+- `video_tts` 用微软 Edge 朗读接口（免密钥）把旁白合成为 mp3；`scene` 参数对应镜头序号，
+  保存为 `voice-00N.mp3` 供合成自动匹配，可用 `voice` 换音色、`rate` 调语速。
+- `video_compose` 接收分镜脚本 JSON（每镜头：图片或纯色底、字幕、旁白/时长），
+  按镜头渲染 1280×720 片段（图片等比居中补黑边、字幕自动烧录底部）后拼接成 MP4；
+  有旁白时以音频定时长。产物自动编号 `video-N.mp4`，永不覆盖。
+- 合成引擎 ffmpeg 首次使用时自动从 [ffmpeg-static](https://github.com/eugeneware/ffmpeg-static) 下载
+  （约 78 MB，一次即可），存放在 `userData/bin/`；下载进度显示在工具卡片里。
+- 右侧 **任务文件** 面板分组展示素材与成品，点击用本地播放器打开。
+- 视频任务保存在 `userData/video/sessions/<sessionId>/`；默认不提供编码写入和命令工具，
+  合成是终产物，按批准模式确认执行。删除视频任务会同时删除导入副本与生成文件。
 
 ## 工具调用（Agent Loop 的核心）
 

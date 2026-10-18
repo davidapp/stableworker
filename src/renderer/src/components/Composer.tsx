@@ -9,9 +9,10 @@ import { CaretIcon } from './CaretIcon'
 import { Icon } from './Icon'
 import { t } from '../i18n'
 
-export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: OfficeFile[]; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
+export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: Array<Pick<OfficeFile, 'path' | 'name' | 'size'>>; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
   const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId, sessionsByProject } = useApp()
   const office = taskMode === 'office'
+  const video = taskMode === 'video'
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // @文件引用补全：光标处于 @片段 中时显示项目文件候选
@@ -76,7 +77,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
   return (
     <footer className="composer">
       <div className="composer-box" style={{ position: 'relative' }}>
-        {office && attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
+        {(office || video) && attachments.length > 0 && <div className="office-attachment-chips">{attachments.map((file) => <span key={file.path}><Icon name="attachment" size={12} /><span title={file.name}>{file.name}</span><button className="icon-btn" aria-label={`移除附件 ${file.name}`} onClick={() => onRemove?.(file.path)}><Icon name="close" size={12} /></button></span>)}</div>}
         {mention && mention.items.length > 0 ? (
           <div
             role="listbox"
@@ -104,7 +105,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           ref={textareaRef}
           aria-label="消息"
           value={text}
-          placeholder={office ? t('描述要完成的工作，或添加资料开始') : t('输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行')}
+          placeholder={office ? t('描述要完成的工作，或添加资料开始') : video ? t('描述视频主题，或添加图片素材开始') : t('输入消息，@ 引用项目文件，Enter 发送，Shift+Enter 换行')}
           rows={2}
           onChange={(e) => {
             setText(e.target.value)
@@ -142,7 +143,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
           }}
         />
         <div className="composer-row">
-          {office && <button className="icon-btn-lg" title={t('添加办公资料')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
+          {(office || video) && <button className="icon-btn-lg" title={office ? t('添加办公资料') : t('添加视频素材')} disabled={disabled} onClick={onAttach}><Icon name="attachment" /></button>}
           <ApprovalModeMenu />
           <div className="spacer" />
           <ContextMeter />

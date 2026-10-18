@@ -14,7 +14,7 @@ export default function App() {
   const { booted, settingsOpen, sidebarWidth, taskMode } = useApp()
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth)
   const draggingRef = useRef(false)
-  const maxSidebar = taskMode === 'office' ? Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, viewportWidth - (viewportWidth <= 1100 ? 220 : 256) - 440 - 6)) : MAX_SIDEBAR
+  const maxSidebar = taskMode === 'office' || taskMode === 'video' ? Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, viewportWidth - (viewportWidth <= 1100 ? 220 : 256) - 440 - 6)) : MAX_SIDEBAR
   const displayedSidebarWidth = Math.min(sidebarWidth, maxSidebar)
   useEffect(() => {
     const resized = (): void => setViewportWidth(window.innerWidth)

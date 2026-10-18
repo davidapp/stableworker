@@ -38,6 +38,7 @@ const paths = {
   question: 'M8.5 9a3.5 3.5 0 1 1 5 3.2c-.9.4-1.5 1-1.5 1.9v.4 M12 17.6v.1',
   moon: 'M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z',
   globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3c3 3.6 3 14.4 0 18 M12 3c-3 3.6-3 14.4 0 18',
+  video: 'M3 5h18v14H3z M10 9l5 3-5 3z',
 } as const
 
 export type IconName = keyof typeof paths
