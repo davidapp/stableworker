@@ -924,7 +924,8 @@ body {
   border-radius: 6px;
   padding: 4px 20px 4px 6px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: 0.1px;
   cursor: pointer;
   height: 28px;
 }
