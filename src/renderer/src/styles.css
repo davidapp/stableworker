@@ -918,11 +918,12 @@ body {
   appearance: none;
   max-width: 200px;
   background: transparent;
-  color: var(--text-dim);
+  color: var(--text);
   border: none;
   border-radius: 6px;
   padding: 4px 20px 4px 6px;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   height: 28px;
 }
