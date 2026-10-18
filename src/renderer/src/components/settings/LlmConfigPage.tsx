@@ -489,6 +489,17 @@ export function LlmConfigPage() {
                   <button className="btn btn-danger-ghost" onClick={() => void remove(p)}>
                     <Icon name="trash" size={14} />删除
                   </button>
+                  <label
+                    className="llm-switch"
+                    title={p.enabled !== false ? '展示在聊天框的模型选择列表中（点击隐藏）' : '已隐藏，点击展示到模型选择列表'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={p.enabled !== false}
+                      onChange={(e) => void actions.setProfileEnabled(p.id, e.target.checked)}
+                    />
+                    <span className="track"><span className="knob" /></span>
+                  </label>
                 </div>
               </div>
             ))}
