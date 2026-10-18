@@ -136,7 +136,7 @@ async function replay(projectId: string, sessionId: string): Promise<ReplayResul
     if (o.t === 'meta') {
       if (o.title) result.title = o.title
       if (o.createdAt && !result.createdAt) result.createdAt = o.createdAt
-      if (o.taskMode === 'office' || o.taskMode === 'coding') result.taskMode = o.taskMode
+      if (o.taskMode === 'office' || o.taskMode === 'coding' || o.taskMode === 'video') result.taskMode = o.taskMode
       result.llmId = o.llmId // 后写的覆盖先写的；undefined（旧版无字段）也清掉
     } else if (o.t === 'm' && o.m && Number.isSafeInteger(o.i) && o.i! >= 0) {
       result.messages[o.i!] = normalizeMessage(o.m)

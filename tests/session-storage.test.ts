@@ -170,6 +170,17 @@ describe('real JSONL session persistence', () => {
     expect((await loadSessionAny('project', office.id)).session).toMatchObject({ taskMode: 'office', title: 'Report', revision: 3 })
   })
 
+  it('preserves video mode through create, save, and JSONL replay (回放白名单不得拒收 video)', async () => {
+    const video = await invoke<Session>('sessions:create', 'project', 'Video', 'video')
+    expect(video).toMatchObject({ taskMode: 'video', revision: 1 })
+    video.messages = [message('u', 'user', 'make a short video')]
+    expect((await invoke<SessionSaveResult>('sessions:save', video)).ok).toBe(true)
+    const { loadSessionAny } = await import('../src/main/sessions')
+    expect((await loadSessionAny('project', video.id)).session).toMatchObject({ taskMode: 'video', title: 'Video' })
+    const { listSessionMetas } = await import('../src/main/sessions')
+    expect((await listSessionMetas('project')).find((m) => m.id === video.id)).toMatchObject({ taskMode: 'video' })
+  })
+
   it('keeps a crash-truncated transaction isolated from the next complete append', async () => {
     const original = await readFile(file(), 'utf-8')
     await writeFile(file(), original + '{"t":"batch","revision":1,', 'utf-8')
