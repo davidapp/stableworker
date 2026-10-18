@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { DEFAULT_HOLIDAYS } from './pricing'
+import { approveAllPending } from './approvals'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
 import { BrowserWindow, nativeTheme } from 'electron'
 import type { ApprovalMode, ConfigView, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, Preferences, SubagentTypeConfig } from '../shared/types'
@@ -78,6 +79,22 @@ interface StoredConfig {
 }
 
 let cache: StoredConfig | null = null
+/** 实时批准模式：工具门禁每步直接读取，切换模式立即生效（不等下一轮对话重新 loadConfig） */
+let liveApprovalMode: ApprovalMode = 'confirm'
+
+function syncLiveApprovalMode(cfg: StoredConfig): void {
+  liveApprovalMode = cfg.approvalMode ?? 'confirm'
+}
+
+/** 门禁读取当前批准模式（实时值） */
+export function getApprovalMode(): ApprovalMode {
+  return liveApprovalMode
+}
+
+/** 显式设置实时批准模式（loadConfig/saveConfig 内部同步；测试可直接调用） */
+export function setLiveApprovalMode(mode: ApprovalMode): void {
+  liveApprovalMode = mode
+}
 
 function configPath(): string {
   return join(app.getPath('userData'), 'config.json')
@@ -135,12 +152,14 @@ export async function loadConfig(): Promise<StoredConfig> {
   if (cache.sidebarExpanded === undefined) cache.sidebarExpanded = {}
   if (cache.subagentTypes === undefined) cache.subagentTypes = []
   if (cache.hooks === undefined) cache.hooks = []
+  syncLiveApprovalMode(cache)
   return cache
 }
 
 export async function saveConfig(next: StoredConfig): Promise<ConfigView> {
   updateContextLimit(next)
   cache = next
+  syncLiveApprovalMode(next)
   await writeFile(configPath(), JSON.stringify(next, null, 2), 'utf-8')
   return toConfigView(next)
 }
@@ -284,7 +303,15 @@ export function registerConfigHandlers(): void {
 
   ipcMain.handle('config:setApprovalMode', async (_e, mode: ApprovalMode): Promise<ConfigView> => {
     const cfg = await loadConfig()
-    if (APPROVAL_MODES.includes(mode)) cfg.approvalMode = mode
+    if (APPROVAL_MODES.includes(mode)) {
+      cfg.approvalMode = mode
+      liveApprovalMode = mode
+      // 切到完全访问时，立即放行全部挂起中的批准请求（不等用户逐个点击）
+      if (mode === 'fullAccess') {
+        const n = approveAllPending()
+        if (n > 0) console.info(`[approval] 完全访问：已自动放行 ${n} 个挂起请求`)
+      }
+    }
     return saveConfig(cfg)
   })
 

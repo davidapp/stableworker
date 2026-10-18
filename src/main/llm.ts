@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import type { Dispatcher } from 'undici'
-import { loadConfig, decryptApiKey, resolveEffectiveSettings } from './config'
+import { loadConfig, decryptApiKey, resolveEffectiveSettings, getApprovalMode } from './config'
 import { resolveModelContext } from './modelContexts'
 import {
   beginExchange,
@@ -611,7 +611,8 @@ export function createStreamCollector(
 interface ToolExecCtx {
   tools: ToolDefinition[]
   permissionRules: PermissionRules
-  approvalMode: ApprovalMode
+  /** 实时读取批准模式（用户中途切换立即生效，不等下一轮） */
+  getApprovalMode: () => ApprovalMode
   hooks?: HookConfig[]
   projectPath: string | null
   projectId: string
@@ -661,7 +662,7 @@ async function executeToolWithGates(tu: ToolUseBlock, ctx: ToolExecCtx): Promise
   // allow 规则强制放行，ask 规则强制询问（优先于模式）；PreToolUse 钩子 approve = 跳过批准门
   const autoApprove =
     pre.autoApprove ||
-    (verdict === 'allow' ? true : verdict === 'ask' ? false : ctx.approvalMode === 'fullAccess' || (ctx.approvalMode === 'autoEdit' && def?.kind === 'edit'))
+    (verdict === 'allow' ? true : verdict === 'ask' ? false : ctx.getApprovalMode() === 'fullAccess' || (ctx.getApprovalMode() === 'autoEdit' && def?.kind === 'edit'))
   if (def?.requiresApproval && !autoApprove) {
     // 批准门：循环在此挂起，等待用户在界面上点"允许/拒绝"
     const suggest = def.requiresApproval ? suggestRule(tu.name, tu.input) : undefined
@@ -801,7 +802,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   const subExecCtx: ToolExecCtx = {
     tools,
     permissionRules: effSettings.permissionRules,
-    approvalMode,
+    getApprovalMode: () => getApprovalMode(),
     hooks: cfg.hooks,
     projectPath,
     projectId: req.projectId,
@@ -1093,7 +1094,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
       const execCtx: ToolExecCtx = {
         tools,
         permissionRules: effSettings.permissionRules,
-        approvalMode,
+        getApprovalMode: () => getApprovalMode(),
         hooks: cfg.hooks,
         projectPath,
         projectId: req.projectId,

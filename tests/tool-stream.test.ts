@@ -53,6 +53,8 @@ vi.mock('../src/main/mcp', async (importOriginal) => ({
   getMcpToolDefs: () => [],
 }))
 
+import { setLiveApprovalMode } from '../src/main/config'
+import type { ApprovalMode } from '../src/shared/types'
 import { createStreamCollector, LLMStreamError, readSSE, registerChatHandlers } from '../src/main/llm'
 
 const request: ChatRequest = { sessionId: 'session', projectId: 'project', messages: [{ role: 'user', blocks: [{ type: 'text', text: 'Read the fixture files' }] }] }
@@ -94,6 +96,7 @@ beforeEach(() => {
   fixture.loadSession.mockReset().mockResolvedValue({ session: { revision: 8, taskMode: 'coding' } })
   fixture.ensureMcp.mockReset().mockResolvedValue(undefined)
   fixture.cfg.approvalMode = 'fullAccess'
+  setLiveApprovalMode('fullAccess')
   fixture.cfg.llmProfiles[0].provider = 'openai-compatible'
   fixture.cfg.toolSwitches = {}
   registerChatHandlers()
@@ -202,6 +205,7 @@ describe('工具执行允许列表', () => {
     { name: 'task', mode: 'fullAccess', switches: { task: false } },
   ])('$mode 模式拒绝工具 $name；不触发执行、批准或文件快照', async ({ name, mode, switches }) => {
     fixture.cfg.approvalMode = mode
+    setLiveApprovalMode(mode as ApprovalMode)
     fixture.cfg.toolSwitches = switches as Record<string, boolean>
     fixture.fetch.mockResolvedValueOnce(response(['blocked'], name)).mockResolvedValueOnce(response([]))
     expect((await send()).ok).toBe(true)

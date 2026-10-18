@@ -49,6 +49,16 @@ export function requestApproval(
   })
 }
 
+/** 批准当前全部挂起的批准请求（切换到完全访问时释放等待中的卡片），返回数量 */
+export function approveAllPending(): number {
+  let n = 0
+  for (const entry of [...pendingApprovals.values()]) {
+    entry.resolve('approved')
+    n++
+  }
+  return n
+}
+
 /** 渲染进程回传用户决定；返回 false 表示该批准已失效（超时/停止/未知 id） */
 export function respondApproval(approvalId: string, approved: boolean): { ok: boolean } {
   const entry = pendingApprovals.get(approvalId)
