@@ -2604,6 +2604,7 @@ kbd { font: inherit; color: var(--text-dim); }
 .office-attachment-chips > span > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .office-workbench .composer-row { gap: 8px; }
 .office-workbench .model-select-wrap { max-width: 200px; min-width: 100px; }
+.model-manage-option, option[value='__manage__'] { color: var(--text-dim); }
 .office-workbench .empty-state { padding: 28px; }
 .office-workbench .empty-state { min-height: 0; overflow-y: auto; flex-shrink: 1; justify-content: safe center; }
 .office-workbench .empty-state > * { flex-shrink: 0; }

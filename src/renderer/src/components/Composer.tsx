@@ -139,7 +139,12 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
               value={activeLlmId ?? ''}
               title="切换模型配置档"
               onChange={(e) => {
-                if (e.target.value) void actions.setActiveLlm(e.target.value)
+                const v = e.target.value
+                if (v === '__manage__') {
+                  actions.openSettings('llm')
+                  return
+                }
+                if (v) void actions.setActiveLlm(v)
               }}
             >
               {llmProfiles.length === 0 ? (
@@ -151,6 +156,10 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
                   </option>
                 ))
               )}
+              <option value="__manage__" disabled aria-hidden="true">
+                ──────────
+              </option>
+              <option value="__manage__">⚙ 管理模型…</option>
             </select>
             <CaretIcon />
           </div>
