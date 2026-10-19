@@ -565,6 +565,20 @@ export async function restoreCheckpoint(toolUseId: string): Promise<void> {
   }))
 }
 
+let jumpToBottomPending = false
+
+/** 发送新消息时置位：ChatPane 的滚动效果消费它，无条件贴底一次 */
+export function requestJumpToBottom(): void {
+  jumpToBottomPending = true
+}
+
+/** 消费贴底标记（一次性） */
+export function consumeJumpToBottom(): boolean {
+  const pending = jumpToBottomPending
+  jumpToBottomPending = false
+  return pending
+}
+
 export async function sendChat(text: string): Promise<void> {
   const s = store.getState()
   let content = text.trim()
@@ -644,6 +658,8 @@ export async function sendChat(text: string): Promise<void> {
   }
   const messages = [...store.getState().messages, userMsg, assistantMsg]
   store.setState({ messages, streaming: true })
+  // 用户消息与流式占位同批入列，滚动效果看不到"最后一条是 user"，用一次性标记驱动贴底
+  requestJumpToBottom()
   const saved = await persistCurrentSession()
   if (generation !== chatGeneration) return
   if (!saved) {

@@ -120,15 +120,14 @@ export function ChatPane() {
   }
 
   // 新消息到达时：贴底（80px 容差）则自动跟随；用户已上滚则不打扰；
-  // 会话刚切换（含启动恢复）或用户刚发送消息时无条件定位到底部
+  // 会话刚切换（含启动恢复）或刚发送消息（一次性标记，用户消息与流式占位同批入列）时无条件定位到底部
   useEffect(() => {
     const el = listRef.current
     if (!el) return
     const sessionChanged = sessionRef.current !== activeSessionId
     sessionRef.current = activeSessionId
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    const userJustSent = messages[messages.length - 1]?.role === 'user'
-    if (sessionChanged || userJustSent || distance <= 80) el.scrollTop = el.scrollHeight
+    if (sessionChanged || actions.consumeJumpToBottom() || distance <= 80) el.scrollTop = el.scrollHeight
     setShowJumpButton(distance > el.clientHeight)
   }, [messages, activeSessionId])
 
