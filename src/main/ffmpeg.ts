@@ -159,6 +159,13 @@ export async function ensureFfmpeg(onProgress?: (message: string) => void): Prom
   return downloadPromise.finally(() => { downloadPromise = null })
 }
 
+/** 从 ffmpeg -i 的 stderr 解析媒体时长（毫秒）；解析失败返回 null */
+export function parseDurationMs(stderr: string): number | null {
+  const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr)
+  if (!m) return null
+  return (Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000
+}
+
 /** 以 ffmpeg 执行一条参数序列，收集 stderr；resolve 于进程退出 */
 export function runFfmpeg(args: string[], timeoutMs = 600_000): Promise<{ code: number | null; stderr: string }> {
   const child = spawn(ffmpegPath(), args, { windowsHide: true })

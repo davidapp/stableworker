@@ -183,6 +183,14 @@ export function encryptApiKey(key: string): string {
   return PLAIN_PREFIX + key
 }
 
+/** 主进程工具读取媒体能力配置（解密后的 key 只在主进程内存中出现）；未配置返回 null */
+export async function getMediaApiCapability(capability: MediaCapability): Promise<{ baseUrl: string; model: string; apiKey: string } | null> {
+  const cfg = await loadConfig()
+  const entry = cfg.mediaApis?.[capability]
+  if (!entry?.apiKey) return null
+  return { baseUrl: entry.baseUrl, model: entry.model, apiKey: decryptApiKey(entry.apiKey) }
+}
+
 export function decryptApiKey(stored: string): string {
   if (!stored) return ''
   if (stored.startsWith(ENCRYPTED_PREFIX)) {

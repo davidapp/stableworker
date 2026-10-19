@@ -69,10 +69,10 @@ describe('ffmpeg 参数构建与时长解析', () => {
 })
 
 describe('视频模式工具面', () => {
-  it('只开放协作白名单加视频三工具，不泄露编码写入/命令工具', () => {
+  it('只开放协作白名单加视频与流水线工具，不泄露编码写入/命令工具', () => {
     const base = ['list_files', 'read_file', 'write_file', 'edit_file', 'run_command', 'web_fetch', 'todo_write', 'ask_user_question', 'memory', 'web_search'].map(tool)
     const videoTools = getVideoToolDefinitions().map((t) => t.name)
-    expect(videoTools).toEqual(['video_tts', 'video_compose', 'video_files'])
+    expect(videoTools).toEqual(['video_tts', 'video_compose', 'video_files', 'pipeline_write', 'pipeline_run', 'pipeline_read'])
     const pool = toolsForTaskMode('video', base, [], getVideoToolDefinitions()).map((t) => t.name)
     expect(pool).toEqual(['web_fetch', 'todo_write', 'ask_user_question', 'memory', 'web_search', ...videoTools])
     expect(pool).not.toContain('write_file')

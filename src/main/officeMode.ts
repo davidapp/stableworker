@@ -23,6 +23,7 @@ export function videoSystemPrompt(workspace: string): string {
     `当前任务目录：${workspace}。inputs/ 保存用户导入的素材（图片/音频），outputs/ 保存成品与中间文件。`,
     '分镜脚本是一个 JSON 对象：{ "scenes": [{ "image": "inputs/xxx.jpg 或留空用纯色底", "text": "该镜头字幕/旁白文本", "duration": 3 }] , "voice": "zh-CN-XiaoxiaoNeural" }。',
     '流程：先在回复中展示完整分镜脚本供用户确认 → 确认后逐镜头调 video_tts（scene=镜头序号）生成旁白 → 把分镜脚本作为 storyboard 参数调 video_compose 合成。用 video_files 查看素材与产物。',
+    '需要可重跑、分步骤的工程化制作时，改用流水线：pipeline_write 生成节点图（script 文案 → tts 配音 → ffmpeg 合成，可加 image 文生图节点），pipeline_run 执行（支持 nodes/from/resume 局部与续跑），pipeline_read 查看现状。修改前先 pipeline_read。',
     '字幕由 video_compose 自动按 text 烧录；旁白音频决定镜头时长（duration 仅在无旁白时生效）。',
     '只有 video_compose 返回成功才可宣称视频完成，并列出实际输出路径。不要编造素材或文件链接。',
   ].join('\n')
