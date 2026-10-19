@@ -154,10 +154,10 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
             {menuOpen ? <div className="popover-backdrop" onClick={() => setMenuOpen(false)} /> : null}
             <button
               className="model-select"
-              title="切换本会话使用的模型（仅当前会话生效）"
+              title={currentProfile ? `切换本会话使用的模型（仅当前会话生效）· 当前底层模型：${currentProfile.model}` : '切换本会话使用的模型（仅当前会话生效）'}
               onClick={() => setMenuOpen((v) => !v)}
             >
-              {currentProfile?.model || t('未配置模型')}
+              {currentProfile?.name || currentProfile?.model || t('未配置模型')}
               <CaretIcon />
             </button>
             {menuOpen ? (
@@ -175,7 +175,7 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
                         void actions.setSessionModel(p.id)
                       }}
                     >
-                      <span style={{ flex: 1, textAlign: 'left' }}>{p.model || p.name}</span>
+                      <span style={{ flex: 1, textAlign: 'left' }}>{p.name || p.model}</span>
                       {p.id === currentLlmId ? '✓' : ''}
                     </button>
                   ))
