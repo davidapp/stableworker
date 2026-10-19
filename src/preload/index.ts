@@ -14,6 +14,7 @@ import type {
   McpResourceContent,
   McpResourceMeta,
   McpServerStatus,
+  MediaCapability,
   ModelPricing,
   OfficeFile,
   OfficePreviewResult,
@@ -61,6 +62,11 @@ const api = {
   // Coding-mode context picker: files are chosen inside the project directory only.
   pickContextFiles: (projectId: string): Promise<Array<{ path: string; name: string; size: number }>> =>
     ipcRenderer.invoke('projects:pickContextFiles', projectId),
+  // ---- 媒体 API（文生图/图生图/文生音频/语音识别/文生视频/图生视频）----
+  saveMediaApi: (capability: MediaCapability, input: { baseUrl?: string; model?: string; apiKey?: string; keepApiKey?: boolean }): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:saveMediaApi', capability, input),
+  clearMediaApi: (capability: MediaCapability): Promise<ConfigView> =>
+    ipcRenderer.invoke('config:clearMediaApi', capability),
   // ---- 配置 ----
   getConfig: (): Promise<ConfigView> => ipcRenderer.invoke('config:get'),
   refreshModelContext: (id?: string, force = true): Promise<{ ok: boolean; message: string; config: ConfigView }> =>

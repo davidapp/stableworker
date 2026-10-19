@@ -1278,6 +1278,14 @@ body {
   padding: 0;
 }
 
+/* ---------- 媒体 API 配置页 ---------- */
+.media-api-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px 8px; margin: 14px 0; background: var(--surface); }
+.media-api-card .ctx-title-row { display: flex; align-items: center; gap: 8px; }
+.media-api-card .badge-muted { color: var(--text-faint); }
+.media-api-example { color: var(--text-faint); }
+.media-api-card .field { margin: 10px 0; }
+.media-api-card .settings-page-actions { margin: 4px 0 10px; }
+
 /* ---------- 工具卡片 ---------- */
 .tool-card {
   border: 1px solid var(--border);

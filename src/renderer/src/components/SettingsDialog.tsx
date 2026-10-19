@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useApp } from '../store'
 import * as actions from '../actions'
 import { LlmConfigPage } from './settings/LlmConfigPage'
+import { MediaApiPage } from './settings/MediaApiPage'
 import { PricingPage } from './settings/PricingPage'
 import { ToolSwitchesPage } from './settings/ToolSwitchesPage'
 import { RulesPage } from './settings/RulesPage'
@@ -20,6 +21,7 @@ import { t } from '../i18n'
  */
 const PAGES = [
   { id: 'llm', label: 'LLM 配置', icon: 'brain' },
+  { id: 'media', label: '媒体 API', icon: 'video' },
   { id: 'pricing', label: '模型价格', icon: 'list' },
   { id: 'tools', label: '工具开关', icon: 'sliders' },
   { id: 'rules', label: '权限规则', icon: 'shield' },
@@ -116,6 +118,9 @@ export function SettingsDialog() {
           {/* 各页面保持挂载，切换导航不丢失未保存的编辑 */}
           <div hidden={active !== 'llm'}>
             <LlmConfigPage />
+          </div>
+          <div hidden={active !== 'media'}>
+            <MediaApiPage />
           </div>
           <div hidden={active !== 'pricing'}>
             <PricingPage />

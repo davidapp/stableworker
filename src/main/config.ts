@@ -6,7 +6,7 @@ import { DEFAULT_HOLIDAYS } from './pricing'
 import { approveAllPending } from './approvals'
 import { initializeModelContexts, refreshModelContext, resolveModelContext } from './modelContexts'
 import { BrowserWindow, nativeTheme } from 'electron'
-import type { ApprovalMode, ConfigView, HookConfig, LLMConfig, MCPServerConfig, ModelPricing, PermissionRules, ProjectInfo, Preferences, SubagentTypeConfig } from '../shared/types'
+import type { ApprovalMode, ConfigView, HookConfig, LLMConfig, MCPServerConfig, MediaCapability, ModelPricing, PermissionRules, ProjectInfo, Preferences, SubagentTypeConfig } from '../shared/types'
 
 /**
  * 全局配置存储。
@@ -79,6 +79,8 @@ interface StoredConfig {
   hooks?: HookConfig[]
   preferences?: Partial<Preferences>
   microCompactRatio?: number
+  /** 媒体能力 API 配置（apiKey 加密落盘） */
+  mediaApis?: Partial<Record<MediaCapability, { baseUrl: string; model: string; apiKey: string }>>
   microCompactKeep?: number
 }
 
@@ -218,6 +220,14 @@ export function toConfigView(cfg: StoredConfig): ConfigView {
       apiKeyHint: maskKey(decryptApiKey(p.apiKey)),
     })),
     activeLlmId: cfg.activeLlmId ?? null,
+    mediaApis: Object.fromEntries(
+      Object.entries(cfg.mediaApis ?? {}).map(([capability, v]) => [capability, {
+        baseUrl: v.baseUrl,
+        model: v.model,
+        hasApiKey: Boolean(v.apiKey),
+        apiKeyHint: maskKey(decryptApiKey(v.apiKey)),
+      }]),
+    ),
     approvalMode: cfg.approvalMode ?? 'confirm',
     modelPricing: cfg.modelPricing ?? [],
     holidays: cfg.holidays ?? [],
@@ -320,6 +330,33 @@ export function registerConfigHandlers(): void {
       return saveConfig(cfg)
     },
   )
+
+  const MEDIA_CAPABILITIES: MediaCapability[] = ['textToImage', 'imageToImage', 'textToAudio', 'speechRecognition', 'textToVideo', 'imageToVideo']
+
+  // 保存单个媒体能力的 API 调用配置；keepApiKey 时沿用已存的密钥（输入框留空 = 不改密钥）
+  ipcMain.handle(
+    'config:saveMediaApi',
+    async (_e, capability: MediaCapability, input: { baseUrl?: string; model?: string; apiKey?: string; keepApiKey?: boolean }): Promise<ConfigView> => {
+      if (!MEDIA_CAPABILITIES.includes(capability)) throw new Error(`未知的媒体能力：${capability}`)
+      const cfg = await loadConfig()
+      cfg.mediaApis ??= {}
+      const prev = cfg.mediaApis[capability]
+      const newKey = input.apiKey?.trim()
+      cfg.mediaApis[capability] = {
+        baseUrl: input.baseUrl?.trim() ?? '',
+        model: input.model?.trim() ?? '',
+        apiKey: input.keepApiKey || !newKey ? (prev?.apiKey ?? '') : encryptApiKey(newKey),
+      }
+      return saveConfig(cfg)
+    },
+  )
+
+  ipcMain.handle('config:clearMediaApi', async (_e, capability: MediaCapability): Promise<ConfigView> => {
+    if (!MEDIA_CAPABILITIES.includes(capability)) throw new Error(`未知的媒体能力：${capability}`)
+    const cfg = await loadConfig()
+    if (cfg.mediaApis) delete cfg.mediaApis[capability]
+    return saveConfig(cfg)
+  })
 
   ipcMain.handle('config:setProfileEnabled', async (_e, id: string, enabled: boolean): Promise<ConfigView> => {
     const cfg = await loadConfig()

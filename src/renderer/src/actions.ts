@@ -8,6 +8,7 @@ import type {
   ChatMessage,
   ConfigView,
   LLMConfig,
+  MediaCapability,
   MessageBlock,
   ModelPricing,
   ProjectInfo,
@@ -41,6 +42,7 @@ function applyConfig(cfg: ConfigView): void {
     toolSwitches: cfg.toolSwitches,
     officeToolSwitches: cfg.officeToolSwitches ?? {},
     videoToolSwitches: cfg.videoToolSwitches ?? {},
+    mediaApis: cfg.mediaApis ?? {},
     microCompactRatio: cfg.microCompactRatio ?? 0.55,
     microCompactKeep: cfg.microCompactKeep ?? 2,
     permissionRules: cfg.permissionRules,
@@ -404,6 +406,16 @@ export async function setSidebarWidth(width: number): Promise<void> {
 
 export async function setToolSwitch(name: string, enabled: boolean, mode: 'coding' | 'office' | 'video' = 'coding'): Promise<void> {
   const cfg = await window.api.setToolSwitch(name, enabled, mode)
+  applyConfig(cfg)
+}
+
+export async function saveMediaApi(capability: MediaCapability, input: { baseUrl?: string; model?: string; apiKey?: string; keepApiKey?: boolean }): Promise<void> {
+  const cfg = await window.api.saveMediaApi(capability, input)
+  applyConfig(cfg)
+}
+
+export async function clearMediaApi(capability: MediaCapability): Promise<void> {
+  const cfg = await window.api.clearMediaApi(capability)
   applyConfig(cfg)
 }
 

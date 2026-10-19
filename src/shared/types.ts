@@ -118,6 +118,23 @@ export interface VideoFile {
   bytes: number
 }
 
+/** 媒体生成能力分类（媒体 API 配置页的六个条目） */
+export type MediaCapability =
+  | 'textToImage'
+  | 'imageToImage'
+  | 'textToAudio'
+  | 'speechRecognition'
+  | 'textToVideo'
+  | 'imageToVideo'
+
+/** 渲染进程可见的单个媒体能力配置（apiKey 掩码） */
+export interface MediaApiView {
+  baseUrl: string
+  model: string
+  hasApiKey: boolean
+  apiKeyHint: string
+}
+
 /** 消息内容块：对齐 LLM API 的原生形状（text / tool_use），工具结果挂在 tool_use 块上 */
 export interface TextBlock {
   type: 'text'
@@ -349,6 +366,8 @@ export interface ConfigView {
   /** 所有 LLM 配置档与当前激活项 */
   llmProfiles: LLMProfileView[]
   activeLlmId: string | null
+  /** 媒体能力 API 配置（apiKey 只给掩码） */
+  mediaApis: Partial<Record<MediaCapability, MediaApiView>>
   /** 批准模式 */
   approvalMode: ApprovalMode
   /** 各模型的价格表（全局，按模型名） */

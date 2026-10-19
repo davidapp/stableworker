@@ -3,6 +3,8 @@ import type {
   ApprovalMode,
   ChatMessage,
   LLMProfileView,
+  MediaApiView,
+  MediaCapability,
   ModelContextInfo,
   ModelPricing,
   ProjectInfo,
@@ -72,6 +74,8 @@ export interface AppState {
   officeToolSwitches: Record<string, boolean>
   /** 视频模式的工具开关（独立于编程/办公模式） */
   videoToolSwitches: Record<string, boolean>
+  /** 媒体能力 API 配置（apiKey 掩码） */
+  mediaApis: Partial<Record<MediaCapability, MediaApiView>>
   /** micro 压缩触发比例（上下文估算超上限的百分比） */
   microCompactRatio: number
   /** micro 压缩保留最近几条助手消息 */
@@ -134,6 +138,7 @@ export const store = createStore<AppState>({
   toolSwitches: {},
   officeToolSwitches: {},
   videoToolSwitches: {},
+  mediaApis: {},
   microCompactRatio: 0.55,
   microCompactKeep: 2,
   permissionRules: { allow: [], ask: [], deny: [] },
