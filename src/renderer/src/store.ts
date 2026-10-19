@@ -76,6 +76,8 @@ export interface AppState {
   videoToolSwitches: Record<string, boolean>
   /** 媒体能力 API 配置（apiKey 掩码） */
   mediaApis: Partial<Record<MediaCapability, MediaApiView>>
+  /** 会话尚未创建时的预选模型（项目 id → 配置档 id），首个会话创建时应用 */
+  pendingLlmByProject: Record<string, string>
   /** micro 压缩触发比例（上下文估算超上限的百分比） */
   microCompactRatio: number
   /** micro 压缩保留最近几条助手消息 */
@@ -139,6 +141,7 @@ export const store = createStore<AppState>({
   officeToolSwitches: {},
   videoToolSwitches: {},
   mediaApis: {},
+  pendingLlmByProject: {},
   microCompactRatio: 0.55,
   microCompactKeep: 2,
   permissionRules: { allow: [], ask: [], deny: [] },

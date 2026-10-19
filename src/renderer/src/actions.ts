@@ -68,7 +68,7 @@ export async function setPreferences(patch: Partial<Preferences>): Promise<void>
 }
 
 function toMeta(session: Session): SessionMeta {
-  return { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt, taskMode: session.taskMode ?? 'coding' }
+  return { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt, taskMode: session.taskMode ?? 'coding', llmId: session.llmId }
 }
 
 let lastCodingProjectId: string | null = null
@@ -490,6 +490,7 @@ async function persistCurrentSession(): Promise<boolean> {
   const session: Session = {
     id: meta.id, projectId: s.activeProjectId, title: meta.title, createdAt: meta.createdAt,
     updatedAt: Date.now(), messages: structuredClone(s.messages), taskMode: s.taskMode, revision: s.activeSessionRevision,
+    llmId: meta.llmId,
   }
   const operation = sessionSaveQueue.catch(() => {}).then(async (): Promise<boolean> => {
     if (epoch !== sessionEditEpoch) return false
@@ -623,6 +624,17 @@ export async function sendChat(text: string): Promise<void> {
     const created = await window.api.createSession(ap, content.slice(0, 30), s.taskMode)
     if (generation !== chatGeneration) return
     sessionId = created.id
+    // 会话创建前选定的模型：落到新会话上（llmId 供本轮请求直接使用）
+    const pendingLlm = store.getState().pendingLlmByProject[ap]
+    if (pendingLlm) {
+      created.llmId = pendingLlm
+      await window.api.setSessionModel(ap, created.id, pendingLlm)
+      store.setState((prev) => {
+        const rest = { ...prev.pendingLlmByProject }
+        delete rest[ap]
+        return { pendingLlmByProject: rest }
+      })
+    }
     store.setState((prev) => ({
       activeSessionId: created.id,
       activeSessionRevision: created.revision ?? 0,
@@ -893,13 +905,22 @@ export function resolveConfirm(v: boolean): void {
   store.setState({ confirmState: null })
 }
 
-/** 会话独立模型：写入会话并刷新视图（菜单勾选与圆环用量跟随该模型） */
+/** 会话独立模型：有会话写入会话；没有则挂到工作区，首个会话创建时自动应用 */
 export async function setSessionModel(llmId: string): Promise<void> {
   const s = store.getState()
-  if (!s.activeProjectId || !s.activeSessionId) return
-  const ok = await window.api.setSessionModel(s.activeProjectId, s.activeSessionId, llmId)
+  const ap = s.activeProjectId
+  if (!ap) return
+  if (!s.activeSessionId) {
+    store.setState((prev) => ({ pendingLlmByProject: { ...prev.pendingLlmByProject, [ap]: llmId } }))
+    store.setState({ statusText: '✅ 已选择模型，将在本工作区的新会话中使用' })
+    setTimeout(() => {
+      if (store.getState().statusText?.startsWith('✅ 已选择模型')) store.setState({ statusText: null })
+    }, 8000)
+    return
+  }
+  const ok = await window.api.setSessionModel(ap, s.activeSessionId, llmId)
   if (ok) {
-    await refreshProjectSessions(s.activeProjectId)
+    await refreshProjectSessions(ap)
     store.setState({ statusText: '✅ 本会话已切换模型（仅此会话生效）' })
     setTimeout(() => {
       if (store.getState().statusText?.startsWith('✅ 本会话')) store.setState({ statusText: null })

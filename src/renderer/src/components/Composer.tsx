@@ -10,7 +10,7 @@ import { Icon } from './Icon'
 import { t } from '../i18n'
 
 export function Composer({ disabled, attachments = [], onAttach, onRemove, onSend, taskDraft }: { disabled: boolean; attachments?: Array<Pick<OfficeFile, 'path' | 'name' | 'size'>>; onAttach?: () => void; onRemove?: (path: string) => void; onSend?: (text: string) => void; taskDraft?: { id: number; text: string } | null }) {
-  const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId, sessionsByProject } = useApp()
+  const { llmProfiles, activeLlmId, activeSessionId, taskMode, activeProjectId, sessionsByProject, pendingLlmByProject } = useApp()
   const office = taskMode === 'office'
   const video = taskMode === 'video'
   const [text, setText] = useState('')
@@ -18,17 +18,20 @@ export function Composer({ disabled, attachments = [], onAttach, onRemove, onSen
   // @文件引用补全：光标处于 @片段 中时显示项目文件候选
   const [mention, setMention] = useState<{ start: number; query: string; items: string[]; active: number } | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  // 本会话独立选择的模型（会话 meta.llmId）；未选择时跟随全局激活档
+  // 本会话独立选择的模型（会话 meta.llmId）；会话未创建时用工作区预选；都没有跟随全局激活档
   const sessionLlmId = activeSessionId && activeProjectId
     ? sessionsByProject[activeProjectId]?.find((m) => m.id === activeSessionId)?.llmId
     : undefined
-  // 会话覆盖的配置档若已被停用/删除，则回退全局激活档，再回退第一个启用档
+  // 会话覆盖的配置档若已被停用/删除，则回退工作区预选档，再回退全局激活档
   const sessionProfile = sessionLlmId ? llmProfiles.find((p) => p.id === sessionLlmId) : undefined
+  const pendingProfile = !sessionProfile && activeProjectId ? llmProfiles.find((p) => p.id === pendingLlmByProject[activeProjectId]) : undefined
   const currentProfile =
     sessionProfile && sessionProfile.enabled !== false
       ? sessionProfile
-      : llmProfiles.find((p) => p.id === activeLlmId && p.enabled !== false) ??
-        llmProfiles.find((p) => p.enabled !== false)
+      : pendingProfile && pendingProfile.enabled !== false
+        ? pendingProfile
+        : llmProfiles.find((p) => p.id === activeLlmId && p.enabled !== false) ??
+          llmProfiles.find((p) => p.enabled !== false)
   const currentLlmId = currentProfile?.id
   useEffect(() => { setText(''); setMention(null) }, [activeSessionId, taskMode])
   useEffect(() => {

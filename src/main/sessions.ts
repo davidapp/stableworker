@@ -616,10 +616,12 @@ async function saveSessionUnlocked(session: Session): Promise<SessionSaveResult>
   if (deletedSessions.has(key) || (session.revision ?? 0) !== revision) return conflict(revision)
   const known = stored?.messages ?? []
   const taskMode = session.taskMode ?? stored?.taskMode ?? 'coding'
+  // llmId 缺省沿用已存值：渲染端的历史保存不带模型字段，不能把会话独立模型抹掉
+  const llmId = session.llmId ?? stored?.llmId
   const ts = session.updatedAt
   const lines: SessionOperation[] = []
-  if (!stored || stored.title !== session.title || stored.taskMode !== taskMode || stored.llmId !== session.llmId) {
-    lines.push({ t: 'meta', ts, title: session.title, createdAt: session.createdAt, taskMode, llmId: session.llmId })
+  if (!stored || stored.title !== session.title || stored.taskMode !== taskMode || stored.llmId !== llmId) {
+    lines.push({ t: 'meta', ts, title: session.title, createdAt: session.createdAt, taskMode, llmId })
   }
   if (known.length > session.messages.length) {
     lines.push({ t: 'clear', ts }, ...session.messages.map((m, i) => ({ t: 'm', ts, i, m })))
