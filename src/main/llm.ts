@@ -35,7 +35,7 @@ import { ensureMcpConnections, getMcpToolDefs, getResourceTools } from './mcp'
 import { createTaskTool, buildSubagentSystemPrompt, isParallelSafe, parallelBatches, TASK_TOOL_NAME } from './subagent'
 import { runPreToolUseHooks, runPostToolUseHooks, runStopHooks } from './hooks'
 import { microCompactHistory } from './microCompact'
-import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError } from './withRetry'
+import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError, BALANCE_RE, isBalanceError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
 import { recordContextBreakdown } from './debug'
 import type {
@@ -363,8 +363,24 @@ function streamError(json: Record<string, unknown>): LLMStreamError | null {
   const detail = json.error && typeof json.error === 'object' ? json.error as Record<string, unknown> : json
   const type = typeof detail.type === 'string' ? detail.type : typeof detail.code === 'string' ? detail.code : ''
   const message = typeof detail.message === 'string' ? detail.message.slice(0, 300) : '模型服务返回流式错误'
+  if (BALANCE_RE.test(message) || BALANCE_RE.test(type)) {
+    return new LLMStreamError('余额不足：当前 API Key 已欠费或额度用尽，请到服务商控制台充值，或在 设置 → LLM 配置 中切换其他配置档。', false)
+  }
   const retryable = /overload|server_error|rate_limit|timeout|internal/i.test(type)
   return new LLMStreamError(`模型流式响应错误${type ? `（${type}）` : ''}：${message}`, retryable)
+}
+
+/** 余额不足识别：命中时给出可操作的中文提示（不重试，充值前重试毫无意义） */
+function balanceMessage(status: number, detail: string): string | null {
+  if (status !== 402 && !BALANCE_RE.test(detail)) return null
+  const llm = currentLlmForBalanceHint()
+  return `余额不足：${llm ? `配置档「${llm.name}」（${llm.model}）` : '当前 API Key'} 已欠费或额度用尽。请到服务商控制台充值后重试，或在 设置 → LLM 配置 中切换其他配置档。`
+}
+
+/** 最近一次请求使用的配置档（仅用于错误提示文案） */
+let lastLlmForBalanceHint: { name: string; model: string } | null = null
+function currentLlmForBalanceHint(): { name: string; model: string } | null {
+  return lastLlmForBalanceHint
 }
 
 export async function readSSE(
@@ -857,6 +873,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
       body,
     })
     try {
+      lastLlmForBalanceHint = { name: llm.name, model: llm.model }
       const res = await undiciFetch(url, {
         method: 'POST',
         headers,
@@ -867,7 +884,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
       recordStatus(exchange, res.status)
       if (!res.ok || !res.body) {
         const detail = (await res.text().catch(() => '')).slice(0, 300)
-        throw new HttpError(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`, res.status)
+        throw new HttpError(balanceMessage(res.status, detail) ?? `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`, res.status)
       }
       // 子代理的流式增量不进主对话：sink 传空函数，只取组装结果
       const collector = createStreamCollector(llm.provider, req.sessionId, () => {})
@@ -991,6 +1008,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
     })
     try {
       const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
+      lastLlmForBalanceHint = { name: llm.name, model: llm.model }
       const res = await undiciFetch(url, {
         method: 'POST',
         headers,
@@ -1004,7 +1022,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
         // Retry-After 头（秒）→ 毫秒，withRetry 会优先尊重它
         const ra = parseFloat(res.headers.get('retry-after') ?? '')
         throw new HttpError(
-          `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+          balanceMessage(res.status, detail) ?? `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
           res.status,
           Number.isFinite(ra) ? ra * 1000 : undefined,
         )
@@ -1078,6 +1096,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
         fn: () => attemptRound(round, finalRound ? [] : tools),
         shouldRetry: (err) =>
           !isAbortError(err) &&
+          !isBalanceError(err) &&
           (err instanceof LLMStreamError ? err.retryable : err instanceof HttpError ? RETRYABLE_STATUS.has(err.status) : true),
         onRetry: async (info) => {
           emit({

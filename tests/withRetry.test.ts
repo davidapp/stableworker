@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { withRetry, HttpError } from '../src/main/withRetry'
+import { withRetry, HttpError, BALANCE_RE } from '../src/main/withRetry'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -97,6 +97,29 @@ describe('withRetry 请求韧性', () => {
         shouldRetry: () => true,
       }),
     ).rejects.toThrow('HTTP 500')
+    expect(calls).toBe(1)
+  })
+
+  it('余额不足报文识别：常见特征命中、普通错误不误伤', () => {
+    expect(BALANCE_RE.test('{"error":{"type":"insufficient_balance"}}')).toBe(true)
+    expect(BALANCE_RE.test('Insufficient Balance')).toBe(true)
+    expect(BALANCE_RE.test('{"error":{"type":"insufficient_quota"}}')).toBe(true)
+    expect(BALANCE_RE.test('该 API Key 已欠费，请充值')).toBe(true)
+    expect(BALANCE_RE.test('HTTP 402 Payment Required')).toBe(false)
+    expect(BALANCE_RE.test('HTTP 500 Internal Server Error')).toBe(false)
+  })
+
+  it('余额不足错误不重试（充值前重试毫无意义）', async () => {
+    let calls = 0
+    await expect(
+      withRetry({
+        maxRetries: 4,
+        fn: async () => {
+          calls++
+          throw new HttpError('余额不足：配置档「DeepSeek」（deepseek-flash）已欠费或额度用尽。', 402)
+        },
+      }),
+    ).rejects.toThrow(/余额不足/)
     expect(calls).toBe(1)
   })
 })

@@ -24,13 +24,22 @@ export class HttpError extends Error {
 /** 这些状态码重试有意义 */
 export const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504, 529])
 
+/** 余额不足/欠费的常见报文特征（DeepSeek 402 insufficient_balance、OpenAI 429 insufficient_quota、智谱 1113 等） */
+export const BALANCE_RE = /insufficient[_ ]?(balance|quota|funds|credit)|余额不足|欠费|账户[-_ ]?arrears|quota[-_ ]?has[-_ ]?been[-_ ]?exceeded|exceeded[-_ ]?your[-_ ]?current[-_ ]?quota|billing[-_ ]?hard[-_ ]?limit/i
+
 export function isAbortError(err: unknown): boolean {
   return err instanceof Error && (err.name === 'AbortError' || /abort/i.test(err.message))
+}
+
+/** 余额不足类错误：不重试（充值前重试毫无意义），错误文案以「余额不足」开头供界面识别 */
+export function isBalanceError(err: unknown): boolean {
+  return err instanceof Error && BALANCE_RE.test(err.message)
 }
 
 /** 默认重试判定：网络层错误与 429/5xx/529 可重试，4xx 客户端错误与中止不重试 */
 export function defaultShouldRetry(err: unknown): boolean {
   if (isAbortError(err)) return false
+  if (isBalanceError(err)) return false
   if (err instanceof HttpError) return RETRYABLE_STATUS.has(err.status)
   return true // 非.HTTP 错误视为网络层瞬时故障
 }
