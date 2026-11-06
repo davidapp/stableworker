@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { fetch as undiciFetch } from 'undici'
 import { loadConfig, decryptApiKey } from './config'
-import { getProxyDispatcher } from './llm'
+import { getProxyDispatcher, isApiKeyOptional } from './llm'
 import { appendSummaryLine, loadSessionAny, saveSessionInternal, emitSessionsChanged } from './sessions'
 import { summarizeWithModel, invalidateCompactCache } from './compact'
 import { estimateTokens } from '../shared/tokens'
@@ -22,12 +22,16 @@ import type {
  * - compactNow：手动把全部历史压缩成一份摘要（"软清空"：界面保留，请求只发摘要）
  */
 
-async function activeLlmOf(): Promise<{ llm: LLMConfig & { apiKey: string }; apiKey: string } | { error: string }> {
+async function activeLlmOf(profileId?: string): Promise<{ llm: LLMConfig & { apiKey: string }; apiKey: string } | { error: string }> {
   const cfg = await loadConfig()
-  const llm = cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ?? cfg.llmProfiles?.[0] ?? null
+  const llm =
+    (profileId ? cfg.llmProfiles?.find((p) => p.id === profileId) : undefined) ??
+    cfg.llmProfiles?.find((p) => p.id === cfg.activeLlmId) ??
+    cfg.llmProfiles?.[0] ??
+    null
   if (!llm) return { error: '尚未配置 LLM API' }
   const apiKey = decryptApiKey(llm.apiKey)
-  if (!apiKey) return { error: '当前配置档的 API Key 为空' }
+  if (!apiKey && !isApiKeyOptional(llm)) return { error: '当前配置档的 API Key 为空' }
   return { llm, apiKey }
 }
 
@@ -81,10 +85,10 @@ export function registerContextHandlers(): void {
   ipcMain.handle(
     'context:compactNow',
     async (_e, projectId: string, sessionId: string): Promise<ContextOpResult> => {
-      const llmOf = await activeLlmOf()
-      if ('error' in llmOf) return { ok: false, error: llmOf.error }
       const r = await loadSessionAny(projectId, sessionId)
       if (!r.session || r.session.messages.length === 0) return { ok: false, error: '会话没有可压缩的消息' }
+      const llmOf = await activeLlmOf(r.session.llmId)
+      if ('error' in llmOf) return { ok: false, error: llmOf.error }
       try {
         const summary = await summarizeWithModel({
           llm: llmOf.llm,
@@ -114,10 +118,10 @@ export function registerContextHandlers(): void {
       startId: string,
       endId: string,
     ): Promise<ContextOpResult> => {
-      const llmOf = await activeLlmOf()
-      if ('error' in llmOf) return { ok: false, error: llmOf.error }
       const r = await loadSessionAny(projectId, sessionId)
       if (!r.session) return { ok: false, error: '会话不存在' }
+      const llmOf = await activeLlmOf(r.session.llmId)
+      if ('error' in llmOf) return { ok: false, error: llmOf.error }
       const msgs = r.session.messages
       const i1 = msgs.findIndex((m) => m.id === startId)
       const i2 = msgs.findIndex((m) => m.id === endId)
@@ -153,27 +157,36 @@ export function registerContextHandlers(): void {
   )
 
   // 查询 API Key 余额：按服务商自动适配端点与响应格式
-  ipcMain.handle('balance:query', async (): Promise<BalanceResult> => {
-    const llmOf = await activeLlmOf()
+  ipcMain.handle('balance:query', async (_e, profileId?: string): Promise<BalanceResult> => {
+    const llmOf = await activeLlmOf(profileId)
     if ('error' in llmOf) return { ok: false, error: llmOf.error }
     const { llm, apiKey } = llmOf
+    if (!apiKey) return { ok: false, error: '该配置档未填写 API Key' }
     const base = llm.baseURL.replace(/\/+$/, '')
+    const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
 
     let url: string
-    let shape: 'deepseek' | 'openrouter'
+    let shape: 'deepseek' | 'openrouter' | 'siliconflow' | 'moonshot'
     if (/deepseek/i.test(base)) {
       url = 'https://api.deepseek.com/user/balance'
       shape = 'deepseek'
     } else if (/openrouter/i.test(base)) {
       url = 'https://openrouter.ai/api/v1/credits'
       shape = 'openrouter'
+    } else if (/siliconflow/i.test(base)) {
+      url = 'https://api.siliconflow.cn/v1/user/info'
+      shape = 'siliconflow'
+    } else if (/moonshot/i.test(base)) {
+      url = 'https://api.moonshot.cn/v1/users/me/balance'
+      shape = 'moonshot'
     } else {
-      return { ok: false, error: '该服务商暂不支持余额查询（当前支持 DeepSeek / OpenRouter 官方 API）' }
+      return { ok: false, error: '该服务商暂不支持余额查询（支持 DeepSeek / OpenRouter / 硅基流动 / Moonshot Kimi）' }
     }
 
     try {
       const res = await undiciFetch(url, {
         headers: { authorization: `Bearer ${apiKey}` },
+        dispatcher,
         signal: AbortSignal.timeout(15_000),
       })
       if (!res.ok) {
@@ -190,6 +203,29 @@ export function registerContextHandlers(): void {
           currency: info.currency ?? '',
           totalBalance: info.total_balance ?? '0',
           grantedBalance: info.granted_balance ?? '0',
+        }
+      }
+      if (shape === 'siliconflow') {
+        const data = json.data as { totalBalance?: string; balance?: string; status?: string } | undefined
+        if (!data) return { ok: false, error: '响应中没有用户余额数据' }
+        const total = data.totalBalance ?? data.balance ?? '0'
+        return {
+          ok: true,
+          isAvailable: data.status ? data.status === 'normal' : Number(total) > 0,
+          currency: 'CNY',
+          totalBalance: String(total),
+          grantedBalance: data.balance && data.totalBalance && data.balance !== data.totalBalance ? String(data.balance) : undefined,
+        }
+      }
+      if (shape === 'moonshot') {
+        const data = json.data as { available_balance?: number; voucher_balance?: number; cash_balance?: number } | undefined
+        if (!data || typeof data.available_balance !== 'number') return { ok: false, error: '响应中没有 available_balance' }
+        return {
+          ok: true,
+          isAvailable: data.available_balance > 0,
+          currency: 'CNY',
+          totalBalance: data.available_balance.toFixed(2),
+          grantedBalance: typeof data.voucher_balance === 'number' && data.voucher_balance > 0 ? data.voucher_balance.toFixed(2) : undefined,
         }
       }
       // openrouter: data.total_credits - data.total_usage = 剩余

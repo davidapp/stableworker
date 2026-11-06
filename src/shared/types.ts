@@ -3,7 +3,14 @@
  * 放在独立目录让两端共同 import，保证 IPC 两端的形状永远一致。
  */
 
-export type ProviderType = 'openai-compatible' | 'anthropic'
+export type ProviderType =
+  | 'openai-compatible'
+  | 'openai-responses'
+  | 'anthropic'
+  | 'gemini'
+  | 'azure-openai'
+  | 'ollama'
+  | 'cohere'
 
 /** 批准模式：决定危险工具执行前是否需要用户确认 */
 export type ApprovalMode = 'plan' | 'confirm' | 'autoEdit' | 'fullAccess'

@@ -2,6 +2,7 @@ import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import type { Dispatcher } from 'undici'
 import verified from '../../config/model-contexts.json'
+import { defaultBaseURLForProvider } from '../shared/contextUsage'
 import type { LLMConfig, ModelContextInfo, ProviderType } from '../shared/types'
 
 interface CatalogEntry extends ModelContextInfo {
@@ -9,6 +10,16 @@ interface CatalogEntry extends ModelContextInfo {
   baseURL: string
   model: string
 }
+
+const VALID_PROVIDERS = new Set<ProviderType>([
+  'openai-compatible',
+  'openai-responses',
+  'anthropic',
+  'gemini',
+  'azure-openai',
+  'ollama',
+  'cohere',
+])
 
 const entries = new Map<string, CatalogEntry>()
 const pending = new Map<string, Promise<ContextRefreshResult>>()
@@ -23,7 +34,7 @@ export interface ContextRefreshResult {
 }
 
 export function normalizeModelBaseURL(profile: Pick<LLMConfig, 'provider' | 'baseURL'>): string {
-  const raw = profile.baseURL.trim() || (profile.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1')
+  const raw = profile.baseURL.trim() || defaultBaseURLForProvider(profile.provider)
   const url = new URL(raw)
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('模型服务地址必须使用 HTTP 或 HTTPS')
   return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
@@ -40,7 +51,7 @@ function positiveInteger(value: unknown): value is number {
 function validEntry(value: unknown): value is CatalogEntry {
   if (!value || typeof value !== 'object') return false
   const v = value as Partial<CatalogEntry>
-  return (v.provider === 'openai-compatible' || v.provider === 'anthropic') &&
+  return Boolean(v.provider && VALID_PROVIDERS.has(v.provider)) &&
     typeof v.baseURL === 'string' && typeof v.model === 'string' && v.model.length > 0 &&
     positiveInteger(v.contextWindow) && typeof v.sourceUrl === 'string' && typeof v.checkedAt === 'string' &&
     (v.source === 'api' || v.source === 'official-docs' || v.source === 'manual') &&
@@ -118,13 +129,18 @@ export function resolveModelContext(profile: LLMConfig | null | undefined): Mode
 /** Input capacity and output capacity are separate fields. Never use max_tokens as input capacity. */
 export function parseModelContextMetadata(payload: unknown, model: string): Pick<ModelContextInfo, 'contextWindow' | 'maxOutputTokens'> | null {
   if (!payload || typeof payload !== 'object') return null
-  const data = (payload as { data?: unknown }).data
+  const target = model.trim()
+  const data = (payload as { data?: unknown; models?: unknown }).data ?? (payload as { models?: unknown }).models
   if (!Array.isArray(data)) return null
-  const entry = data.find((v) => v && typeof v === 'object' && (v as { id?: unknown }).id === model.trim()) as Record<string, unknown> | undefined
+  const entry = data.find((v) => {
+    if (!v || typeof v !== 'object') return false
+    const item = v as { id?: unknown; name?: unknown }
+    return item.id === target || item.name === target || item.name === `models/${target}`
+  }) as Record<string, unknown> | undefined
   if (!entry) return null
-  const contextWindow = [entry.context_window, entry.context_length, entry.max_input_tokens].find(positiveInteger)
+  const contextWindow = [entry.context_window, entry.context_length, entry.max_input_tokens, entry.inputTokenLimit].find(positiveInteger)
   if (!positiveInteger(contextWindow)) return null
-  const maxOutputTokens = [entry.max_output_tokens, entry.max_tokens].find(positiveInteger)
+  const maxOutputTokens = [entry.max_output_tokens, entry.max_tokens, entry.outputTokenLimit].find(positiveInteger)
   return { contextWindow, ...(positiveInteger(maxOutputTokens) ? { maxOutputTokens } : {}) }
 }
 
@@ -137,6 +153,18 @@ export function modelMetadataRequest(profile: LLMConfig, apiKey: string): { url:
   }
   if (profile.provider === 'anthropic') {
     return { url: `${base.endsWith('/v1') ? base : `${base}/v1`}/models`, headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } }
+  }
+  if (profile.provider === 'gemini') {
+    const vBase = /\/v1(beta|alpha)?$/.test(base) ? base : `${base}/v1beta`
+    return { url: `${vBase}/models`, headers: apiKey ? { 'x-goog-api-key': apiKey } : {} }
+  }
+  if (profile.provider === 'azure-openai') {
+    const root = base.replace(/\/openai(\/deployments\/.*)?$/, '')
+    return { url: `${root}/openai/models?api-version=2025-01-01-preview`, headers: apiKey ? { 'api-key': apiKey } : {} }
+  }
+  if (profile.provider === 'ollama') {
+    const root = base.replace(/\/(v1|api)$/, '')
+    return { url: `${root}/v1/models`, headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {} }
   }
   return { url: `${base}/models`, headers: { authorization: `Bearer ${apiKey}` } }
 }

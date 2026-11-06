@@ -252,25 +252,73 @@ export function recordToolCalls(
 
 /**
  * 从响应 JSON 中提取 usage 并重算费用。
- * - OpenAI 兼容：最后一个 chunk 的 usage（需请求里带 stream_options.include_usage，见 llm.ts），
+ * - OpenAI 兼容 / Azure：最后一个 chunk 的 usage（需请求里带 stream_options.include_usage，见 llm.ts），
  *   DeepSeek 额外返回 prompt_cache_hit_tokens / prompt_cache_miss_tokens
- * - OpenAI 通用：prompt_tokens_details.cached_tokens；Anthropic：cache_read_input_tokens
- * - Anthropic：message_start 带输入、message_delta 累计输出
+ * - OpenAI Responses：response.usage（input_tokens / output_tokens / input_tokens_details.cached_tokens）
+ * - Anthropic：message_start 带输入、message_delta 累计输出、cache_read_input_tokens
+ * - Gemini：usageMetadata（promptTokenCount / candidatesTokenCount / thoughtsTokenCount / cachedContentTokenCount）
+ * - Ollama：prompt_eval_count / eval_count
+ * - Cohere：delta.usage.tokens / usage.tokens
  * - usage.cost（如 OpenRouter）：直接是美元金额，优先采用
  */
 export function recordUsageEvent(ex: Exchange, json: Record<string, unknown>): void {
-  const usage = json.usage
-  if (!usage || typeof usage !== 'object') return
-  ex.usage = usage
-  const u = usage as Record<string, unknown>
   const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-  const details = u.prompt_tokens_details as Record<string, unknown> | undefined
 
-  const input = num(u.prompt_tokens) ?? num(u.input_tokens)
-  const output = num(u.completion_tokens) ?? num(u.output_tokens)
+  // Gemini usageMetadata
+  if (json.usageMetadata && typeof json.usageMetadata === 'object') {
+    const gm = json.usageMetadata as Record<string, unknown>
+    ex.usage = gm
+    const input = num(gm.promptTokenCount)
+    const cand = num(gm.candidatesTokenCount)
+    const thoughts = num(gm.thoughtsTokenCount) ?? 0
+    const output = cand != null ? cand + thoughts : null
+    const hit = num(gm.cachedContentTokenCount) ?? 0
+    const miss = input != null ? Math.max(0, input - hit) : null
+    if (input != null) ex.inputTokens = input
+    if (output != null) ex.outputTokens = output
+    if (input != null) ex.cacheHitTokens = hit
+    if (miss != null) ex.cacheMissTokens = miss
+    recomputeCost(ex)
+    scheduleSave(ex)
+    notifyUpdated()
+    return
+  }
+
+  // Ollama native usage fields on final chunk
+  if (typeof json.prompt_eval_count === 'number' || typeof json.eval_count === 'number') {
+    ex.usage = {
+      prompt_eval_count: json.prompt_eval_count,
+      eval_count: json.eval_count,
+    }
+    const input = num(json.prompt_eval_count)
+    const output = num(json.eval_count)
+    if (input != null) {
+      ex.inputTokens = input
+      ex.cacheHitTokens = 0
+      ex.cacheMissTokens = input
+    }
+    if (output != null) ex.outputTokens = output
+    recomputeCost(ex)
+    scheduleSave(ex)
+    notifyUpdated()
+    return
+  }
+
+  const rawUsage =
+    json.usage ??
+    (json.response && typeof json.response === 'object' ? (json.response as Record<string, unknown>).usage : undefined) ??
+    (json.delta && typeof json.delta === 'object' ? (json.delta as Record<string, unknown>).usage : undefined)
+  if (!rawUsage || typeof rawUsage !== 'object') return
+  ex.usage = rawUsage
+  const u = rawUsage as Record<string, unknown>
+  const details = (u.prompt_tokens_details ?? u.input_tokens_details) as Record<string, unknown> | undefined
+  const cohereTokens = (u.tokens ?? u.billed_units) as Record<string, unknown> | undefined
+
+  const input = num(u.prompt_tokens) ?? num(u.input_tokens) ?? num(cohereTokens?.input_tokens)
+  const output = num(u.completion_tokens) ?? num(u.output_tokens) ?? num(cohereTokens?.output_tokens)
   const hit =
     num(u.prompt_cache_hit_tokens) ?? num(details?.cached_tokens) ?? num(u.cache_read_input_tokens) ?? 0
-  const miss = num(u.prompt_cache_miss_tokens) ?? (input != null ? input - hit : null)
+  const miss = num(u.prompt_cache_miss_tokens) ?? (input != null ? Math.max(0, input - hit) : null)
 
   if (input != null) ex.inputTokens = input
   if (output != null) ex.outputTokens = output
@@ -316,12 +364,12 @@ export function endExchange(ex: Exchange, error?: string): void {
 
 // ---------- 脱敏与视图 ----------
 
-/** 脱敏：authorization / x-api-key 只保留末 4 位 */
+/** 脱敏：authorization / x-api-key / api-key / x-goog-api-key 只保留末 4 位 */
 export function maskHeaders(headers: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(headers)) {
     const lk = k.toLowerCase()
-    if (lk === 'authorization' || lk === 'x-api-key') {
+    if (lk === 'authorization' || lk === 'x-api-key' || lk === 'api-key' || lk === 'x-goog-api-key') {
       const scheme = v.startsWith('Bearer ') ? 'Bearer ' : ''
       out[k] = `${scheme}••••${v.slice(-4)}（已脱敏）`
     } else {

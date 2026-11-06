@@ -51,11 +51,17 @@ export function ChatPane() {
     saveError,
     statusText,
     sessionsByProject,
+    pendingLlmByProject,
     taskMode,
     preferences,
   } = useApp()
   const listRef = useRef<HTMLDivElement>(null)
-  const activeLlm = llmProfiles.find((p) => p.id === activeLlmId) ?? null
+  const sessionLlmId = activeProjectId
+    ? (activeSessionId
+        ? sessionsByProject[activeProjectId]?.find((s) => s.id === activeSessionId)?.llmId
+        : pendingLlmByProject[activeProjectId])
+    : undefined
+  const activeLlm = llmProfiles.find((p) => p.id === (sessionLlmId ?? activeLlmId)) ?? llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const [showJumpButton, setShowJumpButton] = useState(false)
   // 窗口最大化状态（隐藏标题栏的自定义窗口控制按钮切换图标用）
   const [maximized, setMaximized] = useState(false)

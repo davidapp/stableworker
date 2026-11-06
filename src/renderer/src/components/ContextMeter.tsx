@@ -20,12 +20,20 @@ function BreakdownRow({ color, label, tokens, total }: { color: string; label: s
 
 /** 上下文水位环：只显示数字（总量 / 已用 / 输出上限 / 构成占比 / 缓存命中） */
 export function ContextMeter() {
-  const { contextLimit, contextInfo, activeSessionId, activeLlmId, llmProfiles } = useApp()
+  const { contextLimit, contextInfo, activeProjectId, activeSessionId, activeLlmId, llmProfiles, sessionsByProject, pendingLlmByProject } = useApp()
   const [open, setOpen] = useState(false)
   // 弹层固定定位坐标（聊天区 overflow:hidden 会裁掉绝对定位弹层，改用视口坐标 + 收进视口）
   const [pos, setPos] = useState<{ right: number; bottom: number }>({ right: 8, bottom: 8 })
   const [latest, setLatest] = useState<DebugListItem | null>(null)
-  const active = llmProfiles.find((p) => p.id === activeLlmId)
+  const sessionLlmId = activeProjectId
+    ? (activeSessionId
+        ? sessionsByProject[activeProjectId]?.find((s) => s.id === activeSessionId)?.llmId
+        : pendingLlmByProject[activeProjectId])
+    : undefined
+  const effectiveLlmId = sessionLlmId ?? activeLlmId
+  const active = llmProfiles.find((p) => p.id === effectiveLlmId) ?? llmProfiles.find((p) => p.id === activeLlmId)
+  const effectiveContextInfo = active?.contextInfo ?? contextInfo
+  const effectiveContextLimit = active?.contextInfo?.contextWindow ?? contextLimit
 
   useEffect(() => {
     let disposed = false
@@ -38,13 +46,13 @@ export function ContextMeter() {
     refresh()
     const off = window.api.onDebugUpdated(refresh)
     return () => { disposed = true; off() }
-  }, [activeSessionId, activeLlmId, active?.model, active?.baseURL, active?.provider])
+  }, [activeSessionId, effectiveLlmId, active?.model, active?.baseURL, active?.provider])
 
   if (!active) return null
   const contextTokens = latest?.inputTokens ?? null
   const breakdown = latest?.breakdown ?? null
-  const hasRatio = contextLimit > 0 && contextTokens != null
-  const pct = hasRatio ? Math.min(100, contextTokens / contextLimit * 100) : 0
+  const hasRatio = effectiveContextLimit > 0 && contextTokens != null
+  const pct = hasRatio ? Math.min(100, contextTokens / effectiveContextLimit * 100) : 0
   const tone = hasRatio ? pct >= 80 ? 'danger' : pct >= 60 ? 'warn' : 'ok' : 'muted'
   const ringR = 6
   const ringC = 2 * Math.PI * ringR
@@ -74,12 +82,12 @@ export function ContextMeter() {
           <div className="mode-menu ctx-popover" style={{ position: 'fixed', right: pos.right, bottom: pos.bottom, left: 'auto' }}>
             <div className="ctx-title-row">
               <span>{t('已用')}</span>
-              <span className="ctx-value">{contextTokens != null ? `${fmtNum(contextTokens)} / ${contextLimit ? fmtNum(contextLimit) : '?'}` : '—'}</span>
+              <span className="ctx-value">{contextTokens != null ? `${fmtNum(contextTokens)} / ${effectiveContextLimit ? fmtNum(effectiveContextLimit) : '?'}` : '—'}</span>
             </div>
-            {contextInfo?.maxOutputTokens ? (
+            {effectiveContextInfo?.maxOutputTokens ? (
               <div className="ctx-row">
                 <span className="ctx-label">{t('输出上限')}</span>
-                <span className="ctx-value">{fmtNum(contextInfo.maxOutputTokens)}</span>
+                <span className="ctx-value">{fmtNum(effectiveContextInfo.maxOutputTokens)}</span>
               </div>
             ) : null}
             <button

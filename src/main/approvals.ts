@@ -86,7 +86,7 @@ export function requestUserInput(
 ): Promise<string> {
   const questionId = randomUUID()
   return new Promise((resolve) => {
-    pendingInputs.set(questionId, { resolve })
+    pendingInputs.set(questionId, { resolve, sessionId })
     emit({ type: 'ask_user', sessionId, toolUseId, questionId, question, options })
   })
 }
@@ -94,14 +94,18 @@ export function requestUserInput(
 export function respondUserInput(questionId: string, answer: string): boolean {
   const e = pendingInputs.get(questionId)
   if (!e) return false
+  pendingInputs.delete(questionId)
   e.resolve(answer)
   return true
 }
 
 /** 用户停止时，挂起中的提问按"已停止"收尾 */
 export function resolveSessionUserInputs(sessionId: string): void {
-  for (const e of [...pendingInputs.values()]) {
-    if (e.sessionId === sessionId) e.resolve('（用户停止）')
+  for (const [id, e] of [...pendingInputs.entries()]) {
+    if (e.sessionId === sessionId) {
+      pendingInputs.delete(id)
+      e.resolve('（用户停止）')
+    }
   }
 }
 

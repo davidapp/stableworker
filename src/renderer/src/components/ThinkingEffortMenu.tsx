@@ -14,9 +14,15 @@ const LEVELS: { id: 'off' | 'low' | 'medium' | 'high'; label: string }[] = [
 
 /** 思考力度选择器：写入激活配置档，随请求发给模型（OpenAI 系 reasoning_effort / Anthropic thinking） */
 export function ThinkingEffortMenu() {
-  const { llmProfiles, activeLlmId } = useApp()
+  const { llmProfiles, activeLlmId, activeProjectId, activeSessionId, sessionsByProject, pendingLlmByProject } = useApp()
   const [open, setOpen] = useState(false)
-  const active = llmProfiles.find((p) => p.id === activeLlmId) ?? null
+  const sessionLlmId = activeProjectId
+    ? (activeSessionId
+        ? sessionsByProject[activeProjectId]?.find((s) => s.id === activeSessionId)?.llmId
+        : pendingLlmByProject[activeProjectId])
+    : undefined
+  const effectiveLlmId = sessionLlmId ?? activeLlmId
+  const active = llmProfiles.find((p) => p.id === effectiveLlmId) ?? llmProfiles.find((p) => p.id === activeLlmId) ?? null
   const current = active?.thinkingEffort ?? 'off'
   const currentLabel = LEVELS.find((l) => l.id === current)?.label ?? '默认'
 

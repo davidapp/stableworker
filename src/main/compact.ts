@@ -90,11 +90,36 @@ export function mergeSummaryIntoFirstUser<T extends ChatHistoryMessage>(
   return [{ role: 'user', blocks: [block] } as unknown as T, ...messages]
 }
 
-/** 从非流式响应 JSON 中解析摘要文本（双协议） */
+/** 从非流式响应 JSON 中解析摘要文本（多协议） */
 export function parseSummaryResponse(provider: LLMConfig['provider'], json: Record<string, unknown>): string {
   if (provider === 'anthropic') {
     const content = json.content as Array<{ type?: string; text?: string }> | undefined
     return (content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('')
+  }
+  if (provider === 'gemini') {
+    const candidates = json.candidates as Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> | undefined
+    return (candidates?.[0]?.content?.parts ?? [])
+      .filter((p) => !p.thought && typeof p.text === 'string')
+      .map((p) => p.text ?? '')
+      .join('')
+  }
+  if (provider === 'openai-responses') {
+    if (typeof json.output_text === 'string' && json.output_text) return json.output_text
+    const output = json.output as Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }> | undefined
+    return (output ?? [])
+      .filter((item) => item.type === 'message')
+      .flatMap((item) => item.content ?? [])
+      .filter((c) => c.type === 'output_text' || c.type === 'text')
+      .map((c) => c.text ?? '')
+      .join('')
+  }
+  if (provider === 'ollama') {
+    const msg = json.message as { content?: string } | undefined
+    return msg?.content ?? ''
+  }
+  if (provider === 'cohere') {
+    const content = (json.message as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
+    return (content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')
   }
   const choices = json.choices as Array<{ message?: { content?: string } }> | undefined
   return choices?.[0]?.message?.content ?? ''

@@ -1,5 +1,18 @@
+import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici'
 import { loadConfig, decryptApiKey } from '../config'
 import type { ToolContext, ToolDefinition } from './index'
+
+const proxyAgents = new Map<string, ProxyAgent>()
+function getProxyDispatcher(proxyURL?: string): Dispatcher | undefined {
+  const url = proxyURL?.trim()
+  if (!url) return undefined
+  let agent = proxyAgents.get(url)
+  if (!agent) {
+    agent = new ProxyAgent({ uri: url })
+    proxyAgents.set(url, agent)
+  }
+  return agent
+}
 
 /**
  * WebSearch（对齐 Claude Code 的 WebSearch）：DeepSeek Search API。
@@ -53,7 +66,7 @@ export function formatSearchResults(hits: SearchHit[], budget = MAX_TOTAL_CHARS)
   return lines.join('\n').trim()
 }
 
-function findDeepSeekProfile(profiles: Array<{ id: string; baseURL: string; apiKey: string; isActive: boolean }>): { baseURL: string; apiKey: string } | null {
+function findDeepSeekProfile(profiles: Array<{ id: string; baseURL: string; apiKey: string; proxyURL: string; isActive: boolean }>): { baseURL: string; apiKey: string; proxyURL: string } | null {
   const active = profiles.find((p) => p.isActive && /deepseek/i.test(p.baseURL))
   const any = profiles.find((p) => /deepseek/i.test(p.baseURL))
   return active ?? any ?? null
@@ -85,6 +98,7 @@ export const webSearchTool: ToolDefinition = {
       id: p.id,
       baseURL: p.baseURL,
       apiKey: decryptApiKey(p.apiKey),
+      proxyURL: p.proxyURL ?? '',
       isActive: p.id === cfg.activeLlmId,
     }))
     const source = findDeepSeekProfile(profiles)
@@ -95,16 +109,17 @@ export const webSearchTool: ToolDefinition = {
       }
     }
 
-    const base = source.baseURL.trim().replace(/\/+$/, '') || 'https://api.deepseek.com'
+    const base = source.baseURL.trim().replace(/\/+$/, '').replace(/\/(v1|anthropic)$/, '') || 'https://api.deepseek.com'
     const timeout = AbortSignal.timeout(30_000)
     try {
-      const res = await fetch(base + SEARCH_ENDPOINT, {
+      const res = await undiciFetch(base + SEARCH_ENDPOINT, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${source.apiKey}`,
         },
         body: JSON.stringify({ query: v.query, count }),
+        dispatcher: getProxyDispatcher(source.proxyURL),
         signal: ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout,
       })
       if (!res.ok) {

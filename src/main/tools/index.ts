@@ -163,6 +163,7 @@ const writeFileTool: ToolDefinition = {
     ctx.signal?.throwIfAborted()
     safeResolve(ctx.projectPath, rel)
     await writeFile(file, content, { encoding: 'utf-8', signal: ctx.signal })
+    fileStateCache.set(file, content)
     const lines = content.split('\n').length
     return { content: `已写入 ${rel}（${lines} 行，${content.length} 字符）` }
   },
@@ -291,6 +292,7 @@ const multiEditTool: ToolDefinition = {
     ctx.signal?.throwIfAborted()
     safeResolve(ctx.projectPath, rel)
     await writeFile(file, raw, { encoding: 'utf-8', signal: ctx.signal })
+    fileStateCache.set(file, raw)
     return { content: `已编辑 ${rel}（共 ${applied.length} 处：${applied.join('、')}）` }
   },
 }
@@ -367,12 +369,18 @@ const runCommandTool: ToolDefinition = {
 
       // 宽限期到：不杀进程，把仍在运行的命令收编为后台任务（模型用 task_output 轮询进度）
       let cancelled = false
+      let adopted = false
       const onAbort = (): void => { cancelled = true; killTree(child) }
       ctx.signal?.addEventListener('abort', onAbort, { once: true })
       if (ctx.signal?.aborted) onAbort()
       const timer = setTimeout(() => {
+        adopted = true
+        ctx.signal?.removeEventListener('abort', onAbort)
+        child.stdout?.off('data', append)
+        child.stderr?.off('data', append)
         const id = `bash-${++bgSeq}`
-        adoptShellTask(id, command, cwd, child, ctx.sessionId)
+        const initialOutput = smartDecode(Buffer.concat(chunks)).slice(0, MAX_OUTPUT_CHARS)
+        adoptShellTask(id, command, cwd, child, ctx.sessionId, initialOutput, truncated)
         resolvePromise({
           content:
             `命令已运行 ${Math.round(runCommandForegroundMs() / 1000)} 秒仍未结束，已自动转入后台继续执行（不终止）。
@@ -385,11 +393,13 @@ const runCommandTool: ToolDefinition = {
       child.on('error', (err) => {
         clearTimeout(timer)
         ctx.signal?.removeEventListener('abort', onAbort)
+        if (adopted) return
         resolvePromise({ content: `命令启动失败：${err.message}`, isError: true })
       })
       child.on('close', (code) => {
         clearTimeout(timer)
         ctx.signal?.removeEventListener('abort', onAbort)
+        if (adopted) return
         // cwd 保持：命令成功且以 cd 开头时，把会话工作目录更新为 cd 的目标
         if (code === 0 && ctx.sessionId) {
           const cd = command.match(/^\s*cd\s+"?([^"&|\n]+?)"?\s*(?:&&|$)/i)
@@ -616,7 +626,7 @@ export async function executeToolCall(
 ): Promise<ToolRunResult> {
   const started = Date.now()
   const tool = opts.definition?.name === name ? opts.definition : registry.get(name)
-  const timeoutMs = tool?.timeoutMs ?? TOOL_TIMEOUT_MS
+  const timeoutMs = name === 'run_command' ? runCommandForegroundMs() + 5_000 : (tool?.timeoutMs ?? TOOL_TIMEOUT_MS)
   const controller = new AbortController()
   const abortUnderlying = (): void => controller.abort(opts.signal?.reason ?? new Error('用户已停止，操作中断'))
   if (opts.signal?.aborted) abortUnderlying()

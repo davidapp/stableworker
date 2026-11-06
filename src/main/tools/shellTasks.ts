@@ -125,15 +125,22 @@ export function adoptShellTask(
   cwd: string,
   child: ChildProcess,
   sessionId?: string,
+  initialOutput = '',
+  initialTruncated = false,
 ): ShellTask {
+  const all = [...tasks.values()]
+  if (all.length >= MAX_TASKS) {
+    const finished = all.filter((t) => t.status !== 'running').sort((a, b) => a.startedAt - b.startedAt)
+    if (finished.length > 0) tasks.delete(finished[0].id)
+  }
   const task: ShellTask = {
     id,
     command,
     cwd,
     status: 'running',
     exitCode: null,
-    output: '',
-    truncated: false,
+    output: initialOutput.slice(0, MAX_BG_OUTPUT),
+    truncated: initialTruncated || initialOutput.length > MAX_BG_OUTPUT,
     startedAt: Date.now(),
     child,
     sessionId,
@@ -154,6 +161,12 @@ export function adoptShellTask(
   }
   child.stdout?.on('data', (data: Buffer) => append(stdoutDecoder.write(data)))
   child.stderr?.on('data', (data: Buffer) => append(stderrDecoder.write(data)))
+  child.on('error', (err) => {
+    if (task.status === 'running') {
+      task.status = 'failed'
+      task.output += `\n执行失败：${err.message}`
+    }
+  })
   child.on('close', (code) => {
     append(stdoutDecoder.end() + stderrDecoder.end())
     if (task.status === 'running') {

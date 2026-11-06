@@ -65,9 +65,13 @@ export function globToRegExp(glob: string): RegExp {
     const c = glob[i]
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        re += '.*'
         i++
-        if (glob[i + 1] === '/') i++ // "**/" 也吞掉后面的斜杠
+        if (glob[i + 1] === '/') {
+          re += '(?:.*/)?'
+          i++ // "**/" 匹配零层或多层子目录，且要求非空时以斜杠结尾
+        } else {
+          re += '.*'
+        }
       } else {
         re += '[^/]*'
       }
@@ -122,7 +126,8 @@ export const grepTool = {
     } catch (e) {
       return { content: `正则表达式无效：${e instanceof Error ? e.message : String(e)}`, isError: true }
     }
-    const includeRe = typeof input.include === 'string' && input.include ? globToRegExp(input.include) : null
+    const includePattern = typeof input.include === 'string' && input.include ? input.include : ''
+    const includeRe = includePattern ? globToRegExp(includePattern) : null
 
     const collected = await collectTextFiles(ctx.projectPath, input.path, ctx.signal)
     if ('error' in collected) return { content: collected.error, isError: true }
@@ -139,7 +144,10 @@ export const grepTool = {
         break
       }
       const rel = relative(root, file).split('\\').join('/')
-      if (includeRe && !includeRe.test(rel)) continue
+      if (includeRe) {
+        const hit = includePattern.includes('/') ? includeRe.test(rel) : includeRe.test(rel.split('/').pop() ?? '')
+        if (!hit) continue
+      }
       let raw: string
       try {
         safeResolve(ctx.projectPath, relative(ctx.projectPath, file))

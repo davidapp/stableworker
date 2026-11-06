@@ -2,6 +2,24 @@
 
 所有显著变更记录在此文件。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.9.7] — 2026-11-06
+
+### 新增
+- **7 种大模型原生 API 协议**：除 `openai-compatible` 与 `anthropic` 外，新增支持 `openai-responses`（OpenAI `/v1/responses`）、`gemini`（Google Gemini `generateContent` / `streamGenerateContent`）、`azure-openai`（Azure 部署端点与 `api-key` 鉴权）、`ollama`（Ollama 原生 `/api/chat` NDJSON 流与免密调用）、`cohere`（Cohere v2 `/v2/chat`）
+- **39 个国内外主流大模型与算力网关预设**：按国内主流（DeepSeek、智谱 GLM、通义千问、Kimi、火山方舟、MiniMax、百川、零一万物、阶跃星辰、混元、千帆、星火、商汤、小米 MiMo）、海外主流（OpenAI、Claude、Gemini、xAI Grok、Mistral、Cohere、Perplexity、AI21）、聚合与算力云（OpenRouter、SiliconFlow、Groq、Together、Fireworks、NVIDIA NIM、Cerebras、DeepInfra、Novita、PPIO、七牛云、无问芯穹、GitHub Models、Cloudflare、HuggingFace、Azure OpenAI）及本地部署（Ollama、LM Studio、vLLM/SGLang、llama.cpp、LocalAI、One API/LiteLLM）分组预置
+- **模型列表拉取与余额查询扩展**：配置档编辑弹窗内新增一键"拉取模型"按钮；余额查询新增支持 OpenRouter、硅基流动（SiliconFlow）、月之暗面（Kimi）并支持代理转发
+
+### 修复与优化
+- 修复 `llm:listModels` IPC 通道被错误嵌套在 `llm:test` 内部导致未测连接时拉取模型失败、多次测试重复注册崩溃的问题
+- 修复 `ask_user_question` 在会话停止时未清理挂起 Promise 的问题
+- 修复 `memory` 工具写入嵌套子目录时报错 `ENOENT` 的问题
+- 修复 `globToRegExp` 中 `/**/` 边界误匹配及 `grep` 单文件名 `include` 过滤在子目录失效的问题
+- 增强 `web_fetch` SSRF 防护：补充 IPv6 私网/环回地址拦截，并对 HTTP 重定向逐跳校验目标地址
+- 修复 `web_search` 未走配置代理及 `baseURL` 尾部 `/v1` 重复拼接问题
+- 修复 `write_file` / `multi_edit` 后未同步更新 `fileStateCache` 及 `run_command` 前台超时转后台时丢失前期输出的问题
+- 优化 Excel 公式引擎 `decimalRound` 与工作表 XML 写回性能
+- 修复独立调试/上下文/搜索窗口未挂载 `ConfirmDialog`、保存配置档误关整个设置弹窗及会话独立模型在顶栏/底栏状态同步问题
+
 ## [0.9.5] — 2026-10-18
 
 ### 新增

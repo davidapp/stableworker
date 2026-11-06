@@ -1,7 +1,7 @@
 /**
  * WebFetch：抓取 URL 内容转成 markdown 风格文本给模型。
  * - 15 分钟内存缓存（同一 URL 重复抓取零成本）
- * - SSRF 防护：只允许 http/https，拒绝内网地址（localhost / 私有网段 / 链路本地）
+ * - SSRF 防护：只允许 http/https，拒绝内网地址（localhost / 私有网段 / 链路本地），并对重定向逐跳校验
  * - 输出截断到 2 万字符（HTML 转文本的轻量转换，非完整 markdown 渲染）
  */
 
@@ -9,11 +9,12 @@ import type { ToolContext } from './index'
 
 const MAX_CHARS = 20_000
 const CACHE_TTL = 15 * 60_000
+const MAX_REDIRECTS = 5
 
 const cache = new Map<string, { content: string; at: number }>()
 
 /** SSRF 防护：拒绝非 http(s) 协议与内网 / 本地地址 */
-function assertPublicUrl(raw: string): URL {
+export function assertPublicUrl(raw: string): URL {
   let u: URL
   try {
     u = new URL(raw)
@@ -23,7 +24,7 @@ function assertPublicUrl(raw: string): URL {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     throw new Error(`仅支持 http/https 协议（收到 ${u.protocol}）`)
   }
-  const h = u.hostname.toLowerCase()
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '')
   const blocked =
     h === 'localhost' ||
     h === '0.0.0.0' ||
@@ -35,8 +36,11 @@ function assertPublicUrl(raw: string): URL {
     /^169\.254\./.test(h) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
     h === '::1' ||
-    h === '[::1]'
-  if (blocked) throw new Error(`拒绝访问内网地址：${h}`)
+    h === '::' ||
+    /^::ffff:(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) ||
+    /^f[cd][0-9a-f]{2}:/.test(h) ||
+    /^fe[89ab][0-9a-f]:/.test(h)
+  if (blocked) throw new Error(`拒绝访问内网地址：${u.hostname}`)
   return u
 }
 
@@ -102,13 +106,25 @@ export const webFetchTool = {
       return { content: `${hit.content}\n\n（来自 15 分钟缓存）` }
     }
 
-    let res: Response
+    let currentUrl = u
+    let res: Response | null = null
+    const signal = ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000)
     try {
-      res = await fetch(u.href, { signal: ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) })
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        res = await fetch(currentUrl.href, { redirect: 'manual', signal })
+        if (res.status >= 300 && res.status < 400) {
+          const location = res.headers.get('location')
+          if (!location) return { content: `HTTP ${res.status} 重定向缺少 Location 头`, isError: true }
+          if (hop === MAX_REDIRECTS) return { content: `重定向次数超过上限（${MAX_REDIRECTS}）`, isError: true }
+          currentUrl = assertPublicUrl(new URL(location, currentUrl).href)
+          continue
+        }
+        break
+      }
     } catch (e) {
       return { content: `抓取失败：${e instanceof Error ? e.message : String(e)}`, isError: true }
     }
-    if (!res.ok) return { content: `HTTP ${res.status} ${res.statusText}`, isError: true }
+    if (!res || !res.ok) return { content: `HTTP ${res?.status ?? 0} ${res?.statusText ?? ''}`, isError: true }
 
     const html = await res.text()
     const isHtml = /<html|<body|<div/i.test(html)

@@ -199,7 +199,7 @@ async function refreshProjectSessions(projectId: string): Promise<void> {
 async function loadSessionIntoView(projectId: string, sessionId: string): Promise<void> {
   const res = await window.api.loadSession(projectId, sessionId)
   if (!res || !res.session) {
-    store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, compactedNote: null, statusText: null, todos: [] })
+    store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
     return
   }
   // 清理上次中断留下的流式/运行中状态
@@ -219,7 +219,7 @@ async function loadSessionIntoView(projectId: string, sessionId: string): Promis
       `已尽力恢复出 ${messages.length} 条消息。建议尽快导出重要内容；也可以在文件夹中查看原始文件，或删除本会话重建。`
     : null
   store.setState({ activeProjectId: projectId, activeSessionId: res.session.id, activeSessionRevision: res.session.revision ?? 0,
-    taskMode: res.session.taskMode ?? 'coding', messages, sessionWarning: warning })
+    taskMode: res.session.taskMode ?? 'coding', messages, sessionWarning: warning, saveError: null, compactedNote: null, statusText: null, todos: [] })
 }
 
 export async function addProject(): Promise<void> {
@@ -228,7 +228,7 @@ export async function addProject(): Promise<void> {
   if (!cfg) return // 用户取消了目录选择
   applyConfig(cfg)
   store.setState({ taskMode: 'coding' })
-  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
   await reloadAllSessions(cfg.projects)
   if (cfg.activeProjectId) {
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [cfg.activeProjectId as string]: true } }))
@@ -240,7 +240,7 @@ export async function selectProject(id: string): Promise<void> {
   const cfg = await window.api.setActiveProject(id)
   applyConfig(cfg)
   store.setState({ taskMode: taskModeForProject(id) })
-  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
   store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [id]: true } }))
   await refreshProjectSessions(id)
 }
@@ -264,7 +264,7 @@ export async function removeProject(id: string): Promise<void> {
   await stopActiveChatForNavigation()
   const cfg = await window.api.removeProject(id)
   applyConfig(cfg)
-  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], compactedNote: null, statusText: null, todos: [] })
+  store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
   store.setState((prev) => {
     const sessionsByProject = { ...prev.sessionsByProject }
     delete sessionsByProject[id]
@@ -288,6 +288,10 @@ export async function newSessionInProject(projectId: string): Promise<void> {
     activeSessionRevision: 0,
     messages: [],
     sessionWarning: null,
+    saveError: null,
+    compactedNote: null,
+    statusText: null,
+    todos: [],
   }))
 }
 
@@ -296,7 +300,7 @@ export async function selectSession(projectId: string, sessionId: string): Promi
   if (store.getState().activeProjectId !== projectId) {
     const cfg = await window.api.setActiveProject(projectId)
     applyConfig(cfg)
-    store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, compactedNote: null, statusText: null, todos: [] })
+    store.setState({ activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] })
     store.setState((prev) => ({ expandedProjects: { ...prev.expandedProjects, [projectId]: true } }))
   }
   await loadSessionIntoView(projectId, sessionId)
@@ -311,7 +315,7 @@ export async function deleteSession(projectId: string, id: string): Promise<void
       [projectId]: (prev.sessionsByProject[projectId] ?? []).filter((s) => s.id !== id),
     },
     ...(prev.activeSessionId === id
-      ? { activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null }
+      ? { activeSessionId: null, activeSessionRevision: 0, messages: [], sessionWarning: null, saveError: null, compactedNote: null, statusText: null, todos: [] }
       : {}),
   }))
 }
@@ -335,7 +339,7 @@ export async function renameSession(projectId: string, sessionId: string, title:
 export async function clearSessionContext(): Promise<void> {
   const s = store.getState()
   if (!s.activeSessionId || s.streaming) return
-  store.setState({ messages: [] })
+  store.setState({ messages: [], todos: [], compactedNote: null, saveError: null, statusText: null })
   await persistCurrentSession()
 }
 
@@ -350,7 +354,6 @@ export function closeSettings(): void {
 export async function saveProfile(profile: LLMConfig & { id?: string; apiKey?: string }): Promise<void> {
   const cfg = await window.api.saveProfile(profile)
   applyConfig(cfg)
-  closeSettings()
   const id = profile.id ?? cfg.activeLlmId
   if (id) void refreshModelContext(id, false)
 }
@@ -611,7 +614,12 @@ export async function sendChat(text: string): Promise<void> {
       )
     content = content + sections.join('')
   }
-  if (!s.activeLlmId) {
+  const pendingOrSessionLlmId = s.activeProjectId
+    ? (s.activeSessionId
+        ? s.sessionsByProject[s.activeProjectId]?.find((m) => m.id === s.activeSessionId)?.llmId
+        : s.pendingLlmByProject[s.activeProjectId])
+    : undefined
+  if (!s.activeLlmId && !pendingOrSessionLlmId) {
     openSettings() // 没有可用配置档时直接带用户去设置
     return
   }
@@ -650,9 +658,10 @@ export async function sendChat(text: string): Promise<void> {
     return
   }
 
-  if (s.taskMode === 'office' && s.messages.length === 0) {
+  if ((s.taskMode === 'office' || s.taskMode === 'video') && s.messages.length === 0) {
+    const defaultTitle = s.taskMode === 'office' ? '新办公任务' : '新视频任务'
     store.setState((prev) => ({ sessionsByProject: { ...prev.sessionsByProject,
-      [ap]: (prev.sessionsByProject[ap] ?? []).map((meta) => meta.id === sessionId && meta.title === '新办公任务' ? { ...meta, title: content.slice(0, 30) } : meta) } }))
+      [ap]: (prev.sessionsByProject[ap] ?? []).map((meta) => meta.id === sessionId && meta.title === defaultTitle ? { ...meta, title: content.slice(0, 30) } : meta) } }))
   }
 
   const userMsg: ChatMessage = {
@@ -693,7 +702,7 @@ export async function sendChat(text: string): Promise<void> {
 
   let res: { ok: boolean; error?: string; compacted?: number }
   try {
-    const sessionLlmId = s.sessionsByProject[ap]?.find((m) => m.id === sessionId)?.llmId
+    const sessionLlmId = store.getState().sessionsByProject[ap]?.find((m) => m.id === sessionId)?.llmId
     const request = window.api.sendChat({ sessionId, projectId: ap, messages: history, revision: store.getState().activeSessionRevision, skill: skillMeta, llmId: sessionLlmId })
     activeChatRequest = request
     try { res = await request } finally { if (activeChatRequest === request) activeChatRequest = null }
@@ -803,20 +812,24 @@ let lastAutoCompactAt = 0
  */
 async function maybeAutoCompact(): Promise<void> {
   const s = store.getState()
-  if (autoCompactRunning || !s.contextLimit) return
+  if (autoCompactRunning) return
   if (Date.now() - lastAutoCompactAt < AUTO_COMPACT_COOLDOWN_MS) return
   if (!s.activeProjectId || !s.activeSessionId) return
   if (s.messages.length < AUTO_COMPACT_MIN_MESSAGES) return
+  const sessionLlmId = s.sessionsByProject[s.activeProjectId]?.find((m) => m.id === s.activeSessionId)?.llmId
+  const activeProfile = s.llmProfiles.find((p) => p.id === (sessionLlmId ?? s.activeLlmId)) ?? s.llmProfiles.find((p) => p.id === s.activeLlmId)
+  const limit = activeProfile?.contextInfo?.contextWindow || s.contextLimit
+  if (!limit) return
   // compactNow 在主进程读磁盘上的会话文件，先确保本轮回复已落盘
   if (!await persistCurrentSession()) return
   const list = await window.api.listDebugExchanges()
-  const latest = selectContextExchange(list, s.activeSessionId, s.llmProfiles.find((p) => p.id === s.activeLlmId))
+  const latest = selectContextExchange(list, s.activeSessionId, activeProfile)
   const tokens = latest?.inputTokens
-  if (!tokens || tokens < s.contextLimit * AUTO_COMPACT_RATIO) return
+  if (!tokens || tokens < limit * AUTO_COMPACT_RATIO) return
 
   autoCompactRunning = true
   lastAutoCompactAt = Date.now()
-  const pct = Math.round((tokens / s.contextLimit) * 100)
+  const pct = Math.round((tokens / limit) * 100)
   store.setState({ statusText: `上下文已达 ${pct}%，自动压缩中…` })
   try {
     const r = await window.api.compactNow(s.activeProjectId, s.activeSessionId)

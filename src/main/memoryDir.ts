@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
-import { basename, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { app } from 'electron'
 import type { ToolDefinition } from './tools/index'
 
@@ -76,7 +76,7 @@ export const memoryTool: ToolDefinition = {
       if (action === 'write') {
         const content = typeof input.content === 'string' ? input.content : ''
         if (!content.trim()) return { content: 'write 需要 content 参数', isError: true }
-        await mkdir(dir, { recursive: true })
+        await mkdir(dirname(path), { recursive: true })
         await writeFile(path, content, 'utf-8')
         return { content: `已写入记忆：${rel}` }
       }

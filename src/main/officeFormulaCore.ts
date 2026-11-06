@@ -75,13 +75,10 @@ function decimalRound(args: unknown[], mode: 'nearest' | 'up' | 'down'): number 
   const match = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(Math.abs(value).toString())!
   const fraction = match[2] ?? '', coefficient = BigInt(match[1] + fraction)
   const shift = Number(match[3] ?? 0) - fraction.length + digits
-  let units: bigint
-  if (shift >= 0) units = coefficient * 10n ** BigInt(shift)
-  else {
-    const divisor = 10n ** BigInt(-shift), remainder = coefficient % divisor
-    units = coefficient / divisor
-    if ((mode === 'nearest' && remainder * 2n >= divisor) || (mode === 'up' && remainder !== 0n)) units++
-  }
+  if (shift >= 0) return value
+  const divisor = 10n ** BigInt(-shift), remainder = coefficient % divisor
+  let units = coefficient / divisor
+  if ((mode === 'nearest' && remainder * 2n >= divisor) || (mode === 'up' && remainder !== 0n)) units++
   const rounded = Number(`${value < 0 ? '-' : ''}${units}e${-digits}`)
   if (!Number.isFinite(rounded)) throw FormulaParser.FormulaError.NUM
   return rounded === 0 ? 0 : rounded
@@ -320,8 +317,9 @@ export async function calculateWorkbookCore(buffer: Buffer, signal?: AbortSignal
   for (const sheet of sheets) {
     let changed = false
     const updated = sheet.xml.replace(cellPattern, (raw) => {
-      const parsed = xmlParser.parse(raw).c
-      const cell = sheet.cells.get(String(parsed['@_r']).toUpperCase())
+      const addrMatch = /^<(?:[^\s<>/:]+:)?c\b[^>]*?\br\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(raw)
+      const addr = (addrMatch?.[1] ?? addrMatch?.[2] ?? '').toUpperCase()
+      const cell = addr ? sheet.cells.get(addr) : undefined
       if (!cell || (cell.formula === undefined && !cell.discardCache)) return raw
       changed = true
       return cacheCell(raw, cell.result ?? FormulaParser.FormulaError.VALUE)

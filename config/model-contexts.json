@@ -25,13 +25,33 @@
     },
     {
       "models": [
+        "deepseek-chat",
+        "deepseek-reasoner"
+      ],
+      "baseURLs": [
+        "https://api.deepseek.com",
+        "https://api.deepseek.com/v1",
+        "https://api.deepseek.com/anthropic"
+      ],
+      "providers": [
+        "openai-compatible",
+        "anthropic"
+      ],
+      "contextWindow": 131072,
+      "maxOutputTokens": 65536,
+      "sourceUrl": "https://api-docs.deepseek.com/quick_start/pricing",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
         "gpt-5"
       ],
       "baseURLs": [
         "https://api.openai.com/v1"
       ],
       "providers": [
-        "openai-compatible"
+        "openai-compatible",
+        "openai-responses"
       ],
       "contextWindow": 400000,
       "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5",
@@ -45,7 +65,8 @@
         "https://api.openai.com/v1"
       ],
       "providers": [
-        "openai-compatible"
+        "openai-compatible",
+        "openai-responses"
       ],
       "contextWindow": 400000,
       "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5-mini",
@@ -59,7 +80,8 @@
         "https://api.openai.com/v1"
       ],
       "providers": [
-        "openai-compatible"
+        "openai-compatible",
+        "openai-responses"
       ],
       "contextWindow": 1047576,
       "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4.1",
@@ -68,7 +90,8 @@
     {
       "models": [
         "claude-sonnet-4-5",
-        "claude-haiku-4-5"
+        "claude-haiku-4-5",
+        "claude-opus-4-1"
       ],
       "baseURLs": [
         "https://api.anthropic.com",
@@ -79,6 +102,77 @@
       ],
       "contextWindow": 200000,
       "sourceUrl": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite"
+      ],
+      "baseURLs": [
+        "https://generativelanguage.googleapis.com",
+        "https://generativelanguage.googleapis.com/v1beta",
+        "https://generativelanguage.googleapis.com/v1beta/openai"
+      ],
+      "providers": [
+        "gemini",
+        "openai-compatible"
+      ],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "sourceUrl": "https://ai.google.dev/gemini-api/docs/models",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "glm-5.3",
+        "glm-5.3-flash",
+        "glm-5.2",
+        "glm-4.7",
+        "glm-4.6",
+        "glm-4.5"
+      ],
+      "baseURLs": [
+        "https://open.bigmodel.cn/api/paas/v4"
+      ],
+      "providers": [
+        "openai-compatible"
+      ],
+      "contextWindow": 128000,
+      "sourceUrl": "https://docs.bigmodel.cn/cn/guide/start/model-overview",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "kimi-k2",
+        "kimi-k2-turbo-preview"
+      ],
+      "baseURLs": [
+        "https://api.moonshot.cn/v1"
+      ],
+      "providers": [
+        "openai-compatible"
+      ],
+      "contextWindow": 131072,
+      "sourceUrl": "https://platform.moonshot.cn/docs/introduction",
+      "checkedAt": "2026-10-12"
+    },
+    {
+      "models": [
+        "qwen3-max",
+        "qwen3-coder-plus",
+        "qwen-max",
+        "qwen-plus"
+      ],
+      "baseURLs": [
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      ],
+      "providers": [
+        "openai-compatible"
+      ],
+      "contextWindow": 131072,
+      "sourceUrl": "https://help.aliyun.com/zh/model-studio/getting-started/models",
       "checkedAt": "2026-10-12"
     }
   ]

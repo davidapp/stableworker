@@ -1,4 +1,4 @@
-import { writeFile, access } from 'node:fs/promises'
+import { writeFile, access, readFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import {
   loadPipeline, startRun, saveRunState, readRunState, latestRunDir, nodeOutputDir,
@@ -88,13 +88,18 @@ export const defaultExecutors: Record<string, NodeExecutor> = {
     return [outPath]
   },
   async tts(node, ctx) {
-    const text = typeof node.params.text === 'string' ? node.params.text.trim() : ''
+    let text = typeof node.params.text === 'string' ? node.params.text.trim() : ''
+    if (!text) {
+      const upstream = ctx.inputs.text ?? ctx.inputs.script ?? Object.values(ctx.inputs)[0]
+      if (upstream) text = (await readFile(upstream, 'utf8').catch(() => '')).trim()
+    }
     if (!text) throw new Error(`节点 ${node.name} 缺少 text 参数`)
     const target = resolve(ctx.outputDir, 'voice.mp3')
     const ms = await synthesizeEdgeTts({
       outputsDir: ctx.outputDir, text, target,
       voice: typeof node.params.voice === 'string' ? node.params.voice : undefined,
       rate: typeof node.params.rate === 'string' ? node.params.rate : undefined,
+      overwrite: true,
       onOutput: (m) => ctx.onOutput?.(m),
     })
     ctx.onOutput?.(ms ? `配音 ${(ms / 1000).toFixed(1)} 秒。` : '配音完成。')

@@ -18,6 +18,7 @@ import type {
   ModelPricing,
   OfficeFile,
   OfficePreviewResult,
+  ProviderType,
   ProjectInfo,
   PermissionRules,
   Session,
@@ -145,7 +146,7 @@ const api = {
   testLlm: (payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('llm:test', payload),
   listModels: (
-    payload?: { id?: string; provider?: 'openai-compatible' | 'anthropic'; name?: string; baseURL?: string; model?: string; proxyURL?: string; apiKey?: string },
+    payload?: { id?: string; provider?: ProviderType; name?: string; baseURL?: string; model?: string; proxyURL?: string; apiKey?: string },
   ): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string; fallback?: boolean }> =>
     ipcRenderer.invoke('llm:listModels', payload),
 
@@ -181,8 +182,8 @@ const api = {
     ipcRenderer.invoke('context:deleteSummary', projectId, sessionId),
   compactNow: (projectId: string, sessionId: string): Promise<ContextOpResult> =>
     ipcRenderer.invoke('context:compactNow', projectId, sessionId),
-  /** 查询当前配置档的 API Key 余额（按服务商自动适配） */
-  queryBalance: (): Promise<BalanceResult> => ipcRenderer.invoke('balance:query'),
+  /** 查询配置档的 API Key 余额（按服务商自动适配，可指定 profileId） */
+  queryBalance: (profileId?: string): Promise<BalanceResult> => ipcRenderer.invoke('balance:query', profileId),
   /** 会话被外部（上下文管理窗口）修改时触发，主窗口据此从磁盘重载 */
   onSessionsChanged: (
     callback: (e: SessionChangeEvent) => void,

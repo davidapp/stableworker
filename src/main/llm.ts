@@ -11,8 +11,10 @@ import {
   recordAssembledText,
   recordReasoningText,
   recordToolCalls,
+  recordResponseBody,
   endExchange,
   maskHeaders,
+  recordContextBreakdown,
 } from './debug'
 import { isPeakTime } from './pricing'
 import { requestApproval, resolveSessionApprovals, requestUserInput, resolveSessionUserInputs } from './approvals'
@@ -37,7 +39,7 @@ import { runPreToolUseHooks, runPostToolUseHooks, runStopHooks } from './hooks'
 import { microCompactHistory } from './microCompact'
 import { withRetry, HttpError, RETRYABLE_STATUS, isAbortError, BALANCE_RE, isBalanceError } from './withRetry'
 import { estimateTokens } from '../shared/tokens'
-import { recordContextBreakdown } from './debug'
+import { chatEndpointForProfile, defaultBaseURLForProvider } from '../shared/contextUsage'
 import type {
   ApprovalMode,
   ChatEvent,
@@ -94,11 +96,45 @@ function emit(event: ChatEvent): void {
 }
 
 function defaultBaseURL(provider: LLMConfig['provider']): string {
-  return provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'
+  return defaultBaseURLForProvider(provider)
 }
 
 function joinURL(base: string, path: string): string {
   return base.replace(/\/+$/, '') + path
+}
+
+/** 本地部署服务（Ollama 原生或 localhost/127.0.0.1 端点）允许免密调用 */
+export function isApiKeyOptional(llm: Pick<LLMConfig, 'provider' | 'baseURL'>): boolean {
+  if (llm.provider === 'ollama') return true
+  const raw = llm.baseURL.trim()
+  if (!raw) return false
+  try {
+    const host = new URL(raw).hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]' || host === '0.0.0.0'
+  } catch {
+    return false
+  }
+}
+
+function sanitizeGeminiSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === '$schema' || k === 'additionalProperties') continue
+    if (k === 'properties' && v && typeof v === 'object' && !Array.isArray(v)) {
+      const props: Record<string, unknown> = {}
+      for (const [pk, pv] of Object.entries(v as Record<string, unknown>)) {
+        props[pk] = pv && typeof pv === 'object' && !Array.isArray(pv)
+          ? sanitizeGeminiSchema(pv as Record<string, unknown>)
+          : pv
+      }
+      out[k] = props
+    } else if (k === 'items' && v && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = sanitizeGeminiSchema(v as Record<string, unknown>)
+    } else {
+      out[k] = v
+    }
+  }
+  return out
 }
 
 /** 根据配置构建请求的 dispatcher：配置了代理返回 ProxyAgent，留空 undefined（直连） */
@@ -236,7 +272,8 @@ export function buildRequest(
   stream: boolean,
   system: string,
 ): { url: string; headers: Record<string, string>; body: string } {
-  const baseURL = llm.baseURL.trim() || defaultBaseURL(llm.provider)
+  const effort = llm.thinkingEffort && llm.thinkingEffort !== 'off' ? llm.thinkingEffort : null
+  const budget = effort ? { low: 2048, medium: 8192, high: 24576 }[effort] : 0
 
   if (llm.provider === 'anthropic') {
     const messages: Record<string, unknown>[] = []
@@ -266,11 +303,8 @@ export function buildRequest(
         })
       }
     }
-    // 思考力度 → Anthropic extended thinking（预算随档位，max_tokens 必须大于预算）
-    const effort = llm.thinkingEffort && llm.thinkingEffort !== 'off' ? llm.thinkingEffort : null
-    const budget = effort ? { low: 2048, medium: 8192, high: 24576 }[effort] : 0
     return {
-      url: joinURL(baseURL, '/v1/messages'),
+      url: chatEndpointForProfile(llm, stream),
       headers: {
         'content-type': 'application/json',
         'x-api-key': apiKey,
@@ -285,6 +319,232 @@ export function buildRequest(
         stream,
         ...(tools.length
           ? { tools: tools.map((d) => ({ name: d.name, description: d.description, input_schema: d.inputSchema })) }
+          : {}),
+      }),
+    }
+  }
+
+  if (llm.provider === 'gemini') {
+    const contents: Record<string, unknown>[] = []
+    const toolNameById = new Map<string, string>()
+    for (const t of turns) {
+      if (t.kind === 'user') {
+        if (t.text) contents.push({ role: 'user', parts: [{ text: t.text }] })
+      } else if (t.kind === 'assistant') {
+        const parts: Record<string, unknown>[] = []
+        for (const r of t.reasoning) {
+          if (r.text) {
+            parts.push({
+              text: r.text,
+              thought: true,
+              ...(r.signature ? { thoughtSignature: r.signature } : {}),
+            })
+          }
+        }
+        if (t.text) parts.push({ text: t.text })
+        for (const c of t.toolCalls) {
+          toolNameById.set(c.id, c.name)
+          parts.push({
+            functionCall: {
+              id: c.id,
+              name: c.name,
+              args: parseToolInput(c.argsJson, c.name),
+            },
+          })
+        }
+        if (parts.length) contents.push({ role: 'model', parts })
+      } else {
+        contents.push({
+          role: 'user',
+          parts: t.results.map((r) => ({
+            functionResponse: {
+              id: r.toolUseId,
+              name: toolNameById.get(r.toolUseId) ?? r.toolUseId,
+              response: {
+                result: r.content,
+                ...(r.isError ? { error: true } : {}),
+              },
+            },
+          })),
+        })
+      }
+    }
+    return {
+      url: chatEndpointForProfile(llm, stream),
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { 'x-goog-api-key': apiKey } : {}),
+      },
+      body: JSON.stringify({
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents,
+        ...(tools.length
+          ? {
+              tools: [
+                {
+                  functionDeclarations: tools.map((d) => ({
+                    name: d.name,
+                    description: d.description,
+                    parameters: sanitizeGeminiSchema(d.inputSchema),
+                  })),
+                },
+              ],
+            }
+          : {}),
+        generationConfig: {
+          maxOutputTokens: MAX_TOKENS,
+          ...(effort ? { thinkingConfig: { includeThoughts: true, thinkingBudget: budget } } : {}),
+        },
+      }),
+    }
+  }
+
+  if (llm.provider === 'openai-responses') {
+    const input: Record<string, unknown>[] = []
+    for (const t of turns) {
+      if (t.kind === 'user') {
+        if (t.text) input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: t.text }] })
+      } else if (t.kind === 'assistant') {
+        if (t.text) {
+          input.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: t.text }] })
+        }
+        for (const c of t.toolCalls) {
+          input.push({
+            type: 'function_call',
+            call_id: c.id,
+            name: c.name,
+            arguments: c.argsJson || '{}',
+          })
+        }
+      } else {
+        for (const r of t.results) {
+          input.push({
+            type: 'function_call_output',
+            call_id: r.toolUseId,
+            output: r.content,
+          })
+        }
+      }
+    }
+    return {
+      url: chatEndpointForProfile(llm, stream),
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: llm.model,
+        instructions: system,
+        input,
+        stream,
+        ...(effort ? { reasoning: { effort, summary: 'auto' } } : {}),
+        ...(tools.length
+          ? {
+              tools: tools.map((d) => ({
+                type: 'function',
+                name: d.name,
+                description: d.description,
+                parameters: d.inputSchema,
+              })),
+            }
+          : {}),
+      }),
+    }
+  }
+
+  if (llm.provider === 'ollama') {
+    const messages: Record<string, unknown>[] = []
+    for (const t of turns) {
+      if (t.kind === 'user') {
+        messages.push({ role: 'user', content: t.text })
+      } else if (t.kind === 'assistant') {
+        const thinkingText = t.reasoning.map((r) => r.text).join('\n')
+        messages.push({
+          role: 'assistant',
+          content: t.text || '',
+          ...(thinkingText ? { thinking: thinkingText } : {}),
+          ...(t.toolCalls.length
+            ? {
+                tool_calls: t.toolCalls.map((c) => ({
+                  id: c.id,
+                  type: 'function',
+                  function: { name: c.name, arguments: parseToolInput(c.argsJson || '{}', c.name) },
+                })),
+              }
+            : {}),
+        })
+      } else {
+        for (const r of t.results) {
+          messages.push({ role: 'tool', tool_call_id: r.toolUseId, content: r.content })
+        }
+      }
+    }
+    return {
+      url: chatEndpointForProfile(llm, stream),
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: llm.model,
+        messages: [{ role: 'system', content: system }, ...messages],
+        stream,
+        ...(effort ? { think: true } : {}),
+        ...(tools.length
+          ? {
+              tools: tools.map((d) => ({
+                type: 'function',
+                function: { name: d.name, description: d.description, parameters: d.inputSchema },
+              })),
+            }
+          : {}),
+      }),
+    }
+  }
+
+  if (llm.provider === 'cohere') {
+    const messages: Record<string, unknown>[] = []
+    for (const t of turns) {
+      if (t.kind === 'user') {
+        messages.push({ role: 'user', content: t.text })
+      } else if (t.kind === 'assistant') {
+        messages.push({
+          role: 'assistant',
+          ...(t.text ? { content: t.text } : {}),
+          ...(t.toolCalls.length
+            ? {
+                tool_calls: t.toolCalls.map((c) => ({
+                  id: c.id,
+                  type: 'function',
+                  function: { name: c.name, arguments: c.argsJson || '{}' },
+                })),
+              }
+            : {}),
+        })
+      } else {
+        for (const r of t.results) {
+          messages.push({ role: 'tool', tool_call_id: r.toolUseId, content: r.content })
+        }
+      }
+    }
+    return {
+      url: chatEndpointForProfile(llm, stream),
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: llm.model,
+        messages: [{ role: 'system', content: system }, ...messages],
+        stream,
+        ...(effort ? { thinking: { type: 'enabled' } } : {}),
+        ...(tools.length
+          ? {
+              tools: tools.map((d) => ({
+                type: 'function',
+                function: { name: d.name, description: d.description, parameters: d.inputSchema },
+              })),
+            }
           : {}),
       }),
     }
@@ -317,18 +577,24 @@ export function buildRequest(
       }
     }
   }
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  }
+  if (llm.provider === 'azure-openai' && apiKey) {
+    headers['api-key'] = apiKey
+    headers.authorization = `Bearer ${apiKey}`
+  } else if (apiKey) {
+    headers.authorization = `Bearer ${apiKey}`
+  }
   return {
-    url: joinURL(baseURL, '/chat/completions'),
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
+    url: chatEndpointForProfile(llm, stream),
+    headers,
     body: JSON.stringify({
       model: llm.model,
       messages: [{ role: 'system', content: system }, ...messages],
       stream,
       // 思考力度 → OpenAI 系的 reasoning_effort；off 时不传（走模型默认，兼容不认识该字段的服务）
-      ...(llm.thinkingEffort && llm.thinkingEffort !== 'off' ? { reasoning_effort: llm.thinkingEffort } : {}),
+      ...(effort ? { reasoning_effort: effort } : {}),
       ...(stream ? { stream_options: { include_usage: true } } : {}),
       ...(tools.length
         ? {
@@ -423,6 +689,30 @@ export async function readSSE(
     if (error) throw error
     if (provider === 'anthropic') {
       if (json.type === 'message_stop') { terminal = true; return true }
+    } else if (provider === 'openai-responses') {
+      if (json.type === 'response.failed') {
+        const respErr = json.response && typeof json.response === 'object' ? streamError(json.response as Record<string, unknown>) : null
+        throw respErr ?? new LLMStreamError('OpenAI Responses 流式响应失败，工具未执行', true)
+      }
+      if (json.type === 'response.completed' || json.type === 'response.incomplete') {
+        terminal = true
+        return true
+      }
+    } else if (provider === 'gemini') {
+      const candidates = json.candidates as Array<{ finishReason?: unknown }> | undefined
+      if (Array.isArray(candidates) && typeof candidates[0]?.finishReason === 'string' && candidates[0].finishReason.length > 0) {
+        terminal = true
+      }
+    } else if (provider === 'ollama') {
+      if (json.done === true) {
+        terminal = true
+        return true
+      }
+    } else if (provider === 'cohere') {
+      if (json.type === 'message-end') {
+        terminal = true
+        return true
+      }
     } else {
       const choices = json.choices as Array<{ finish_reason?: unknown }> | undefined
       if (Array.isArray(choices) && ['stop', 'tool_calls', 'function_call', 'length', 'content_filter'].includes(String(choices[0]?.finish_reason))) {
@@ -434,7 +724,14 @@ export async function readSSE(
   const line = (value: string): boolean => {
     const normalized = value.endsWith('\r') ? value.slice(0, -1) : value
     if (!normalized) return dispatch()
-    if (normalized.startsWith('data:')) dataLines.push(normalized.slice(5).replace(/^ /, ''))
+    if (normalized.startsWith('data:')) {
+      dataLines.push(normalized.slice(5).replace(/^ /, ''))
+      return false
+    }
+    if (provider === 'ollama' && normalized.startsWith('{')) {
+      dataLines.push(normalized)
+      return dispatch()
+    }
     return false
   }
   try {
@@ -529,7 +826,158 @@ export function createStreamCollector(
       return
     }
 
-    // OpenAI 兼容
+    if (provider === 'gemini') {
+      const candidates = json.candidates as
+        | Array<{
+            finishReason?: string
+            content?: {
+              parts?: Array<{
+                text?: string
+                thought?: boolean
+                functionCall?: { id?: string; name?: string; args?: unknown }
+              }>
+            }
+          }>
+        | undefined
+      const cand = candidates?.[0]
+      if (cand?.finishReason === 'MAX_TOKENS') oaFinishReason = 'length'
+      else if (cand?.finishReason === 'SAFETY' || cand?.finishReason === 'RECITATION' || cand?.finishReason === 'MALFORMED_FUNCTION_CALL') {
+        oaFinishReason = 'content_filter'
+      }
+      for (const part of cand?.content?.parts ?? []) {
+        if (part.thought && typeof part.text === 'string' && part.text) {
+          oaReasoning += part.text
+          sink({ type: 'reasoning_delta', sessionId, delta: part.text })
+        } else if (!part.thought && typeof part.text === 'string' && part.text) {
+          oaText += part.text
+          sink({ type: 'delta', sessionId, delta: part.text })
+        }
+        if (part.functionCall) {
+          const fc = part.functionCall
+          const idx = oaCalls.size
+          const id = typeof fc.id === 'string' && fc.id.trim() ? fc.id : `gemini-call-${idx + 1}`
+          const name = typeof fc.name === 'string' ? fc.name : ''
+          const args = typeof fc.args === 'string' ? fc.args : JSON.stringify(fc.args ?? {})
+          oaCalls.set(idx, { id, name, args })
+        }
+      }
+      return
+    }
+
+    if (provider === 'openai-responses') {
+      if (json.type === 'response.output_text.delta' && typeof json.delta === 'string' && json.delta) {
+        oaText += json.delta
+        sink({ type: 'delta', sessionId, delta: json.delta })
+      } else if (
+        (json.type === 'response.reasoning_summary_text.delta' || json.type === 'response.reasoning_text.delta') &&
+        typeof json.delta === 'string' &&
+        json.delta
+      ) {
+        oaReasoning += json.delta
+        sink({ type: 'reasoning_delta', sessionId, delta: json.delta })
+      } else if (json.type === 'response.output_item.added') {
+        const idx = typeof json.output_index === 'number' ? json.output_index : oaCalls.size
+        const item = json.item as { type?: string; id?: string; call_id?: string; name?: string; arguments?: string } | undefined
+        if (item?.type === 'function_call') {
+          oaCalls.set(idx, {
+            id: item.call_id ?? item.id ?? '',
+            name: item.name ?? '',
+            args: item.arguments ?? '',
+          })
+        }
+      } else if (json.type === 'response.function_call_arguments.delta') {
+        const idx = typeof json.output_index === 'number' ? json.output_index : oaCalls.size - 1
+        const slot = oaCalls.get(idx)
+        if (slot && typeof json.delta === 'string') {
+          slot.args += json.delta
+        }
+      } else if (json.type === 'response.output_item.done') {
+        const idx = typeof json.output_index === 'number' ? json.output_index : oaCalls.size
+        const item = json.item as { type?: string; id?: string; call_id?: string; name?: string; arguments?: string } | undefined
+        if (item?.type === 'function_call') {
+          const existing = oaCalls.get(idx)
+          oaCalls.set(idx, {
+            id: item.call_id ?? item.id ?? existing?.id ?? '',
+            name: item.name ?? existing?.name ?? '',
+            args: existing?.args || item.arguments || '',
+          })
+        }
+      } else if (json.type === 'response.incomplete') {
+        oaFinishReason = 'length'
+      }
+      return
+    }
+
+    if (provider === 'ollama') {
+      const msg = json.message as
+        | {
+            content?: string
+            thinking?: string
+            tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: unknown } }>
+          }
+        | undefined
+      if (msg?.thinking) {
+        oaReasoning += msg.thinking
+        sink({ type: 'reasoning_delta', sessionId, delta: msg.thinking })
+      }
+      if (msg?.content) {
+        oaText += msg.content
+        sink({ type: 'delta', sessionId, delta: msg.content })
+      }
+      for (const tc of msg?.tool_calls ?? []) {
+        const idx = oaCalls.size
+        const id = typeof tc.id === 'string' && tc.id.trim() ? tc.id : `ollama-call-${idx + 1}`
+        const name = typeof tc.function?.name === 'string' ? tc.function.name : ''
+        const args =
+          typeof tc.function?.arguments === 'string'
+            ? tc.function.arguments
+            : JSON.stringify(tc.function?.arguments ?? {})
+        oaCalls.set(idx, { id, name, args })
+      }
+      if (json.done_reason === 'length') oaFinishReason = 'length'
+      return
+    }
+
+    if (provider === 'cohere') {
+      const idx = typeof json.index === 'number' ? json.index : oaCalls.size
+      if (json.type === 'content-delta') {
+        const content = (json.delta as { message?: { content?: { text?: string; thinking?: string } } } | undefined)?.message?.content
+        if (content?.thinking) {
+          oaReasoning += content.thinking
+          sink({ type: 'reasoning_delta', sessionId, delta: content.thinking })
+        }
+        if (content?.text) {
+          oaText += content.text
+          sink({ type: 'delta', sessionId, delta: content.text })
+        }
+      } else if (json.type === 'tool-plan-delta') {
+        const plan = (json.delta as { message?: { tool_plan?: string } } | undefined)?.message?.tool_plan
+        if (plan) {
+          oaReasoning += plan
+          sink({ type: 'reasoning_delta', sessionId, delta: plan })
+        }
+      } else if (json.type === 'tool-call-start') {
+        const tc = (json.delta as { message?: { tool_calls?: { id?: string; function?: { name?: string; arguments?: string } } } } | undefined)?.message?.tool_calls
+        oaCalls.set(idx, {
+          id: tc?.id ?? `cohere-call-${idx + 1}`,
+          name: tc?.function?.name ?? '',
+          args: tc?.function?.arguments ?? '',
+        })
+      } else if (json.type === 'tool-call-delta') {
+        const args = (json.delta as { message?: { tool_calls?: { function?: { arguments?: string } } } } | undefined)?.message?.tool_calls?.function?.arguments
+        const slot = oaCalls.get(idx) ?? oaCalls.get(oaCalls.size - 1)
+        if (slot && typeof args === 'string') {
+          slot.args += args
+        }
+      } else if (json.type === 'message-end') {
+        const reason = (json.delta as { finish_reason?: string } | undefined)?.finish_reason
+        if (reason === 'MAX_TOKENS') oaFinishReason = 'length'
+        else if (reason === 'SAFETY' || reason === 'ERROR') oaFinishReason = 'content_filter'
+      }
+      return
+    }
+
+    // OpenAI 兼容 / Azure OpenAI
     const choices = json.choices as
       | Array<{
           finish_reason?: string | null
@@ -775,7 +1223,7 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
   }
   if (!llm) return { ok: false, error: '尚未配置 LLM API，请先在设置中添加配置档' }
   const apiKey = decryptApiKey(llm.apiKey)
-  if (!apiKey) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
+  if (!apiKey && !isApiKeyOptional(llm)) return { ok: false, error: '当前配置档的 API Key 为空，请在设置中填写' }
 
   const office = req.projectId === 'office-workspace'
   const video = req.projectId === 'video-workspace'
@@ -1186,6 +1634,107 @@ export function registerChatHandlers(): void {
     return true
   })
 
+  // 已知服务商的兜底模型表：/models 接口不存在或受限时显示常用模型
+  const FALLBACK_MODELS: { match: RegExp; models: string[] }[] = [
+    { match: /bigmodel|zhipu/i, models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2', 'glm-4.7', 'glm-4.6', 'glm-4.5'] },
+    { match: /deepseek/i, models: ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'] },
+    { match: /dashscope|aliyuncs/i, models: ['qwen3-max', 'qwen3-coder-plus', 'qwen-max', 'qwen-plus', 'qwen-turbo', 'qwq-plus'] },
+    { match: /moonshot/i, models: ['kimi-k2', 'kimi-k2-turbo-preview', 'kimi-latest', 'moonshot-v1-128k'] },
+    { match: /volces|volcengine/i, models: ['doubao-seed-1-6-250615', 'doubao-seed-1-6-thinking-250615', 'doubao-1-5-pro-256k-250115', 'deepseek-r1-250528'] },
+    { match: /hunyuan\.cloud\.tencent/i, models: ['hunyuan-t1-latest', 'hunyuan-turbos-latest', 'hunyuan-pro', 'hunyuan-standard'] },
+    { match: /baidubce|qianfan/i, models: ['ernie-4.5-turbo-128k', 'ernie-x1-turbo-32k', 'deepseek-r1'] },
+    { match: /minimax/i, models: ['MiniMax-M1', 'MiniMax-Text-01', 'abab6.5s-chat'] },
+    { match: /stepfun/i, models: ['step-3', 'step-r1-v-mini', 'step-2-16k', 'step-1-256k'] },
+    { match: /lingyiwanwu/i, models: ['yi-lightning', 'yi-large', 'yi-medium'] },
+    { match: /baichuan/i, models: ['Baichuan4-Turbo', 'Baichuan4-Air', 'Baichuan4'] },
+    { match: /xf-yun|spark/i, models: ['x1', '4.0Ultra', 'generalv3.5', 'lite'] },
+    { match: /siliconflow/i, models: ['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen3-235B-A22B', 'zai-org/GLM-4.5'] },
+    { match: /anthropic|claude/i, models: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-1'] },
+    { match: /generativelanguage\.googleapis/i, models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
+    { match: /api\.x\.ai/i, models: ['grok-4', 'grok-3', 'grok-3-mini'] },
+    { match: /mistral\.ai/i, models: ['mistral-large-latest', 'codestral-latest', 'ministral-8b-latest'] },
+    { match: /cohere/i, models: ['command-a-03-2025', 'command-r-plus-08-2024', 'command-r-08-2024'] },
+    { match: /perplexity/i, models: ['sonar-pro', 'sonar-reasoning-pro', 'sonar'] },
+    { match: /groq\.com/i, models: ['llama-3.3-70b-versatile', 'deepseek-r1-distill-llama-70b', 'qwen-qwq-32b'] },
+    { match: /cerebras/i, models: ['llama-3.3-70b', 'qwen-3-32b', 'llama3.1-8b'] },
+  ]
+
+  // 拉取服务商模型列表（按协议自动适配：OpenAI /models、Anthropic /v1/models、Gemini /v1beta/models、Ollama /api/tags）
+  ipcMain.handle(
+    'llm:listModels',
+    async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string; fallback?: boolean }> => {
+      try {
+        const cfg = await loadConfig()
+        const profiles = cfg.llmProfiles ?? []
+        const byId = payload?.id ? profiles.find((p) => p.id === payload.id) : undefined
+        const active = profiles.find((p) => p.id === cfg.activeLlmId) ?? profiles[0]
+        const source = byId ?? active
+        const provider = payload?.provider ?? source?.provider ?? 'openai-compatible'
+        const baseURL = (payload?.baseURL ?? source?.baseURL ?? '').trim() || defaultBaseURL(provider)
+        const apiKey = payload?.apiKey?.trim() || decryptApiKey(byId?.apiKey ?? active?.apiKey ?? '')
+        if (!baseURL) return { ok: false, models: [], error: 'Base URL 为空' }
+        if (!apiKey && !isApiKeyOptional({ provider, baseURL })) return { ok: false, models: [], error: 'API Key 为空' }
+        const dispatcher = getProxyDispatcher(payload?.proxyURL ?? source?.proxyURL ?? '')
+
+        let listUrl: string
+        let headers: Record<string, string> = {}
+        if (provider === 'gemini') {
+          const vBase = /\/v1(beta|alpha)?$/.test(baseURL.replace(/\/+$/, '')) ? baseURL.replace(/\/+$/, '') : joinURL(baseURL, '/v1beta')
+          listUrl = `${vBase}/models`
+          if (apiKey) headers['x-goog-api-key'] = apiKey
+        } else if (provider === 'ollama') {
+          const root = baseURL.replace(/\/+$/, '').replace(/\/(v1|api)$/, '')
+          listUrl = `${root}/api/tags`
+          if (apiKey) headers.authorization = `Bearer ${apiKey}`
+        } else if (provider === 'anthropic') {
+          const b = baseURL.replace(/\/+$/, '')
+          listUrl = `${b.endsWith('/v1') ? b : `${b}/v1`}/models`
+          headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+        } else if (provider === 'azure-openai') {
+          const root = baseURL.replace(/\/+$/, '').replace(/\/openai(\/deployments\/.*)?$/, '')
+          listUrl = `${root}/openai/models?api-version=2025-01-01-preview`
+          if (apiKey) headers['api-key'] = apiKey
+        } else {
+          listUrl = joinURL(baseURL, '/models')
+          if (apiKey) headers.authorization = `Bearer ${apiKey}`
+        }
+
+        const res = await undiciFetch(listUrl, { headers, dispatcher, signal: AbortSignal.timeout(20_000) })
+        if (!res.ok) {
+          const detail = (await res.text().catch(() => '')).slice(0, 200)
+          const fallback = FALLBACK_MODELS.find((f) => f.match.test(baseURL))
+          if (fallback) {
+            return { ok: true, models: fallback.models.map((id) => ({ id })), fallback: true }
+          }
+          return { ok: false, models: [], error: `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}（该服务商可能不支持模型列表接口）` }
+        }
+        const data = (await res.json()) as {
+          data?: Array<{ id?: string; name?: string; display_name?: string }>
+          models?: Array<{ id?: string; name?: string; model?: string; displayName?: string }>
+        }
+        if (Array.isArray(data.models)) {
+          const models = data.models
+            .map((m) => {
+              const rawId = String(m.id ?? m.model ?? m.name ?? '').replace(/^models\//, '')
+              const label = m.displayName ?? (m.name && m.name !== rawId ? m.name : undefined)
+              return { id: rawId, name: label ? String(label) : undefined }
+            })
+            .filter((m) => m.id)
+          return { ok: true, models }
+        }
+        const models = (data.data ?? [])
+          .map((m) => ({
+            id: String(m.id ?? ''),
+            name: m.display_name ? String(m.display_name) : m.name ? String(m.name) : undefined,
+          }))
+          .filter((m) => m.id)
+        return { ok: true, models }
+      } catch (e) {
+        return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) }
+      }
+    },
+  )
+
   // 测试连接：允许用尚未保存的表单值；apiKey 留空时回退到对应配置档（编辑中）或激活配置档已存的 key
   ipcMain.handle('llm:test', async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; message: string }> => {
     try {
@@ -1202,7 +1751,7 @@ export function registerChatHandlers(): void {
         proxyURL: payload?.proxyURL ?? source?.proxyURL ?? '',
       }
       const apiKey = payload?.apiKey?.trim() || decryptApiKey(byId?.apiKey ?? active?.apiKey ?? '')
-      if (!apiKey) return { ok: false, message: 'API Key 为空' }
+      if (!apiKey && !isApiKeyOptional(llm)) return { ok: false, message: 'API Key 为空' }
       if (!llm.model) return { ok: false, message: '模型名不能为空' }
 
       const { url, headers, body } = buildRequest(llm, apiKey, [{ kind: 'user', text: 'ping' }], [], false, SYSTEM_PROMPT_BASE)
@@ -1218,61 +1767,6 @@ export function registerChatHandlers(): void {
         headers: maskHeaders(headers),
         body,
       })
-  // 已知服务商的兜底模型表：/models 接口不存在时显示常用模型（随官方更新手动维护）
-  const FALLBACK_MODELS: { match: RegExp; models: string[] }[] = [
-    { match: /bigmodel|zhipu/i, models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2', 'glm-4.7', 'glm-4.6', 'glm-4.5'] },
-    { match: /deepseek/i, models: ['deepseek-flash', 'deepseek-v4-pro'] },
-  ]
-
-  // 拉取服务商模型列表（OpenAI 兼容 GET /models；key 解析规则与 llm:test 一致）
-  ipcMain.handle(
-    'llm:listModels',
-    async (_e, payload?: LLMTestPayload): Promise<{ ok: boolean; models: { id: string; name?: string }[]; error?: string; fallback?: boolean }> => {
-      try {
-        const cfg = await loadConfig()
-        const profiles = cfg.llmProfiles ?? []
-        const byId = payload?.id ? profiles.find((p) => p.id === payload.id) : undefined
-        const active = profiles.find((p) => p.id === cfg.activeLlmId) ?? profiles[0]
-        const source = byId ?? active
-        const baseURL = (payload?.baseURL ?? source?.baseURL ?? '').trim()
-        const apiKey = payload?.apiKey?.trim() || decryptApiKey(byId?.apiKey ?? active?.apiKey ?? '')
-        if (!baseURL) return { ok: false, models: [], error: 'Base URL 为空' }
-        if (!apiKey) return { ok: false, models: [], error: 'API Key 为空' }
-        const { headers } = buildRequest(
-          {
-            provider: payload?.provider ?? source?.provider ?? 'openai-compatible',
-            name: payload?.name ?? 'list',
-            baseURL,
-            model: payload?.model ?? '',
-            proxyURL: payload?.proxyURL ?? source?.proxyURL ?? '',
-          },
-          apiKey,
-          [{ kind: 'user', text: 'ping' }],
-          [],
-          false,
-          '',
-        )
-        const dispatcher = getProxyDispatcher(payload?.proxyURL ?? source?.proxyURL ?? '')
-        const res = await undiciFetch(joinURL(baseURL, '/models'), { headers, dispatcher, signal: AbortSignal.timeout(20_000) })
-        if (!res.ok) {
-          const detail = (await res.text().catch(() => '')).slice(0, 200)
-          // 已知服务商没有公开 /models 接口（如智谱）时，回退到内置常用模型表
-          const fallback = FALLBACK_MODELS.find((f) => f.match.test(baseURL))
-          if (fallback) {
-            return { ok: true, models: fallback.models.map((id) => ({ id })), fallback: true }
-          }
-          return { ok: false, models: [], error: `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}（该服务商可能不支持 /models 接口）` }
-        }
-        const data = (await res.json()) as { data?: Array<{ id?: string; name?: string }> }
-        const models = (data.data ?? [])
-          .map((m) => ({ id: String(m.id ?? ''), name: m.name ? String(m.name) : undefined }))
-          .filter((m) => m.id)
-        return { ok: true, models }
-      } catch (e) {
-        return { ok: false, models: [], error: e instanceof Error ? e.message : String(e) }
-      }
-    },
-  )
 
       const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
       const res = await undiciFetch(url, {
@@ -1290,6 +1784,7 @@ export function registerChatHandlers(): void {
         return { ok: false, message }
       }
       const full = await res.text()
+      recordResponseBody(exchange, full)
       // 非流式响应：usage 就在 JSON 里；顺便把原始响应记入调试日志
       try {
         recordUsageEvent(exchange, JSON.parse(full) as Record<string, unknown>)

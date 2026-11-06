@@ -1,4 +1,4 @@
-import { access, rename } from 'node:fs/promises'
+import { access, rename, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { runFfmpeg, parseDurationMs } from './ffmpeg'
 
@@ -21,6 +21,7 @@ export async function synthesizeEdgeTts(opts: {
   target: string
   voice?: string
   rate?: string
+  overwrite?: boolean
   onOutput?: (message: string) => void
 }): Promise<number | null> {
   const text = opts.text.trim()
@@ -29,7 +30,10 @@ export async function synthesizeEdgeTts(opts: {
   if (text.length > EDGE_TTS_MAX_CHARS) throw new Error(`text 不能超过 ${EDGE_TTS_MAX_CHARS} 字`)
   const rate = typeof opts.rate === 'string' && /^[+-]\d+%$/.test(opts.rate.trim()) ? opts.rate.trim() : undefined
 
-  if (await fileExists(opts.target)) throw new Error(`${opts.target} 已存在，不覆盖`)
+  if (await fileExists(opts.target)) {
+    if (!opts.overwrite) throw new Error(`${opts.target} 已存在，不覆盖`)
+    await rm(opts.target, { force: true })
+  }
   opts.onOutput?.(`正在合成配音（${voice}）…`)
   const { MsEdgeTTS, OUTPUT_FORMAT } = await import('msedge-tts')
   const tts = new MsEdgeTTS()
