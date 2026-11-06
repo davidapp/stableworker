@@ -12,7 +12,12 @@
 当前 Windows 安装包未做代码签名（首次运行可能有 SmartScreen 提示）；macOS 暂无签名构建（发版自动跳过该平台）。
 三平台安装与升级的完整说明和设备验收清单见 [发布检查与升级说明](docs/releasing.md)。
 
-变更明细见 [CHANGELOG](CHANGELOG.md)。
+变更明细见 [CHANGELOG](CHANGELOG.md)。完整技术文档见 [docs/ 目录](docs/README.md)：
+- [系统架构与核心技术设计](docs/DESIGN.md)
+- [大模型 API 协议与服务商接入规范（7 大协议 / 39 个预设）](docs/llm-providers.md)
+- [工具系统、MCP、子代理与办公/视频引擎技术文档](docs/tools-and-modes.md)
+- [发布质量与自动更新规范](docs/releasing.md)
+- [1.0 路线图与验收标准](docs/PLAN-1.0.md)
 
 ## 快速开始
 
