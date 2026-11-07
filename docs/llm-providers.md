@@ -1,6 +1,6 @@
 # 大模型 API 协议与服务商接入技术规范（v0.9.7）
 
-StableWorker 在底层实现了 **7 种原生大模型通信协议**（[`ProviderType`](../src/shared/types.ts)），并内置了 **39 个国内外主流大模型、算力云网关与本地推理引擎预设**。本文档详细说明各协议的线上报文规范、流式解析、思考流映射、容量探测与余额查询机制。
+StableWorker 在底层实现了 **7 种原生大模型通信协议**（[`ProviderType`](../src/shared/types.ts)），并内置了 **47 个国内外主流大模型、算力云网关与本地推理引擎预设**（外加 1 个自定义项，共 48 项）。本文档详细说明各协议的线上报文规范、流式解析、思考流映射、容量探测与余额查询机制。
 
 ---
 
@@ -92,11 +92,74 @@ StableWorker 不使用固定默认值（如 32k）猜测模型容量，而是按
 
 ---
 
-## 6. 内置 39 个服务商预设一览
+## 6. 内置 47 个服务商预设一览
 
 定义于 [`src/renderer/src/components/settings/LlmConfigPage.tsx`](../src/renderer/src/components/settings/LlmConfigPage.tsx)：
 
-- **国内主流大模型（17 个）**：DeepSeek、DeepSeek（Anthropic 兼容）、智谱 GLM（ビッグモデル）、智谱 GLM（Anthropic 兼容）、通义千问（阿里云百炼）、月之暗面 Kimi（Moonshot）、火山方舟（豆包 Doubao）、MiniMax、MiniMax（Anthropic 兼容）、百川智能（Baichuan）、零一万物（Yi / 万知）、阶跃星辰（StepFun）、腾讯混元（Hunyuan）、百度千帆（文心一言 ERNIE）、讯飞星火（Spark）、商汤日日新（SenseNova）、小米 MiMo。
-- **海外主流大模型（10 个）**：OpenAI（Chat Completions）、OpenAI（Responses API）、Anthropic Claude、Google Gemini（原生 API）、Google Gemini（OpenAI 兼容）、xAI Grok、Mistral AI、Cohere（原生 v2 API）、Cohere（OpenAI 兼容）、Perplexity（Sonar）、AI21 Labs（Jamba）。
-- **聚合网关与算力云（16 个）**：OpenRouter、硅基流动（SiliconFlow）、Groq（极速推理）、Together AI、Fireworks AI、NVIDIA NIM、Cerebras、DeepInfra、Novita AI、PPIO 派欧云、七牛云 AI 大模型、无问芯穹（Infini-AI）、GitHub Models、Cloudflare Workers AI、HuggingFace Router、Azure OpenAI（原生部署）。
-- **本地部署与自建网关（6 个）**：Ollama（原生 API）、Ollama（OpenAI 兼容）、LM Studio（本地）、vLLM / SGLang（本地）、llama.cpp Server（本地）、LocalAI（本地）、One API / New API / LiteLLM。
+### 6.1 国内主流大模型（16 项）
+
+| 预设 ID | 名称 | 协议 (`provider`) | 默认 Base URL | 预置常用模型候选 |
+| :--- | :--- | :--- | :--- | :--- |
+| `deepseek` | DeepSeek（官方 OpenAI 兼容） | `openai-compatible` | `https://api.deepseek.com/` | `deepseek-flash`, `deepseek-v4-pro`, `deepseek-chat`, `deepseek-reasoner` |
+| `deepseek-anthropic` | DeepSeek（Anthropic 兼容端点） | `anthropic` | `https://api.deepseek.com/anthropic` | `deepseek-flash`, `deepseek-v4-pro`, `deepseek-chat`, `deepseek-reasoner` |
+| `dashscope` | 阿里云百炼 / 通义千问（DashScope） | `openai-compatible` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen3-max`, `qwen3-coder-plus`, `qwen-max`, `qwen-plus`, `qwen-turbo`, `qwq-plus` |
+| `zhipu` | 智谱 GLM（BigModel 官方） | `openai-compatible` | `https://open.bigmodel.cn/api/paas/v4/` | `glm-5.3`, `glm-5.3-flash`, `glm-5.2`, `glm-4.7`, `glm-4.6`, `glm-4.5` |
+| `zhipu-anthropic` | 智谱 GLM（Anthropic 兼容端点） | `anthropic` | `https://open.bigmodel.cn/api/anthropic` | `glm-5.3`, `glm-5.2`, `glm-4.7`, `glm-4.6`, `glm-4.5` |
+| `kimi` | 月之暗面（Moonshot Kimi） | `openai-compatible` | `https://api.moonshot.cn/v1` | `kimi-k2`, `kimi-k2-turbo-preview`, `kimi-latest`, `moonshot-v1-128k` |
+| `volcengine` | 字节跳动豆包 / 火山方舟（Volcengine Ark） | `openai-compatible` | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seed-1-6-250615`, `doubao-seed-1-6-thinking-250615`, `doubao-1-5-pro-256k-250115`, `deepseek-r1-250528` |
+| `hunyuan` | 腾讯混元（Hunyuan） | `openai-compatible` | `https://api.hunyuan.cloud.tencent.com/v1` | `hunyuan-t1-latest`, `hunyuan-turbos-latest`, `hunyuan-pro`, `hunyuan-standard` |
+| `qianfan` | 百度文心千帆（Qianfan V2） | `openai-compatible` | `https://qianfan.baidubce.com/v2` | `ernie-4.5-turbo-128k`, `ernie-x1-turbo-32k`, `deepseek-r1` |
+| `minimax` | MiniMax（海螺 AI） | `openai-compatible` | `https://api.minimax.chat/v1` | `MiniMax-M1`, `MiniMax-Text-01`, `abab6.5s-chat` |
+| `stepfun` | 阶跃星辰（StepFun） | `openai-compatible` | `https://api.stepfun.com/v1` | `step-3`, `step-r1-v-mini`, `step-2-16k`, `step-1-256k` |
+| `yi` | 零一万物（Yi / Lingyiwanwu） | `openai-compatible` | `https://api.lingyiwanwu.com/v1` | `yi-lightning`, `yi-large`, `yi-medium` |
+| `baichuan` | 百川智能（Baichuan） | `openai-compatible` | `https://api.baichuan-ai.com/v1` | `Baichuan4-Turbo`, `Baichuan4-Air`, `Baichuan4` |
+| `spark` | 讯飞星火（Spark） | `openai-compatible` | `https://spark-api-open.xf-yun.com/v1` | `x1`, `4.0Ultra`, `generalv3.5`, `lite` |
+| `sensenova` | 商汤日日新（SenseNova） | `openai-compatible` | `https://api.sensenova.cn/compatible-mode/v1` | `SenseChat-5`, `SenseChat-Turbo` |
+| `mimo` | 小米 MiMo | `openai-compatible` | `https://api.xiaomimimo.com/v1` | `MiMo-7B-RL` |
+
+### 6.2 海外主流大模型（13 项）
+
+| 预设 ID | 名称 | 协议 (`provider`) | 默认 Base URL | 预置常用模型候选 |
+| :--- | :--- | :--- | :--- | :--- |
+| `openai` | OpenAI 官方（Chat Completions） | `openai-compatible` | `https://api.openai.com/v1` | `gpt-5`, `gpt-5-mini`, `gpt-4.1`, `o4-mini`, `o3` |
+| `openai-responses` | OpenAI 官方（Responses API 原生协议） | `openai-responses` | `https://api.openai.com/v1` | `gpt-5`, `gpt-5-mini`, `gpt-5-codex`, `o4-mini`, `o3` |
+| `anthropic` | Anthropic（Claude 官方） | `anthropic` | `https://api.anthropic.com` | `claude-sonnet-4-5`, `claude-haiku-4-5`, `claude-opus-4-1` |
+| `gemini` | Google Gemini（官方原生协议） | `gemini` | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| `gemini-openai` | Google Gemini（OpenAI 兼容端点） | `openai-compatible` | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite` |
+| `xai` | xAI（Grok 官方） | `openai-compatible` | `https://api.x.ai/v1` | `grok-4`, `grok-3`, `grok-3-mini` |
+| `mistral` | Mistral AI（Codestral / Mistral） | `openai-compatible` | `https://api.mistral.ai/v1` | `mistral-large-latest`, `codestral-latest`, `ministral-8b-latest` |
+| `cohere` | Cohere（V2 原生协议） | `cohere` | `https://api.cohere.com/v2` | `command-a-03-2025`, `command-r-plus-08-2024`, `command-r-08-2024` |
+| `azure-openai` | Azure OpenAI Service | `azure-openai` | `https://YOUR_RESOURCE.openai.azure.com` | `gpt-5`, `gpt-4.1`, `o4-mini` |
+| `bedrock` | Amazon Bedrock（OpenAI 兼容端点） | `openai-compatible` | `https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1` | `anthropic.claude-sonnet-4-5-20250929-v1:0`, `us.deepseek.r1-v1:0` |
+| `perplexity` | Perplexity（Sonar 联网搜索模型） | `openai-compatible` | `https://api.perplexity.ai` | `sonar-pro`, `sonar-reasoning-pro`, `sonar` |
+| `nvidia-nim` | NVIDIA NIM | `openai-compatible` | `https://integrate.api.nvidia.com/v1` | `deepseek-ai/deepseek-r1`, `meta/llama-3.3-70b-instruct`, `qwen/qwen2.5-coder-32b-instruct` |
+| `github-models` | GitHub Models | `openai-compatible` | `https://models.github.ai/inference` | `openai/gpt-4.1`, `deepseek/DeepSeek-R1`, `xai/grok-3` |
+
+### 6.3 聚合网关与算力云（11 项）
+
+| 预设 ID | 名称 | 协议 (`provider`) | 默认 Base URL | 预置常用模型候选 |
+| :--- | :--- | :--- | :--- | :--- |
+| `siliconflow` | 硅基流动（SiliconFlow） | `openai-compatible` | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V3`, `deepseek-ai/DeepSeek-R1`, `Qwen/Qwen3-235B-A22B`, `zai-org/GLM-4.5` |
+| `openrouter` | OpenRouter（全球多模型聚合） | `openai-compatible` | `https://openrouter.ai/api/v1` | `anthropic/claude-sonnet-4.5`, `google/gemini-2.5-pro`, `openai/gpt-5`, `deepseek/deepseek-chat-v3` |
+| `groq` | Groq（LPU 超高速推理） | `openai-compatible` | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile`, `deepseek-r1-distill-llama-70b`, `qwen-qwq-32b` |
+| `together` | Together AI | `openai-compatible` | `https://api.together.xyz/v1` | `deepseek-ai/DeepSeek-R1`, `deepseek-ai/DeepSeek-V3`, `Qwen/Qwen2.5-Coder-32B-Instruct` |
+| `fireworks` | Fireworks AI | `openai-compatible` | `https://api.fireworks.ai/inference/v1` | `accounts/fireworks/models/deepseek-v3`, `accounts/fireworks/models/deepseek-r1` |
+| `cerebras` | Cerebras Inference | `openai-compatible` | `https://api.cerebras.ai/v1` | `llama-3.3-70b`, `qwen-3-32b`, `llama3.1-8b` |
+| `deepinfra` | DeepInfra | `openai-compatible` | `https://api.deepinfra.com/v1/openai` | `deepseek-ai/DeepSeek-R1`, `deepseek-ai/DeepSeek-V3`, `Qwen/Qwen2.5-Coder-32B-Instruct` |
+| `sambanova` | SambaNova Cloud | `openai-compatible` | `https://api.sambanova.ai/v1` | `DeepSeek-R1`, `DeepSeek-V3-0324`, `Meta-Llama-3.3-70B-Instruct` |
+| `novita` | Novita AI | `openai-compatible` | `https://api.novita.ai/v3/openai` | `deepseek/deepseek-r1`, `deepseek/deepseek-v3` |
+| `modelscope` | 魔搭社区（ModelScope API-Inference） | `openai-compatible` | `https://api-inference.modelscope.cn/v1` | `Qwen/Qwen3-235B-A22B`, `deepseek-ai/DeepSeek-R1`, `deepseek-ai/DeepSeek-V3` |
+| `ppio` | PPIO 派欧算力云 | `openai-compatible` | `https://api.ppinfra.com/v3/openai` | `deepseek/deepseek-r1`, `deepseek/deepseek-v3`, `qwen/qwen2.5-coder-32b-instruct` |
+| `gitee-ai` | 模力方舟（Gitee AI） | `openai-compatible` | `https://ai.gitee.com/v1` | `DeepSeek-R1`, `DeepSeek-V3`, `Qwen2.5-Coder-32B-Instruct` |
+
+### 6.4 本地部署与自建网关（7 项，本地地址均支持免填 API Key）
+
+| 预设 ID | 名称 | 协议 (`provider`) | 默认 Base URL | 说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `ollama-native` | Ollama（本地原生协议 `/api/chat`） | `ollama` | `http://localhost:11434` | 走 Ollama 原生 `/api/chat` 与 `/api/tags`、`/api/show`，免密调用 |
+| `ollama` | Ollama（OpenAI 兼容 `/v1`） | `openai-compatible` | `http://localhost:11434/v1` | 走 Ollama 的 OpenAI 兼容层，免密调用 |
+| `lmstudio` | LM Studio（本地服务） | `openai-compatible` | `http://localhost:1234/v1` | 免密调用，支持一键拉取本地已加载模型 |
+| `vllm` | vLLM（本地/私有化推理服务） | `openai-compatible` | `http://localhost:8000/v1` | 适配 vLLM / SGLang OpenAI Server |
+| `llamacpp` | llama.cpp Server（本地服务） | `openai-compatible` | `http://localhost:8080/v1` | 适配 `llama-server` |
+| `xinference` | Xinference（Xorbits Inference） | `openai-compatible` | `http://localhost:9997/v1` | 适配 Xinference 本地集群 |
+| `oneapi` | OneAPI / NewAPI（自建聚合网关） | `openai-compatible` | `http://localhost:3000/v1` | 适配 OneAPI / NewAPI / LiteLLM 等自建转发网关 |

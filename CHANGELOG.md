@@ -6,7 +6,7 @@
 
 ### 新增
 - **7 种大模型原生 API 协议**：除 `openai-compatible` 与 `anthropic` 外，新增支持 `openai-responses`（OpenAI `/v1/responses`）、`gemini`（Google Gemini `generateContent` / `streamGenerateContent`）、`azure-openai`（Azure 部署端点与 `api-key` 鉴权）、`ollama`（Ollama 原生 `/api/chat` NDJSON 流与免密调用）、`cohere`（Cohere v2 `/v2/chat`）
-- **39 个国内外主流大模型与算力网关预设**：按国内主流（DeepSeek、智谱 GLM、通义千问、Kimi、火山方舟、MiniMax、百川、零一万物、阶跃星辰、混元、千帆、星火、商汤、小米 MiMo）、海外主流（OpenAI、Claude、Gemini、xAI Grok、Mistral、Cohere、Perplexity、AI21）、聚合与算力云（OpenRouter、SiliconFlow、Groq、Together、Fireworks、NVIDIA NIM、Cerebras、DeepInfra、Novita、PPIO、七牛云、无问芯穹、GitHub Models、Cloudflare、HuggingFace、Azure OpenAI）及本地部署（Ollama、LM Studio、vLLM/SGLang、llama.cpp、LocalAI、One API/LiteLLM）分组预置
+- **47 个国内外主流大模型与算力网关预设**：按国内主流（DeepSeek、智谱 GLM、通义千问、Kimi、火山方舟、MiniMax、百川、零一万物、阶跃星辰、混元、千帆、星火、商汤、小米 MiMo）、海外主流（OpenAI、Claude、Gemini、xAI Grok、Mistral、Cohere、Azure OpenAI、AWS Bedrock、Perplexity、NVIDIA NIM、GitHub Models）、聚合与算力云（OpenRouter、SiliconFlow、Groq、Together、Fireworks、Cerebras、DeepInfra、SambaNova、Novita、魔搭 ModelScope、PPIO、模力方舟 Gitee AI）及本地部署（Ollama、LM Studio、vLLM、llama.cpp、Xinference、OneAPI/NewAPI）分组预置
 - **模型列表拉取与余额查询扩展**：配置档编辑弹窗内新增一键"拉取模型"按钮；余额查询新增支持 OpenRouter、硅基流动（SiliconFlow）、月之暗面（Kimi）并支持代理转发
 
 ### 修复与优化

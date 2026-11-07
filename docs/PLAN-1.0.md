@@ -1,6 +1,6 @@
 # 1.0 规划（2026-10-17 起草，2026-11-06 更新至 v0.9.7）
 
-0.9.x 的功能面已经与 Claude Code 核心能力对齐并有多处反超（7 大原生 LLM 协议 + 39 个主流服务商预设、精确计费、API 调试透明度、独立办公模式、独立视频与 DAG 流水线模式、分层记忆 + memory 工具、消息级 rewind / 会话分叉）。1.0 的主题不是继续堆功能，而是**把"能用的开发分支"变成"敢推荐给别人用的稳定版本"**：稳定性、文档、发布质量。
+0.9.x 的功能面已经与 Claude Code 核心能力对齐并有多处反超（7 大原生 LLM 协议 + 47 个主流服务商预设、精确计费、API 调试透明度、独立办公模式、独立视频与 DAG 流水线模式、分层记忆 + memory 工具、消息级 rewind / 会话分叉）。1.0 的主题不是继续堆功能，而是**把"能用的开发分支"变成"敢推荐给别人用的稳定版本"**：稳定性、文档、发布质量。
 
 ## 1.0 承诺范围（做进 1.0）
 
@@ -22,7 +22,7 @@
    - [x] Skills frontmatter：`allowed-tools` / `model` 声明、模板内嵌命令 `!`
    - [x] `microCompact` 阈值与保留窗口的可调化（设置页暴露）
    - [x] 视频模式与聊天驱动的 DAG 流水线引擎（`pipeline_write` / `pipeline_run` / `pipeline_read` + 媒体 API 配置）
-   - [x] 7 种大模型原生 API 协议（`openai-compatible` / `openai-responses` / `anthropic` / `gemini` / `azure-openai` / `ollama` / `cohere`）与 39 个主流服务商预设
+   - [x] 7 种大模型原生 API 协议（`openai-compatible` / `openai-responses` / `anthropic` / `gemini` / `azure-openai` / `ollama` / `cohere`）与 47 个主流服务商预设
 
 ## 1.0 验收标准（全部满足才打 1.0 标签）
 
@@ -43,5 +43,5 @@
 | --- | --- | --- |
 | 0.9.5 | Skills frontmatter + 会话独立模型 + WebSearch + MCP 资源工具 | ✅ 已发布 |
 | 0.9.6 | `microCompact` 可调化 + 视频模式与流水线引擎 + 余额不足容错 | ✅ 已发布 |
-| 0.9.7 | 7 大原生 LLM 协议 + 39 个服务商预设 + 全库代码审查修复 + `docs/` 技术文档体系 | ✅ 已发布 |
+| 0.9.7 | 7 大原生 LLM 协议 + 47 个服务商预设 + 全库代码审查修复 + `docs/` 技术文档体系 | ✅ 已发布 |
 | 1.0 | 真机验收矩阵全部通过后打标 | 进行中 |
