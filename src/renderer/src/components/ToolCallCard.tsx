@@ -7,6 +7,16 @@ import { Icon } from './Icon'
 /** 参数展示截断：write_file 这类工具的 content 可能非常大 */
 const MAX_ARGS_DISPLAY = 800
 
+/** 提供检查点回滚按钮的写类工具（模块级 Set，避免每次渲染重建数组） */
+const RESTORABLE_TOOLS = new Set([
+  'write_file',
+  'edit_file',
+  'multi_edit',
+  'office_create_document',
+  'office_edit_document',
+  'office_calculate_spreadsheet',
+])
+
 /** 执行中的实时输出：内容更新时自动滚到底部 */
 function LiveOutput({ text, label }: { text: string; label: string }) {
   const ref = useRef<HTMLPreElement>(null)
@@ -55,10 +65,10 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
     setTimeout(() => setCopied(false), 1500)
   }
 
-  const argsText = (() => {
+  const argsText = useMemo(() => {
     const s = JSON.stringify(block.input, null, 2)
     return s.length > MAX_ARGS_DISPLAY ? s.slice(0, MAX_ARGS_DISPLAY) + '\n…（参数过长，已截断显示）' : s
-  })()
+  }, [block.input])
 
   // 编辑类工具（oldText/newText）：渲染红绿 diff 代替原始参数
   const isEdit = typeof block.input.oldText === 'string' && typeof block.input.newText === 'string'
@@ -84,7 +94,7 @@ export function ToolCallCard({ block, onRestore }: { block: ToolUseBlock; onRest
         <button className="tool-copy-btn" title="复制参数 JSON" onClick={() => void copyArgs()}>
           {copied ? '✓' : '复制'}
         </button>
-        {['write_file', 'edit_file', 'multi_edit', 'office_create_document', 'office_edit_document', 'office_calculate_spreadsheet'].includes(block.name) && block.status === 'done' ? (
+        {RESTORABLE_TOOLS.has(block.name) && block.status === 'done' ? (
           block.rolledBack ? (
             <span className="tool-status rolled">已回滚</span>
           ) : onRestore ? (

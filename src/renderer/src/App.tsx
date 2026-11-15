@@ -14,6 +14,9 @@ export default function App() {
   const { booted, settingsOpen, sidebarWidth, taskMode } = useApp()
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth)
   const draggingRef = useRef(false)
+  const appRef = useRef<HTMLDivElement>(null)
+  /** 拖拽中的最新宽度：松手时一次性提交 store */
+  const draggingWidthRef = useRef<number | null>(null)
   const maxSidebar = taskMode === 'office' || taskMode === 'video' ? Math.min(MAX_SIDEBAR, Math.max(MIN_SIDEBAR, viewportWidth - (viewportWidth <= 1100 ? 220 : 256) - 440 - 6)) : MAX_SIDEBAR
   const displayedSidebarWidth = Math.min(sidebarWidth, maxSidebar)
   useEffect(() => {
@@ -49,18 +52,25 @@ export default function App() {
   const onSplitterMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (!draggingRef.current) return
     const width = Math.min(maxSidebar, Math.max(MIN_SIDEBAR, e.clientX))
-    store.setState({ sidebarWidth: width })
+    // 拖拽期间直改 CSS 变量，不走 store——pointermove 频率下每帧 setState 会让全应用重渲染
+    draggingWidthRef.current = width
+    appRef.current?.style.setProperty('--sidebar-width', `${width}px`)
   }
   const onSplitterUp = (): void => {
     if (!draggingRef.current) return
     draggingRef.current = false
     document.body.style.userSelect = ''
     document.body.style.cursor = ''
-    void actions.setSidebarWidth(store.getState().sidebarWidth)
+    const width = draggingWidthRef.current
+    draggingWidthRef.current = null
+    if (width != null) {
+      store.setState({ sidebarWidth: width })
+      void actions.setSidebarWidth(width)
+    }
   }
 
   return (
-    <div className="app" style={{ '--sidebar-width': `${displayedSidebarWidth}px` } as CSSProperties}>
+    <div ref={appRef} className="app" style={{ '--sidebar-width': `${displayedSidebarWidth}px` } as CSSProperties}>
       <Sidebar />
       <div
         className="splitter"

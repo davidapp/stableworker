@@ -485,6 +485,7 @@ async function reloadAfterExternalChange(projectId: string, sessionId: string): 
 
 /** Queue renderer saves too, so later snapshots use the revision returned by earlier saves. */
 async function persistCurrentSession(): Promise<boolean> {
+  flushDeltaBuffers() // 兜底：停止/切走等无 done 事件的落盘路径先把缓冲里的增量合入
   const s = store.getState()
   if (!s.activeProjectId || !s.activeSessionId) return false
   const meta = (s.sessionsByProject[s.activeProjectId] ?? []).find((m) => m.id === s.activeSessionId)
@@ -742,6 +743,54 @@ function updateStreamingAssistant(fn: (m: ChatMessage) => ChatMessage): void {
   })
 }
 
+// ── 流式 delta 攒批 ──────────────────────────────────────────────
+// delta 事件可能远高于渲染帧率（LLM 网络分块呈突发状），逐条 setState
+// 会让流式气泡以同样频率重渲染。攒进缓冲，40ms 合并成一次更新；
+// 其余事件（工具/完成/出错）先 flush 再处理，保证顺序不乱。
+const DELTA_FLUSH_MS = 40
+let pendingTextDelta = ''
+let pendingReasoningDelta = ''
+let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null
+/** 缓冲归属的会话：flush 时若已切走则整段丢弃，防止串会话 */
+let deltaSessionId: string | null = null
+
+function discardDeltaBuffers(): void {
+  if (deltaFlushTimer != null) clearTimeout(deltaFlushTimer)
+  deltaFlushTimer = null
+  pendingTextDelta = ''
+  pendingReasoningDelta = ''
+  deltaSessionId = null
+}
+
+function flushDeltaBuffers(): void {
+  if (deltaFlushTimer == null) return
+  clearTimeout(deltaFlushTimer)
+  deltaFlushTimer = null
+  const text = pendingTextDelta
+  const reasoning = pendingReasoningDelta
+  const sessionId = deltaSessionId
+  pendingTextDelta = ''
+  pendingReasoningDelta = ''
+  deltaSessionId = null
+  if (!text && !reasoning) return
+  // 会话已切走：这段增量属于旧会话的流式回复，主进程还在继续写盘，界面丢弃即可
+  if (store.getState().activeSessionId !== sessionId) return
+  store.setState({ statusText: null })
+  updateStreamingAssistant((m) => {
+    let blocks = m.blocks
+    if (reasoning) blocks = appendReasoningDelta(blocks, reasoning)
+    if (text) blocks = appendTextDelta(blocks, text)
+    return { ...m, blocks }
+  })
+}
+
+function bufferDelta(kind: 'text' | 'reasoning', delta: string, sessionId: string): void {
+  if (kind === 'text') pendingTextDelta += delta
+  else pendingReasoningDelta += delta
+  deltaSessionId = sessionId
+  if (deltaFlushTimer == null) deltaFlushTimer = setTimeout(flushDeltaBuffers, DELTA_FLUSH_MS)
+}
+
 function markStreamingError(message: string): void {
   updateStreamingAssistant((m) => ({ ...m, streaming: false, error: message,
     blocks: m.blocks.map((b) => b.type === 'tool_use' && (b.status === 'running' || b.status === 'pending_approval')
@@ -958,24 +1007,26 @@ export function subscribeChatEvents(): () => void {
     const s = store.getState()
     if (event.sessionId !== s.activeSessionId || ignoredChatSessions.has(event.sessionId)) return
     if (event.type === 'delta') {
-      store.setState({ statusText: null })
-      updateStreamingAssistant((m) => ({ ...m, blocks: appendTextDelta(m.blocks, event.delta) }))
+      bufferDelta('text', event.delta, event.sessionId)
     } else if (event.type === 'reasoning_delta') {
-      store.setState({ statusText: null })
-      updateStreamingAssistant((m) => ({ ...m, blocks: appendReasoningDelta(m.blocks, event.delta) }))
+      bufferDelta('reasoning', event.delta, event.sessionId)
     } else if (event.type === 'status') {
+      flushDeltaBuffers()
       // 主进程阶段性状态（如"正在压缩早期对话…"）
       store.setState({ statusText: event.text })
     } else if (event.type === 'todos') {
+      flushDeltaBuffers()
       // 任务清单更新（todo_write 工具）
       store.setState({ todos: event.todos })
     } else if (event.type === 'retry') {
-      // 重试会重新生成整段回复：清掉已收到的半截内容，显示重试进度
+      // 重试会重新生成整段回复：缓冲里的半截增量也一并丢弃，显示重试进度
+      discardDeltaBuffers()
       store.setState({
         messages: s.messages.map((m) => (m.streaming ? { ...m, blocks: [] } : m)),
         statusText: `请求失败（${event.reason.slice(0, 80)}），第 ${event.attempt}/${event.maxRetries} 次重试，${Math.ceil(event.waitMs / 1000)}s 后重试…`,
       })
     } else if (event.type === 'tool_use') {
+      flushDeltaBuffers()
       const block: ToolUseBlock = {
         type: 'tool_use',
         id: event.toolUseId,
@@ -985,6 +1036,7 @@ export function subscribeChatEvents(): () => void {
       }
       updateStreamingAssistant((m) => ({ ...m, blocks: [...m.blocks, block] }))
     } else if (event.type === 'tool_output') {
+      flushDeltaBuffers()
       // 命令执行中的实时 stdout：追加到对应工具卡片的 output 字段
       updateStreamingAssistant((m) => ({
         ...m,
@@ -995,6 +1047,7 @@ export function subscribeChatEvents(): () => void {
         ),
       }))
     } else if (event.type === 'tool_result') {
+      flushDeltaBuffers()
       updateStreamingAssistant((m) => ({
         ...m,
         blocks: m.blocks.map((b) =>
@@ -1004,6 +1057,7 @@ export function subscribeChatEvents(): () => void {
         ),
       }))
     } else if (event.type === 'approval_request') {
+      flushDeltaBuffers()
       // 危险工具执行前：把对应工具卡片切到"等待批准"状态
       updateStreamingAssistant((m) => ({
         ...m,
@@ -1019,6 +1073,7 @@ export function subscribeChatEvents(): () => void {
         ),
       }))
     } else if (event.type === 'ask_user') {
+      flushDeltaBuffers()
       // ask_user_question 工具：把问题卡片挂到对应工具块上，等待用户作答
       updateStreamingAssistant((m) => ({
         ...m,
@@ -1032,11 +1087,13 @@ export function subscribeChatEvents(): () => void {
         ),
       }))
     } else if (event.type === 'done') {
+      flushDeltaBuffers()
       updateStreamingAssistant((m) => ({ ...m, streaming: false }))
       store.setState({ streaming: false, statusText: null })
       void persistCurrentSession()
       void maybeAutoCompact()
     } else if (event.type === 'error') {
+      flushDeltaBuffers()
       store.setState({ statusText: null })
       markStreamingError(event.message)
     }

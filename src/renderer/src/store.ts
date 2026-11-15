@@ -53,14 +53,12 @@ export interface AppState {
   modelPricing: ModelPricing[]
   /** 中国法定节假日（北京时间日期） */
   holidays: string[]
-  /** 功能入口的显隐状态 */
   /** 侧栏宽度（拖拽分隔条调整，持久化） */
   sidebarWidth: number
   /** 自定义子代理类型（task 工具 subagent_type 动态枚举） */
   subagentTypes: SubagentTypeConfig[]
   /** Hooks 生命周期钩子 */
   hooks: HookConfig[]
-  /** 项目级设置覆盖（projectId → 覆盖项） */
   /** 界面偏好（语言 / 主题） */
   preferences: Preferences
   /** 全局确认对话框状态（actions.confirm 触发，ConfirmDialog 组件渲染） */
@@ -100,7 +98,10 @@ function createStore<T extends object>(initial: T) {
   return {
     getState: (): T => state,
     setState(update: Updater<T>): void {
-      state = { ...state, ...(typeof update === 'function' ? update(state) : update) }
+      const patch = typeof update === 'function' ? update(state) : update
+      // 函数式 updater 返回空 patch（如流式增量找不到目标消息）= 无变化，不通知订阅者
+      if (typeof patch === 'object' && patch !== null && Object.keys(patch).length === 0) return
+      state = { ...state, ...patch }
       listeners.forEach((l) => l())
     },
     subscribe(listener: Listener): () => void {

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import type { OfficeFile } from '../../../shared/types'
+import type { ChatMessage, OfficeFile, ToolUseBlock } from '../../../shared/types'
 import { useApp, store } from '../store'
 import * as actions from '../actions'
 import { Composer } from './Composer'
@@ -14,6 +14,12 @@ import { t } from '../i18n'
 import { OfficePanel } from './OfficePanel'
 import { VideoPanel } from './VideoPanel'
 import { FileExplorerPanel } from './FileExplorerPanel'
+
+// react-markdown v10 每次渲染都会全量重建 processor（内部无缓存），
+// 插件链与 components 必须用模块级常量，配合 MessageItem 的 memo 才能挡住重复解析
+const REMARK_PLUGINS = [remarkGfm]
+const REHYPE_PLUGINS = [rehypeHighlight]
+const MD_COMPONENTS = { pre: CodeBlock }
 
 /** 聊天里的代码块：右上角悬浮复制按钮（复制 <pre> 的纯文本内容） */
 function CodeBlock({ children }: { children?: ReactNode }) {
@@ -37,6 +43,98 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     </div>
   )
 }
+
+/** 工具块视图：onRestore 在组件内部用 useCallback 钉住引用，配合 memo 挡住流式期间的重复渲染 */
+const ToolBlockView = memo(function ToolBlockView({ block }: { block: ToolUseBlock }) {
+  const onRestore = useCallback(async () => {
+    const p = typeof block.input.path === 'string' ? block.input.path : '(未知文件)'
+    if (
+      await actions.confirm(
+        `确定把「${p}」回滚到本次修改之前的状态？\n` +
+          '· write_file 新建的文件将被删除\n· 当前内容也会先被快照，可再次回滚撤销本次操作',
+        { danger: true },
+      )
+    ) {
+      void actions.restoreCheckpoint(block.id)
+    }
+  }, [block])
+  return <ToolCallCard block={block} onRestore={onRestore} />
+})
+
+/** 单条消息：memo 化——流式 delta 只替换流中那条消息的引用，其余消息整体跳过重渲染 */
+const MessageItem = memo(function MessageItem({
+  message: m,
+  statusText,
+  rewindCount,
+}: {
+  message: ChatMessage
+  statusText?: string | null
+  /** 这条消息之后还有多少条（0 = 不显示"回到这里"按钮） */
+  rewindCount: number
+}) {
+  return (
+    <div className={`message ${m.role}`}>
+      <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
+        {m.role === 'user' ? (
+          // 用户消息只含文本块
+          m.blocks
+            .filter((b) => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n')
+        ) : m.blocks.length === 0 ? (
+          m.streaming ? <span className="thinking">{statusText || t('思考中…')}</span> : null
+        ) : (
+          m.blocks.map((b, i) => {
+            if (b.type === 'reasoning') {
+              return (
+                <details key={i} className="reasoning-collapse">
+                  <summary><Icon name="brain" size={14} /> 思考过程</summary>
+                  <div className="reasoning-text">{b.text}</div>
+                </details>
+              )
+            }
+            if (b.type === 'text') {
+              return (
+                <div key={i} className="block-text">
+                  <ReactMarkdown
+                    remarkPlugins={REMARK_PLUGINS}
+                    rehypePlugins={REHYPE_PLUGINS}
+                    components={MD_COMPONENTS}
+                  >
+                    {b.text}
+                  </ReactMarkdown>
+                </div>
+              )
+            }
+            return <ToolBlockView key={b.id} block={b} />
+          })
+        )}
+        {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
+        {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
+      </div>
+      {!m.streaming ? (
+        <div className="msg-rewind">
+          {rewindCount > 0 ? (
+            <button
+              className="msg-rewind-btn"
+              title={`删除这条之后的 ${rewindCount} 条消息，回退到这里`}
+              onClick={() => void actions.rewindToMessage(m.id)}
+            >
+              ⏪ {t('回到这里')}
+            </button>
+          ) : null}
+          <button
+            className="msg-rewind-btn"
+            title="复制这条及之前的消息为一个新会话（原会话不变）"
+            onClick={() => void actions.forkFromMessage(m.id)}
+          >
+            🍴 {t('从这里分叉')}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+})
 
 export function ChatPane() {
   const {
@@ -252,86 +350,13 @@ export function ChatPane() {
         <div className="message-list" ref={listRef} onScroll={onScroll}>
           <TodoPanel />
           {messages.map((m, idx) => (
-              <div key={m.id} className={`message ${m.role}`}>
-                <div className={`bubble ${m.role === 'assistant' ? 'md' : ''}`}>
-                  {m.role === 'user' ? (
-                    // 用户消息只含文本块
-                    m.blocks
-                      .filter((b) => b.type === 'text')
-                      .map((b) => b.text)
-                      .join('\n')
-                  ) : m.blocks.length === 0 ? (
-                    m.streaming ? <span className="thinking">{statusText || t('思考中…')}</span> : null
-                  ) : (
-                    m.blocks.map((b, i) => {
-                      if (b.type === 'reasoning') {
-                        return (
-                          <details key={i} className="reasoning-collapse">
-                            <summary><Icon name="brain" size={14} /> 思考过程</summary>
-                            <div className="reasoning-text">{b.text}</div>
-                          </details>
-                        )
-                      }
-                      if (b.type === 'text') {
-                        return (
-                          <div key={i} className="block-text">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              rehypePlugins={[rehypeHighlight]}
-                              components={{ pre: CodeBlock }}
-                            >
-                              {b.text}
-                            </ReactMarkdown>
-                          </div>
-                        )
-                      }
-                      return (
-                        <ToolCallCard
-                          key={b.id}
-                          block={b}
-                          onRestore={async () => {
-                            const p = typeof b.input.path === 'string' ? b.input.path : '(未知文件)'
-                            if (
-                              (
-                                await actions.confirm(
-                                  `确定把「${p}」回滚到本次修改之前的状态？\n` +
-                                    '· write_file 新建的文件将被删除\n· 当前内容也会先被快照，可再次回滚撤销本次操作',
-                                  { danger: true },
-                                )
-                              )
-                            ) {
-                              void actions.restoreCheckpoint(b.id)
-                            }
-                          }}
-                        />
-                      )
-                    })
-                  )}
-                  {m.streaming && m.blocks.length > 0 ? <span className="cursor">▍</span> : null}
-                  {m.error ? <div className="msg-error">出错：{m.error}</div> : null}
-                </div>
-                {!m.streaming ? (
-                  <div className="msg-rewind">
-                    {idx < messages.length - 1 ? (
-                      <button
-                        className="msg-rewind-btn"
-                        title={`删除这条之后的 ${messages.length - idx - 1} 条消息，回退到这里`}
-                        onClick={() => void actions.rewindToMessage(m.id)}
-                      >
-                        ⏪ {t('回到这里')}
-                      </button>
-                    ) : null}
-                    <button
-                      className="msg-rewind-btn"
-                      title="复制这条及之前的消息为一个新会话（原会话不变）"
-                      onClick={() => void actions.forkFromMessage(m.id)}
-                    >
-                      🍴 {t('从这里分叉')}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ))}
+            <MessageItem
+              key={m.id}
+              message={m}
+              statusText={m.streaming ? statusText : undefined}
+              rewindCount={messages.length - idx - 1}
+            />
+          ))}
           </div>
           {showJumpButton ? (
             <button className="jump-bottom" title={t('滚到最下面')} onClick={jumpToBottom}>
