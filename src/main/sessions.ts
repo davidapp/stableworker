@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { mkdir, readFile, readdir, rm, appendFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, appendFile, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { deleteSessionCheckpoints, deleteProjectCheckpoints, restoreSnapshot, sessionCheckpointsRoot } from './fileHistory'
 import { invalidateCompactCache, setCachedCompact } from './compact'
@@ -69,6 +69,64 @@ async function appendLines(file: string, lines: unknown[]): Promise<void> {
 const writeQueues = new Map<string, Promise<unknown>>()
 const deletedSessions = new Set<string>()
 const cacheKey = (projectId: string, sessionId: string): string => `${projectId}/${sessionId}`
+
+/**
+ * 进程内会话状态缓存：同会话的所有读写都经 serializeSession 串行队列，本进程
+ * 是 JSONL 的唯一写者，因此缓存即权威。作用：保存/加载/列表不再全文件 replay
+ * （大会话每次落盘 = 全文件读 + 逐行 parse 的线性开销来源）。
+ * 磁盘仍是不变量：每次命中先用 size+mtime 校验文件未被外部改动（手改/崩溃残尾），
+ * 对不上就丢弃缓存重新 replay；被淘汰后下次访问同样重新 replay 自愈。
+ */
+interface CachedSessionState {
+  revision: number
+  title: string
+  createdAt: number
+  updatedAt: number
+  taskMode: TaskMode
+  llmId?: string
+  summary?: { droppedCount: number; text: string; ts: number }
+  messages: ChatMessage[]
+  corruptLines: number
+  totalLines: number
+  /** 文件新鲜度哨兵：与这两个值不符 = 被外部改动，缓存作废 */
+  size?: number
+  mtimeMs?: number
+}
+const SESSION_CACHE_LIMIT = 64
+const sessionStates = new Map<string, CachedSessionState>()
+
+function cacheGet(key: string): CachedSessionState | undefined {
+  const state = sessionStates.get(key)
+  if (state) {
+    // 触达即刷新插入顺序（Map 迭代序即 LRU 淘汰序）
+    sessionStates.delete(key)
+    sessionStates.set(key, state)
+  }
+  return state
+}
+
+function cacheSet(key: string, state: CachedSessionState): void {
+  sessionStates.delete(key)
+  sessionStates.set(key, state)
+  while (sessionStates.size > SESSION_CACHE_LIMIT) {
+    const oldest = sessionStates.keys().next().value
+    if (oldest === undefined) break
+    sessionStates.delete(oldest)
+  }
+}
+
+/** 写入缓存并对文件做 stat 盖章（size/mtime 哨兵）；stat 失败（文件被删）则不盖章，下次访问走 replay */
+async function cacheStamp(key: string, state: CachedSessionState, file: string): Promise<void> {
+  try {
+    const st = await stat(file)
+    state.size = st.size
+    state.mtimeMs = st.mtimeMs
+  } catch {
+    state.size = undefined
+    state.mtimeMs = undefined
+  }
+  cacheSet(key, state)
+}
 
 function serializeSession<T>(projectId: string, sessionId: string, operation: () => Promise<T>): Promise<T> {
   const key = cacheKey(projectId, sessionId)
@@ -190,6 +248,39 @@ async function loadSessionUnlocked(
   projectId: string,
   sessionId: string,
 ): Promise<{ session: Session | null; damaged: boolean; corruptLines: number; totalLines: number }> {
+  const key = cacheKey(projectId, sessionId)
+  // 缓存命中：免掉全文件 replay。messages 交给浅拷贝数组——调用方的 splice/按下标
+  // 替换不会渗回缓存；消息对象本身按不可变约定使用（各处理器都只替换不原地改）
+  const cached = cacheGet(key)
+  if (cached) {
+    let fresh = false
+    try {
+      const st = await stat(sessionFile(projectId, sessionId))
+      fresh = st.size === cached.size && st.mtimeMs === cached.mtimeMs
+    } catch {
+      fresh = false // 文件没了 = 外部删除，缓存作废走 replay（返回 null 会话）
+    }
+    if (!fresh) {
+      sessionStates.delete(key)
+    } else {
+      const session: Session = {
+        id: sessionId,
+        projectId,
+        title: cached.title,
+        createdAt: cached.createdAt,
+        updatedAt: cached.updatedAt,
+        messages: cached.messages.slice(),
+        summary: cached.summary,
+        revision: cached.revision,
+        taskMode: cached.taskMode,
+        llmId: cached.llmId,
+      }
+      // 恢复摘要缓存：重启后同会话继续压缩时直接复用，不再花摘要 API 调用
+      if (cached.summary) setCachedCompact(sessionId, cached.summary.droppedCount, cached.summary.text)
+      else invalidateCompactCache(sessionId)
+      return { session, damaged: cached.corruptLines > 0, corruptLines: cached.corruptLines, totalLines: cached.totalLines }
+    }
+  }
   const r = await replay(projectId, sessionId)
   const damaged = r.exists && r.corruptLines > 0
   if (r.exists) {
@@ -199,7 +290,7 @@ async function loadSessionUnlocked(
       title: r.createdAt || r.messages.length ? r.title : '（损坏的会话）',
       createdAt: r.createdAt || r.updatedAt,
       updatedAt: r.updatedAt,
-      messages: r.messages,
+      messages: r.messages.slice(),
       summary: r.summary,
       revision: r.revision,
       taskMode: managedTaskMode(projectId) ?? r.taskMode,
@@ -208,11 +299,36 @@ async function loadSessionUnlocked(
     // 恢复摘要缓存：重启后同会话继续压缩时直接复用，不再花摘要 API 调用
     if (r.summary) setCachedCompact(sessionId, r.summary.droppedCount, r.summary.text)
     else invalidateCompactCache(sessionId)
+    await cacheStamp(key, {
+      revision: r.revision,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      taskMode: managedTaskMode(projectId) ?? r.taskMode,
+      llmId: r.llmId,
+      summary: r.summary,
+      messages: r.messages,
+      corruptLines: r.corruptLines,
+      totalLines: r.totalLines,
+    }, sessionFile(projectId, sessionId))
     return { session, damaged, corruptLines: r.corruptLines, totalLines: r.totalLines }
   }
   const legacy = await migrateLegacy(projectId, sessionId)
   if (legacy) {
-    return { session: { ...legacy, taskMode: managedTaskMode(projectId) ?? legacy.taskMode }, damaged: false, corruptLines: 0, totalLines: 0 }
+    const taskMode = managedTaskMode(projectId) ?? legacy.taskMode ?? 'coding'
+    await cacheStamp(key, {
+      revision: legacy.revision ?? 1,
+      title: legacy.title,
+      createdAt: legacy.createdAt,
+      updatedAt: legacy.updatedAt,
+      taskMode,
+      llmId: legacy.llmId,
+      summary: legacy.summary,
+      messages: legacy.messages,
+      corruptLines: 0,
+      totalLines: 1,
+    }, sessionFile(projectId, sessionId))
+    return { session: { ...legacy, messages: legacy.messages.slice(), taskMode }, damaged: false, corruptLines: 0, totalLines: 0 }
   }
   return { session: null, damaged: false, corruptLines: 0, totalLines: 0 }
 }
@@ -311,6 +427,9 @@ export function buildForkSession(
       updatedAt: now,
       damaged: undefined,
       summary: undefined, // 摘要可能引用分叉点之后被截掉的内容，不继承
+      // 新文件的磁盘 revision 从 0 起步；继承源会话的 revision 会过不了保存 CAS
+      // （曾导致分叉必然报"会话已在其他窗口修改"而静默失败）
+      revision: 0,
       messages: JSON.parse(JSON.stringify(session.messages.slice(0, plan.keepCount))) as ChatMessage[],
     },
   }
@@ -421,6 +540,16 @@ export function registerSessionHandlers(): void {
     await serializeSession(projectId, session.id, () => appendTransaction(sessionFile(projectId, session.id), 1, [
       { t: 'meta', ts: session.updatedAt, title: session.title, createdAt: session.createdAt, taskMode: session.taskMode },
     ]))
+    await cacheStamp(cacheKey(projectId, session.id), {
+      revision: 1,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      taskMode: session.taskMode ?? 'coding',
+      messages: session.messages,
+      corruptLines: 0,
+      totalLines: 1,
+    }, sessionFile(projectId, session.id))
     return session
   })
 
@@ -454,6 +583,7 @@ export function registerSessionHandlers(): void {
       await rm(sessionFile(projectId, sessionId), { force: true })
       await rm(legacyFile(projectId, sessionId), { force: true })
       deletedSessions.add(cacheKey(projectId, sessionId))
+      sessionStates.delete(cacheKey(projectId, sessionId))
       if (officeRoot) await rm(officeRoot, { recursive: true, force: true })
       if (videoRoot) await rm(videoRoot, { recursive: true, force: true })
       await deleteSessionCheckpoints(projectId, sessionId)
@@ -587,6 +717,15 @@ export async function appendSummaryLine(
       ])
       if (text) setCachedCompact(sessionId, droppedCount, text)
       else invalidateCompactCache(sessionId)
+      // 缓存推进（summary 与 revision 已变，消息不变；追加了 1 行事务）
+      const key = cacheKey(projectId, sessionId)
+      const cached = cacheGet(key)
+      if (cached) {
+        cached.revision = revision + 1
+        cached.summary = text ? { droppedCount, text, ts: Date.now() } : undefined
+        cached.totalLines += 1
+        await cacheStamp(key, cached, sessionFile(projectId, sessionId))
+      }
       emitSessionsChanged(projectId, sessionId, { revision: revision + 1, change: 'summary' })
       return { ok: true, revision: revision + 1 }
     } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
@@ -597,6 +736,10 @@ export async function appendSummaryLine(
 export async function deleteProjectSessions(projectId: string): Promise<void> {
   await rm(projectDir(projectId), { recursive: true, force: true })
   await deleteProjectCheckpoints(projectId) // 检查点连带清理
+  const prefix = `${projectId}/`
+  for (const key of [...sessionStates.keys()]) {
+    if (key.startsWith(prefix)) sessionStates.delete(key)
+  }
 }
 
 /**
@@ -611,7 +754,7 @@ function conflict(revision: number): SessionSaveResult {
 
 async function saveSessionUnlocked(session: Session): Promise<SessionSaveResult> {
   const key = cacheKey(session.projectId, session.id)
-  const { session: stored } = await loadSessionUnlocked(session.projectId, session.id)
+  const { session: stored, corruptLines, totalLines } = await loadSessionUnlocked(session.projectId, session.id)
   const revision = stored?.revision ?? 0
   if (deletedSessions.has(key) || (session.revision ?? 0) !== revision) return conflict(revision)
   const known = stored?.messages ?? []
@@ -627,14 +770,18 @@ async function saveSessionUnlocked(session: Session): Promise<SessionSaveResult>
     lines.push({ t: 'clear', ts }, ...session.messages.map((m, i) => ({ t: 'm', ts, i, m })))
   } else {
     for (let i = 0; i < session.messages.length; i++) {
-      if (!known[i] || JSON.stringify(known[i]) !== JSON.stringify(session.messages[i])) {
-        lines.push({ t: 'm', ts, i, m: session.messages[i] })
+      const a = known[i]
+      const b = session.messages[i]
+      // 引用相等即未变（同进程保存：rewind / 主循环追加复用加载到的对象）；
+      // IPC 保存的消息经结构化克隆引用全换，退回逐字节比较
+      if (a !== b && (!a || JSON.stringify(a) !== JSON.stringify(b))) {
+        lines.push({ t: 'm', ts, i, m: b })
       }
     }
   }
   const summaryInvalidated = stored?.summary && (
     known.length > session.messages.length ||
-    known.slice(0, stored.summary.droppedCount).some((m, i) => JSON.stringify(m) !== JSON.stringify(session.messages[i]))
+    known.slice(0, stored.summary.droppedCount).some((m, i) => m !== session.messages[i] && JSON.stringify(m) !== JSON.stringify(session.messages[i]))
   )
   if (summaryInvalidated && !lines.some((line) => line.t === 'clear')) {
     lines.push({ t: 'summary', ts, droppedCount: 0, text: '' })
@@ -648,6 +795,19 @@ async function saveSessionUnlocked(session: Session): Promise<SessionSaveResult>
     try { await appendTransaction(sessionFile(session.projectId, session.id), revision + 1, lines) }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
   }
+  // 写入成功：缓存推进到落盘后的状态（下轮保存直接在内存上 diff，免全文件 replay）
+  await cacheStamp(key, {
+    revision: revision + 1,
+    title: session.title,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    taskMode,
+    llmId,
+    summary: summaryInvalidated ? undefined : stored?.summary,
+    messages: session.messages,
+    corruptLines,
+    totalLines: totalLines + 1,
+  }, sessionFile(session.projectId, session.id))
   if (summaryInvalidated || session.messages.length === 0) invalidateCompactCache(session.id)
   return { ok: true, revision: revision + 1 }
 }
