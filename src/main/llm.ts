@@ -49,6 +49,7 @@ import type {
   LLMConfig,
   LLMTestPayload,
   MessageBlock,
+  ModelPricing,
   PermissionRules,
   TodoItem,
   ToolUseBlock,
@@ -1207,6 +1208,108 @@ async function chatSend(req: ChatRequest): Promise<{ ok: boolean; error?: string
   } finally { if (aborters.get(req.sessionId) === controller) aborters.delete(req.sessionId) }
 }
 
+/**
+ * 单轮流式请求的公共主体：构建请求 → fetch → SSE 读取 → 调试记录 → 组装结果。
+ * 主循环（attemptRound）与子代理循环（subCallRound）曾各有一份约 60 行的复制粘贴，
+ * 且已经分叉（子代理不解析 Retry-After）；收敛后行为一致，差异全部参数化：
+ * - scope / round / trimmedCount：调试记录的记账字段
+ * - sink：流式增量去向（主循环转发渲染端，子代理丢弃）
+ * - validate：fin 后置校验（子代理的工具白名单），抛错即本轮失败
+ * - breakdownTexts：主循环独有的上下文构成明细所需文本
+ */
+async function runChatRound(p: {
+  llm: LLMConfig & { apiKey: string; id: string }
+  apiKey: string
+  sessionId: string
+  scope: 'main' | 'subagent'
+  round: number
+  proxyURL: string | null
+  pricing: ModelPricing | null
+  peak: boolean
+  trimmedCount?: number
+  systemPrompt: string
+  messages: ChatHistoryMessage[]
+  roundTools: ToolDefinition[]
+  signal: AbortSignal
+  sink: (e: ChatEvent) => void
+  validate?: (fin: { blocks: MessageBlock[]; reasoning: string }) => void
+  breakdownTexts?: { systemText: string; toolsText: string }
+}): Promise<{ blocks: MessageBlock[]; reasoning: string }> {
+  const { url, headers, body } = buildRequest(p.llm, p.apiKey, toApiTurns(p.messages), p.roundTools, true, p.systemPrompt)
+  const exchange = beginExchange({
+    sessionId: p.sessionId,
+    profileId: p.llm.id,
+    scope: p.scope,
+    kind: 'chat',
+    round: p.round,
+    llm: p.llm,
+    method: 'POST',
+    url,
+    proxyURL: p.proxyURL,
+    pricing: p.pricing,
+    peak: p.peak,
+    trimmedCount: p.trimmedCount,
+    headers: maskHeaders(headers),
+    body,
+  })
+  try {
+    lastLlmForBalanceHint = { name: p.llm.name, model: p.llm.model }
+    const res = await undiciFetch(url, {
+      method: 'POST',
+      headers,
+      body,
+      signal: p.signal,
+      dispatcher: getProxyDispatcher(p.llm.proxyURL ?? ''),
+    })
+    recordStatus(exchange, res.status)
+    if (!res.ok || !res.body) {
+      const detail = (await res.text().catch(() => '')).slice(0, 300)
+      // Retry-After 头（秒）→ 毫秒，withRetry 会优先尊重它（子代理循环同样生效）
+      const ra = parseFloat(res.headers.get('retry-after') ?? '')
+      throw new HttpError(
+        balanceMessage(res.status, detail) ?? `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
+        res.status,
+        Number.isFinite(ra) ? ra * 1000 : undefined,
+      )
+    }
+    const collector = createStreamCollector(p.llm.provider, p.sessionId, p.sink)
+    await readSSE(res.body, (json, raw) => {
+      recordSSELine(exchange, raw)
+      if (!json) return // [DONE] 结束标记
+      recordUsageEvent(exchange, json)
+      collector.onEvent(json)
+    }, p.llm.provider)
+    const fin = collector.finish()
+    p.validate?.(fin)
+    recordToolCalls(
+      exchange,
+      fin.blocks
+        .filter((b): b is ToolUseBlock => b.type === 'tool_use')
+        .map((b) => ({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })),
+    )
+    if (fin.reasoning) recordReasoningText(exchange, fin.reasoning)
+    recordAssembledText(exchange, textOfBlocks(fin.blocks))
+    // 上下文构成：总量用服务端 usage，系统/工具用本地估算，余量记为消息
+    if (p.breakdownTexts && exchange.inputTokens != null) {
+      const systemTokens = estimateTokens(p.breakdownTexts.systemText)
+      const toolsTokens = estimateTokens(p.breakdownTexts.toolsText)
+      recordContextBreakdown(exchange, {
+        totalTokens: exchange.inputTokens,
+        systemTokens,
+        toolsTokens,
+        messagesTokens: Math.max(0, exchange.inputTokens - systemTokens - toolsTokens),
+        cacheHitTokens: exchange.cacheHitTokens,
+        cacheHitRate: exchange.inputTokens > 0 ? (exchange.cacheHitTokens ?? 0) / exchange.inputTokens : null,
+      })
+    }
+    endExchange(exchange)
+    return fin
+  } catch (err) {
+    endExchange(exchange, isAbortError(err) ? undefined : err instanceof Error ? err.message : String(err))
+    throw err
+  }
+}
+
 async function chatSendInternal(req: ChatRequest, controller: AbortController): Promise<{ ok: boolean; error?: string; compacted?: number }> {
   const cfg = await loadConfig()
   controller.signal.throwIfAborted()
@@ -1298,70 +1401,35 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
     },
   }
   let subRound = 0
-  const subCallRound = async (
+  const subCallRound = (
     messages: ChatHistoryMessage[],
     roundTools: ToolDefinition[],
     signal: AbortSignal,
     systemPrompt: string = subSystemPrompt,
-  ): Promise<{ blocks: MessageBlock[] }> => {
-    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(messages), roundTools, true, systemPrompt)
-    const exchange = beginExchange({
-      sessionId: req.sessionId,
-      profileId: llm.id,
-      scope: 'subagent',
-      kind: 'chat',
-      round: ++subRound,
+  ): Promise<{ blocks: MessageBlock[]; reasoning: string }> =>
+    runChatRound({
       llm,
-      method: 'POST',
-      url,
+      apiKey,
+      sessionId: req.sessionId,
+      scope: 'subagent',
+      round: ++subRound,
       proxyURL,
       pricing,
       peak,
-      headers: maskHeaders(headers),
-      body,
-    })
-    try {
-      lastLlmForBalanceHint = { name: llm.name, model: llm.model }
-      const res = await undiciFetch(url, {
-        method: 'POST',
-        headers,
-        body,
-        signal,
-        dispatcher: getProxyDispatcher(llm.proxyURL ?? ''),
-      })
-      recordStatus(exchange, res.status)
-      if (!res.ok || !res.body) {
-        const detail = (await res.text().catch(() => '')).slice(0, 300)
-        throw new HttpError(balanceMessage(res.status, detail) ?? `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`, res.status)
-      }
+      systemPrompt,
+      messages,
+      roundTools,
+      signal,
       // 子代理的流式增量不进主对话：sink 传空函数，只取组装结果
-      const collector = createStreamCollector(llm.provider, req.sessionId, () => {})
-      await readSSE(res.body, (json, raw) => {
-        recordSSELine(exchange, raw)
-        if (!json) return
-        recordUsageEvent(exchange, json)
-        collector.onEvent(json)
-      }, llm.provider)
-      const fin = collector.finish()
-      for (const block of fin.blocks) {
-        if (block.type === 'tool_use' && !roundTools.some((tool) => tool.name === block.name)) {
-          throw new LLMStreamError(`子代理请求了不在本轮允许列表中的工具 ${block.name}，操作未执行`, false)
+      sink: () => {},
+      validate: (fin) => {
+        for (const block of fin.blocks) {
+          if (block.type === 'tool_use' && !roundTools.some((tool) => tool.name === block.name)) {
+            throw new LLMStreamError(`子代理请求了不在本轮允许列表中的工具 ${block.name}，操作未执行`, false)
+          }
         }
-      }
-      recordToolCalls(
-        exchange,
-        fin.blocks
-          .filter((b): b is ToolUseBlock => b.type === 'tool_use')
-          .map((b) => ({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })),
-      )
-      recordAssembledText(exchange, textOfBlocks(fin.blocks))
-      endExchange(exchange)
-      return fin
-    } catch (err) {
-      endExchange(exchange, isAbortError(err) ? undefined : err instanceof Error ? err.message : String(err))
-      throw err
-    }
-  }
+      },
+    })
   const taskTool = createTaskTool({
     baseTools: tools, // 不含 task 自身（固化在创建时；pickTools 再兜底排除递归）
     systemPrompt: subSystemPrompt,
@@ -1436,82 +1504,27 @@ async function chatSendInternal(req: ChatRequest, controller: AbortController): 
 
   // 单轮请求：构建请求 → 流式读取 → 落调试记录 → 返回本轮 blocks。
   // 失败时（含中途断流）endExchange 后抛出，交给 withRetry 决定是否整轮重试。
-  const attemptRound = async (round: number, roundTools = tools): Promise<{ blocks: MessageBlock[]; reasoning: string }> => {
-    const { url, headers, body } = buildRequest(llm, apiKey, toApiTurns(requestMessages), roundTools, true, systemText)
-    const exchange = beginExchange({
-      sessionId: req.sessionId,
-      profileId: llm.id,
-      scope: 'main',
-      kind: 'chat',
-      round,
+  const attemptRound = (
+    round: number,
+    roundTools = tools,
+  ): Promise<{ blocks: MessageBlock[]; reasoning: string }> =>
+    runChatRound({
       llm,
-      method: 'POST',
-      url,
+      apiKey,
+      sessionId: req.sessionId,
+      scope: 'main',
+      round,
       proxyURL,
       pricing,
       peak,
       trimmedCount: trim.trimmed ? trim.trimmedCount : undefined,
-      headers: maskHeaders(headers),
-      body,
+      systemPrompt: systemText,
+      messages: requestMessages,
+      roundTools,
+      signal: controller.signal,
+      sink: emit,
+      breakdownTexts: { systemText, toolsText },
     })
-    try {
-      const dispatcher = getProxyDispatcher(llm.proxyURL ?? '')
-      lastLlmForBalanceHint = { name: llm.name, model: llm.model }
-      const res = await undiciFetch(url, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal,
-        dispatcher,
-      })
-      recordStatus(exchange, res.status)
-      if (!res.ok || !res.body) {
-        const detail = (await res.text().catch(() => '')).slice(0, 300)
-        // Retry-After 头（秒）→ 毫秒，withRetry 会优先尊重它
-        const ra = parseFloat(res.headers.get('retry-after') ?? '')
-        throw new HttpError(
-          balanceMessage(res.status, detail) ?? `HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`,
-          res.status,
-          Number.isFinite(ra) ? ra * 1000 : undefined,
-        )
-      }
-
-      const collector = createStreamCollector(llm.provider, req.sessionId)
-      await readSSE(res.body, (json, raw) => {
-        recordSSELine(exchange, raw)
-        if (!json) return // [DONE] 结束标记
-        recordUsageEvent(exchange, json)
-        collector.onEvent(json)
-      }, llm.provider)
-      const fin = collector.finish()
-      recordToolCalls(
-        exchange,
-        fin.blocks
-          .filter((b): b is ToolUseBlock => b.type === 'tool_use')
-          .map((b) => ({ id: b.id, name: b.name, argsJson: JSON.stringify(b.input) })),
-      )
-      if (fin.reasoning) recordReasoningText(exchange, fin.reasoning)
-      recordAssembledText(exchange, textOfBlocks(fin.blocks))
-      // 上下文构成：总量用服务端 usage，系统/工具用本地估算，余量记为消息
-      if (exchange.inputTokens != null) {
-        const systemTokens = estimateTokens(systemText)
-        const toolsTokens = estimateTokens(toolsText)
-        recordContextBreakdown(exchange, {
-          totalTokens: exchange.inputTokens,
-          systemTokens,
-          toolsTokens,
-          messagesTokens: Math.max(0, exchange.inputTokens - systemTokens - toolsTokens),
-          cacheHitTokens: exchange.cacheHitTokens,
-          cacheHitRate: exchange.inputTokens > 0 ? (exchange.cacheHitTokens ?? 0) / exchange.inputTokens : null,
-        })
-      }
-      endExchange(exchange)
-      return fin
-    } catch (err) {
-      endExchange(exchange, isAbortError(err) ? undefined : err instanceof Error ? err.message : String(err))
-      throw err
-    }
-  }
 
   // 结束或异常时必须给已显示的工具卡发送终态，避免遗留永久“运行中”。
   let pendingTools: ToolUseBlock[] = []
