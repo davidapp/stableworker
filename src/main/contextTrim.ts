@@ -1,5 +1,5 @@
-import { estimateTokens } from '../shared/tokens'
-import type { ChatHistoryMessage, MessageBlock } from '../shared/types'
+import { estimateMessageTokensCached } from '../shared/tokens'
+import type { ChatHistoryMessage } from '../shared/types'
 
 /**
  * 发送前历史裁剪（台阶 4b）：
@@ -13,20 +13,9 @@ import type { ChatHistoryMessage, MessageBlock } from '../shared/types'
  * - 估算用本地启发式（shared/tokens），因此预算系数取得保守（0.7）
  */
 
-/** 单条消息的 token 估算：所有块的文本 + 工具参数 JSON + 工具结果 + 消息封套开销 */
+/** 单条消息的 token 估算：所有块的文本 + 工具参数 JSON + 工具结果 + 消息封套开销（按块缓存） */
 export function estimateMessageTokens(m: ChatHistoryMessage): number {
-  const sum = (blocks: MessageBlock[]): number =>
-    blocks.reduce((acc, b) => {
-      if (b.type === 'text' || b.type === 'reasoning') return acc + estimateTokens(b.text)
-      // 工具调用：名字 + 参数 JSON + 结果文本
-      return (
-        acc +
-        estimateTokens(b.name) +
-        estimateTokens(JSON.stringify(b.input)) +
-        estimateTokens(b.result ?? '')
-      )
-    }, 0)
-  return sum(m.blocks) + 16 // role/封套等固定开销
+  return estimateMessageTokensCached(m) + 16 // role/封套等固定开销
 }
 
 export interface TrimResult {

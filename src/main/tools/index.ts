@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { dirname, relative, resolve } from 'node:path'
 import { ipcMain } from 'electron'
@@ -69,6 +69,8 @@ const MAX_READ_LINES = 2000
 const MAX_OUTPUT_CHARS = 20_000
 const MAX_WRITE_CHARS = 500_000
 const TOOL_TIMEOUT_MS = 15_000
+/** read_file 的大小上限（与 grep 工具的 MAX_FILE_BYTES 一致）：模型指名读大日志/数据文件时防止整读打爆内存 */
+const MAX_READ_FILE_BYTES = 1_500_000
 
 function truncate(text: string): string {
   return text.length > MAX_OUTPUT_CHARS
@@ -121,6 +123,13 @@ const readFileTool: ToolDefinition = {
     const rel = typeof input.path === 'string' ? input.path : ''
     if (!rel) return { content: '缺少 path 参数', isError: true }
     const file = safeResolve(ctx.projectPath, rel)
+    const st = await stat(file)
+    if (st.size > MAX_READ_FILE_BYTES) {
+      return {
+        content: `${rel} 有 ${st.size} 字节，超过 ${MAX_READ_FILE_BYTES} 上限，整读会占满内存与上下文。请用 run_command 配合系统命令分段查看（头部/尾部/关键字过滤），或确认它是否为二进制/数据文件后改用其他工具`,
+        isError: true,
+      }
+    }
     const raw = await readFile(file, { encoding: 'utf-8', signal: ctx.signal })
     fileStateCache.set(file, raw) // 记录读取快照，供 edit_file 校验"先读后改"
     const allLines = raw.split('\n')
@@ -161,7 +170,6 @@ const writeFileTool: ToolDefinition = {
     const file = safeResolve(ctx.projectPath, rel)
     await mkdir(dirname(file), { recursive: true })
     ctx.signal?.throwIfAborted()
-    safeResolve(ctx.projectPath, rel)
     await writeFile(file, content, { encoding: 'utf-8', signal: ctx.signal })
     fileStateCache.set(file, content)
     const lines = content.split('\n').length
@@ -222,7 +230,6 @@ const editFileTool: ToolDefinition = {
 
     const updated = replaceAll ? raw.split(oldText).join(newText) : raw.replace(oldText, newText)
     ctx.signal?.throwIfAborted()
-    safeResolve(ctx.projectPath, rel)
     await writeFile(file, updated, { encoding: 'utf-8', signal: ctx.signal })
     fileStateCache.set(file, updated) // 编辑后同步快照，后续编辑无需重复读取
     const replaced = replaceAll ? count : 1
@@ -290,7 +297,6 @@ const multiEditTool: ToolDefinition = {
       applied.push(`#${i + 1}（-${oldText.length} +${newText.length} 字符）`)
     }
     ctx.signal?.throwIfAborted()
-    safeResolve(ctx.projectPath, rel)
     await writeFile(file, raw, { encoding: 'utf-8', signal: ctx.signal })
     fileStateCache.set(file, raw)
     return { content: `已编辑 ${rel}（共 ${applied.length} 处：${applied.join('、')}）` }
@@ -317,7 +323,7 @@ const runCommandTool: ToolDefinition = {
   },
   requiresApproval: true,
   kind: 'system',
-  timeoutMs: runCommandForegroundMs() + 5_000,
+  // 超时 = 前台宽限期 + 5s，在 executeToolCall 里按 env 动态取值（此处固化会吞掉运行时改动）
   async execute(input, ctx) {
     const command = typeof input.command === 'string' ? input.command : ''
     if (!command.trim()) return { content: '缺少 command 参数', isError: true }

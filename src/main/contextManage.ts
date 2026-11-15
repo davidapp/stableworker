@@ -5,7 +5,7 @@ import { loadConfig, decryptApiKey } from './config'
 import { getProxyDispatcher, isApiKeyOptional } from './llm'
 import { appendSummaryLine, loadSessionAny, saveSessionInternal, emitSessionsChanged } from './sessions'
 import { summarizeWithModel, invalidateCompactCache } from './compact'
-import { estimateTokens } from '../shared/tokens'
+import { estimateMessageTokensCached } from '../shared/tokens'
 import type {
   BalanceResult,
   ChatMessage,
@@ -43,12 +43,7 @@ export function registerContextHandlers(): void {
       const session = r.session
       if (!session) return { messageCount: 0, tokensEstimate: 0, summary: null }
       const tokensEstimate = session.messages.reduce(
-        (acc, m) =>
-          acc +
-          m.blocks.reduce((a, b) => {
-            if (b.type === 'text' || b.type === 'reasoning') return a + estimateTokens(b.text)
-            return a + estimateTokens(b.name + JSON.stringify(b.input) + (b.result ?? ''))
-          }, 0),
+        (acc, m) => acc + estimateMessageTokensCached(m),
         0,
       )
       return { messageCount: session.messages.length, tokensEstimate, summary: session.summary ?? null }

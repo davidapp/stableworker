@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { join } from 'node:path'
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { computeCost } from './pricing'
 import type { ContextBreakdown, DebugDetail, DebugListItem, LLMConfig, ModelPricing, Money } from '../shared/types'
@@ -87,6 +87,17 @@ function notifyUpdated(): void {
   }
 }
 
+// 流式期间每条 SSE 行都会触发通知，按 250ms 合并成一次广播（面板刷新无需逐行实时）
+const NOTIFY_COALESCE_MS = 250
+let notifyTimer: NodeJS.Timeout | null = null
+function scheduleNotify(): void {
+  if (notifyTimer) return
+  notifyTimer = setTimeout(() => {
+    notifyTimer = null
+    notifyUpdated()
+  }, NOTIFY_COALESCE_MS)
+}
+
 // ---------- 持久化 ----------
 
 function logDir(): string {
@@ -96,6 +107,19 @@ function logDir(): string {
 function fileNameOf(ex: { startedAt: number; id: string }): string {
   return `${ex.startedAt}-${ex.id}.json`
 }
+
+/**
+ * SSE 行的流式落盘走 sidecar（<name>.sse.ndjson）增量追加：
+ * 主 JSON 里最多 800 条 sseEvents + 持续增长的 assembledText，若每 500ms 全量
+ * 序列化重写，整个流式过程是 O(n²)。改为 sidecar 追加（O(n) 总量），
+ * 结束时把完整 JSON（含 sseEvents）写回并删除 sidecar，磁盘格式不变。
+ */
+interface SseSidecar {
+  file: string
+  buf: string[]
+  count: number
+}
+const sidecars = new WeakMap<Exchange, SseSidecar>()
 
 function scheduleSave(ex: Exchange): void {
   dirty.add(ex)
@@ -110,11 +134,26 @@ async function flushDirty(): Promise<void> {
   for (const ex of batch) {
     const name = fileNameOf(ex)
     fileNames.set(ex.id, name)
-    const data = JSON.stringify(ex)
+    const sc = sidecars.get(ex)
     writeChain = writeChain
       .then(async () => {
         await mkdir(logDir(), { recursive: true })
-        await writeFile(join(logDir(), name), data, 'utf-8')
+        if (sc) {
+          if (sc.buf.length) {
+            await appendFile(join(logDir(), sc.file), sc.buf.join(''), 'utf-8')
+            sc.buf.length = 0
+          }
+          // 流式中的记录：主 JSON 不带 sseEvents（sidecar 已承载），避免反复全量序列化
+          if (ex.endedAt == null) {
+            await writeFile(join(logDir(), name), JSON.stringify({ ...ex, sseEvents: [] }), 'utf-8')
+            return
+          }
+        }
+        await writeFile(join(logDir(), name), JSON.stringify(ex), 'utf-8')
+        if (sc) {
+          sidecars.delete(ex) // 结束合并完成，sidecar 退役
+          await rm(join(logDir(), sc.file), { force: true })
+        }
       })
       .catch((err) => console.error('[debug] 写入 API 日志失败:', err))
   }
@@ -124,7 +163,10 @@ async function flushDirty(): Promise<void> {
 /** 启动时从磁盘恢复历史记录 */
 export async function initDebugLog(): Promise<void> {
   try {
-    const files = (await readdir(logDir())).filter((f) => f.endsWith('.json'))
+    const entries = await readdir(logDir())
+    // 清掉上次进程崩溃遗留的 sidecar（对应的 .json 已含最后落盘的状态）
+    for (const f of entries) if (f.endsWith('.sse.ndjson')) void rm(join(logDir(), f), { force: true })
+    const files = entries.filter((f) => f.endsWith('.json'))
     const loaded: Exchange[] = []
     for (const f of files) {
       try {
@@ -218,8 +260,18 @@ export function recordStatus(ex: Exchange, status: number): void {
 export function recordSSELine(ex: Exchange, rawLine: string): void {
   ex.eventCount++
   if (ex.sseEvents.length < MAX_EVENTS_PER_EXCHANGE) ex.sseEvents.push(rawLine)
+  // sidecar 增量追加（与内存里的 sseEvents 一样封顶，避免超长流把磁盘写爆）
+  let sc = sidecars.get(ex)
+  if (!sc) {
+    sc = { file: fileNameOf(ex).replace(/\.json$/, '.sse.ndjson'), buf: [], count: 0 }
+    sidecars.set(ex, sc)
+  }
+  if (sc.count < MAX_EVENTS_PER_EXCHANGE) {
+    sc.buf.push(rawLine + '\n')
+    sc.count++
+  }
   scheduleSave(ex)
-  notifyUpdated()
+  scheduleNotify()
 }
 
 /** 记录上下文构成明细（请求结束后用服务端总量 + 本地估算拆分） */

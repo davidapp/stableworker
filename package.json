@@ -16,7 +16,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "adm-zip": "^0.6.1",
     "docx": "^9.11.0",
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
@@ -57,7 +56,10 @@
       "output": "release"
     },
     "files": [
-      "out/**"
+      "out/**",
+      "!node_modules/**/{test,__tests__,tests,docs,examples}/**",
+      "!node_modules/**/*.md",
+      "!node_modules/**/*.map"
     ],
     "asarUnpack": [
       "out/main/**",

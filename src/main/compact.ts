@@ -2,7 +2,7 @@ import { fetch as undiciFetch } from 'undici'
 import type { Dispatcher } from 'undici'
 import type { ChatHistoryMessage, LLMConfig } from '../shared/types'
 import { buildRequest } from './llm'
-import { estimateTokens } from '../shared/tokens'
+import { estimateMessageTokensCached } from '../shared/tokens'
 
 /**
  * 上下文摘要压缩（简化版 autoCompact）：
@@ -128,15 +128,7 @@ export function parseSummaryResponse(provider: LLMConfig['provider'], json: Reco
 /** 被裁前缀是否值得摘要（≥2 条消息且估算 >300 tokens，否则静默丢弃更划算） */
 export function worthSummarizing(dropped: ChatHistoryMessage[]): boolean {
   if (dropped.length < 2) return false
-  const tokens = dropped.reduce(
-    (acc, m) =>
-      acc +
-      m.blocks.reduce((a, b) => {
-        if (b.type === 'text' || b.type === 'reasoning') return a + estimateTokens(b.text)
-        return a + estimateTokens(b.name + JSON.stringify(b.input) + (b.result ?? ''))
-      }, 0),
-    0,
-  )
+  const tokens = dropped.reduce((acc, m) => acc + estimateMessageTokensCached(m), 0)
   return tokens > 300
 }
 

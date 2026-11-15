@@ -4,8 +4,15 @@ import { constants } from 'node:fs'
 import { basename, extname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ConfigView, OfficeFile, OfficeFormat, OfficePreviewResult } from '../shared/types'
-import { extractOfficeDocument } from './officeDocuments'
 import { loadConfig, saveConfig } from './config'
+
+// officeDocuments 静态拖着 docx/mammoth/exceljs/pptxgenjs/jszip/pdf-parse 全家桶，
+// 经 index.ts → office.ts 的链会在启动时全部拉起。懒加载：首次真正读取文档内容时才进内存。
+let officeDocumentsMod: Promise<typeof import('./officeDocuments')> | null = null
+function loadOfficeDocuments(): Promise<typeof import('./officeDocuments')> {
+  officeDocumentsMod ??= import('./officeDocuments')
+  return officeDocumentsMod
+}
 
 export const MAX_OFFICE_FILE_BYTES = 25 * 1024 * 1024
 const formats = new Set<OfficeFormat>(['docx', 'xlsx', 'pptx', 'pdf', 'txt', 'md', 'csv'])
@@ -70,6 +77,7 @@ export async function listOfficeFiles(root: string): Promise<OfficeFile[]> {
 export async function extractOfficeFile(root: string, path: string, signal?: AbortSignal): Promise<string> {
   signal?.throwIfAborted()
   const abs = await resolveOfficeFile(root, path)
+  const { extractOfficeDocument } = await loadOfficeDocuments()
   const content = await extractOfficeDocument(await readFile(abs), officeFormat(path), signal)
   signal?.throwIfAborted()
   return content

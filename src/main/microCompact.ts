@@ -1,5 +1,5 @@
-import type { ChatHistoryMessage, MessageBlock } from '../shared/types'
-import { estimateTokens } from '../shared/tokens'
+import type { ChatHistoryMessage } from '../shared/types'
+import { estimateMessageTokensCached } from '../shared/tokens'
 
 /**
  * micro 压缩（对齐 Claude Code 的 microCompact）：
@@ -23,15 +23,6 @@ const PREVIEW_CHARS = 100
 function headLine(text: string): string {
   const s = text.replace(/\s+/g, ' ').trim()
   return s.length > PREVIEW_CHARS ? s.slice(0, PREVIEW_CHARS) + '…' : s
-}
-
-function tokensOf(blocks: MessageBlock[]): number {
-  let total = 0
-  for (const b of blocks) {
-    if (b.type === 'text' || b.type === 'reasoning') total += estimateTokens(b.text)
-    else total += estimateTokens(b.name + JSON.stringify(b.input) + (b.result ?? ''))
-  }
-  return total
 }
 
 export interface MicroCompactOptions {
@@ -60,7 +51,7 @@ export function microCompactHistory(
   const keepRecent = opts.keepRecent ?? KEEP_RECENT_ASSISTANT
   if (!limit) return { messages, cleared: 0, charsSaved: 0 }
 
-  const total = messages.reduce((sum, m) => sum + tokensOf(m.blocks), 0)
+  const total = messages.reduce((sum, m) => sum + estimateMessageTokensCached(m), 0)
   if (total < limit * ratio) return { messages, cleared: 0, charsSaved: 0 }
 
   // 最近 keepRecent 条含工具调用的助手消息保留原样，更早的全部可清
