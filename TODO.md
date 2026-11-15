@@ -9,9 +9,9 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 - [x] **请求韧性 withRetry**：src/main/withRetry.ts——网络错误与 429/5xx/529 指数退避（800ms×2ⁿ 封顶 12s + 抖动，最多重试 4 次），尊重 Retry-After（≤30s），4xx 与用户中止不重试；每轮请求在 chatSend 中经 attemptRound 跑在 withRetry 下（中途断流也整轮重试）；重试时发 retry 事件清空半截回复并在"思考中"位置显示进度；六场景断言验证
 - [x] **AGENTS.md 加载**：项目根的 AGENTS.md（项目约定 / 技术栈说明）在每轮对话开始时读取并注入系统提示词（超 2 万字符截断；无文件 / 读取失败静默跳过）；内容可在 API 调试面板的请求体里看到；测试 tests/agentsMd.test.ts
 - [x] **应用图标**：gen-icon.cjs 纯 JS 生成 1024px PNG → build/icon.png，electron-builder 自动转 ico/icns
-- [ ] **代码签名与公证**：Windows 证书签名（消除 SmartScreen 提示）；macOS Developer ID 签名 + 公证（消除 Gatekeeper 提示）
+- [ ] **代码签名与公证**：CI 已实现 mac 签名+公证+staple 校验与 win 强制签名校验流程，缺的只是仓库 Secrets 里的证书凭据配置（配好后即生效，消除 SmartScreen/Gatekeeper 提示）
 - [x] **JSONL 会话文件安全**：写入失败重试一次并在界面持续告警（红条 + 重试按钮）；损坏行自动跳过 + 打开会话时显示恢复引导（黄条：恢复统计 / 在文件夹中显示 / 删除重建）；侧栏叶子 ⚠ 标记
-- [x] **测试基建**：vitest 5 + v8 覆盖率（`npm run test` / `test:coverage`）；23 个用例覆盖纯逻辑层（shared 96%、contextTrim 95%、withRetry 76%）；CI 新增 check 工作流（push main / PR 时 typecheck + 覆盖率）。渲染层与依赖 Electron 的主进程模块尚未覆盖
+- [x] **测试基建**：vitest 5 + v8 覆盖率（`npm run test` / `test:coverage`）；280+ 用例，主进程核心模块（协议解析 / 会话存储 / MCP 生命周期 / 工具流）经 vi.mock('electron') 均有覆盖；CI 新增 check 工作流（push main / PR 时 typecheck + 覆盖率）。渲染层组件与 config/debug/webFetch 门禁等尚无专测
 
 ## 中优先级
 
@@ -29,16 +29,23 @@ StableWorker 的待办与想法。已完成的里程碑见 git 历史；本文�
 
 ## 低优先级 / 想法
 
-- [x] **Plan mode**：批准模式新增 📋 规划模式（只读工具过滤 + 系统提示只读约束）
+- [ ] **MCP 握手不阻塞发消息**：ensureMcpConnections 串行 await（每台 15s 超时），配了不可达服务器时每条消息发出前都先吃等待；至少改 Promise.all 并行，更好是后台连接、工具列表动态补充。stdio 接收缓冲也无上限（异常服务器可撑爆内存），响应 id 只认 number（规范允许 string）
+- [ ] **并行子代理写竞态**：同一轮多个可写子代理并发 edit 同一文件会互相覆盖（快照→写之间有窗口）；按解析后绝对路径做 per-path 互斥链，或限制并行批次只跑只读型子代理。fileStateCache 同样无淘汰无上限（长会话内存只增不减）
+- [ ] **pipelineRunner 走代理**：文生图/媒体调用用全局 fetch，绕过 getProxyDispatcher 体系，代理用户媒体生成会直连失败
+- [ ] **webFetch SSRF 加固**：assertPublicUrl 是字符串黑名单，`http://0177.0.0.1` / `http://2130706433` 等编码可绕过；解析 hostname 为 IP 归一化后再判私网（DNS rebinding 防护需解析后复核）；顺带补 assertPublicUrl 单测（纯函数零用例）
+- [ ] **config.ts 安全层测试**：encryptApiKey 降级明文 / decryptApiKey 静默失败 / maskKey（≤4 位短 key 会暴露全文）均无回归保护，全库最敏感存储层；可顺带在设置页警示"当前为明文存储"
+- [ ] **会话列表 meta 分离**：listSessionMetas 与全局搜索对每个会话全量 JSONL replay；把 title/updatedAt/llmId 单独持久化为 `<id>.meta.json`，列表只读 meta 文件
+- [ ] **消息列表虚拟化**：长会话全量挂载 DOM；react-virtuoso 的 followOutput 与"贴底跟随"场景契合
 - [x] **MCP 工具接入**：Model Context Protocol 客户端（手写 JSON-RPC 2.0；stdio + Streamable HTTP 双传输，SSE 流式响应解析）；服务器在设置页管理（env 环境变量 / http 请求头编辑、资源浏览器、启停、重连），stdio 进程意外退出自动退避重连（5s/15s/30s→60s）；工具以 `mcp__服务器__工具` 并入工具池（默认需批准、无超时、规划模式排除）；未做：prompts、sampling、resources 分页与订阅
 - [x] **子代理（task 工具）**：独立上下文的完整代理循环（src/main/subagent.ts，callRound/executeTool 依赖注入可纯逻辑测试）；general-purpose（继承工具池）与 Explore（只读）两种类型；进度实时挂到 task 工具卡片"实时输出"区，最终报告作为 tool 结果回主对话；带门禁执行器 executeToolWithGates（批准卡/权限规则/检查点）与主循环共用；轮次上限后强制收尾汇总
 - [x] **子代理增强**：①只读工具并行执行（纯 kind:'read' 轮 Promise.all 并行，含写/需批准的轮次保持串行；主循环与子代理循环共用同一策略，对齐 Claude Code 的并行工具）②自定义代理类型（设置 → 子代理类型：名称/说明/工具范围/角色设定，动态注入 task 工具 subagent_type 枚举与描述，下一轮对话生效；config:setSubagentTypes 校验名称与内置冲突）③子代理内 todo_write 经 onTodos 转发主界面 Todo 面板（实现 task 工具时已通）
-- [x] **子代理再增强**：并行子代理已随"并行子代理"条目完成（见微压缩条目之后）；剩余：代理类型项目级、子代理输出折叠卡片
+- [x] **子代理再增强**：并行子代理已随"并行子代理"条目完成（见微压缩条目之后）
+- [ ] **子代理增强收尾**：代理类型项目级（设置里的自定义类型目前仅全局）、子代理输出折叠卡片
 - [x] **办公模式 memory 工具**：办公白名单加入 memory（跨会话记忆对办公助手可用，可记"周报模板"类偏好）
 - [x] **run_command 超时转后台**：前台命令 60 秒未结束不再杀进程，自动收编为后台任务（返回任务 id，task_output 轮询 / task_stop 终止）；宽限期可用 SW_RUN_COMMAND_FOREGROUND_MS 环境变量覆盖
 - [x] **工具开关按模式分 Tab**：设置 → 工具开关页分 编程模式 / 办公模式 两个 Tab，各自独立开关（config.toolSwitches / config.officeToolSwitches）；tools:list 按模式返回各自的池（办公 = 通用白名单 + office 工具）；resolveEffectiveSettings 按 mode 取基础开关，项目覆盖仍按键合并；modeTools 测试 4 用例
 - [x] **会话分叉**：悬停消息"🍴 从这里分叉"（最后一条也有 = 复制整个会话）——复制该消息及之前的全部内容为新会话（标题加"· 分叉"、摘要不继承、深拷贝互不影响），原会话不动并自动切换到新会话；buildForkSession 纯函数 + 测试
-- [ ] **WebSearch**：需接搜索 API（Brave/Serper 等，要 API key；WebFetch 已完成）
+- [ ] **WebSearch 备用源**：Brave/Serper 等可选补充（要各自 API key；DeepSeek Search 已随下方条目完成，同 Key 零配置）
 - [ ] **run_command 增强**：ANSI 颜色渲染、命令白名单（后台长驻进程已随 task_output/task_stop 完成）
 - [ ] **本地 token 估算精度**：接入真正的 tokenizer（当前为启发式估算，仅用于比例与裁剪触发）
 - [ ] **流式 Markdown 增量渲染**：长回复下避免每次增量都重渲染整段
