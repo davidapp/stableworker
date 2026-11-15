@@ -53,10 +53,11 @@ for (let y = 0; y < S; y++) {
     const i = (y * S + x) * 4
 
     // 底：圆角方 + 对角渐变（紫 #8b7cff → 蓝 #61a5ff）
+    const inside = insideRounded(x, y, 0, 0, S, S, 190)
     let r = 0
     let g = 0
     let b = 0
-    if (insideRounded(x, y, 0, 0, S, S, 190)) {
+    if (inside) {
       const t = Math.min(1, (x + y) / (2 * S))
       r = Math.round(139 + (97 - 139) * t)
       g = Math.round(124 + (165 - 124) * t)
@@ -72,11 +73,17 @@ for (let y = 0; y < S; y++) {
       px[i + 1] = 255
       px[i + 2] = 255
       px[i + 3] = 255
-    } else {
+    } else if (inside) {
       px[i] = r
       px[i + 1] = g
       px[i + 2] = b
       px[i + 3] = 255
+    } else {
+      // 圆角外：完全透明（此前 alpha 误写 255，安装包图标四角呈黑角）
+      px[i] = 0
+      px[i + 1] = 0
+      px[i + 2] = 0
+      px[i + 3] = 0
     }
   }
 }
